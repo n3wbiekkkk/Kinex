@@ -268,13 +268,25 @@ async function run() {
     const crashView = mgr.tabManager.getView(crashTab.id);
     assert.ok(crashView, 'Crash test tab WebContentsView exists');
     crashView.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 1 });
-    await waitMs(120);
+    await waitForTabUrl(
+      mgr,
+      (s) => {
+        const t = s.tabs.find((x) => x.id === crashTab.id);
+        return Boolean(t && t.isCrashed && !t.isLoading && crashView.webContents.getURL().startsWith('kinex://crashed'));
+      }
+    );
     const crashedStateTab = mgr.getSnapshot().tabs.find((t) => t.id === crashTab.id);
     assert.equal(crashedStateTab.isCrashed, true, 'Tab must mark isCrashed=true after render-process-gone');
     assert.equal(crashedStateTab.url, `${baseUrl}/page1`, 'Crash recovery must preserve original tab.url instead of kinex://crashed');
     await mgr.handleIntent({ type: 'nav-reload', tabId: crashTab.id });
-    await waitMs(150);
-    const recoveredTab = mgr.getSnapshot().tabs.find((t) => t.id === crashTab.id);
+    const crashRecoverSnap = await waitForTabUrl(
+      mgr,
+      (s) => {
+        const t = s.tabs.find((x) => x.id === crashTab.id);
+        return Boolean(t && t.isCrashed === false && !t.isLoading);
+      }
+    );
+    const recoveredTab = crashRecoverSnap.tabs.find((t) => t.id === crashTab.id);
     assert.equal(recoveredTab.isCrashed, false, 'Reload clears isCrashed and reloads original URL');
 
     // 8. Verify macOS close -> reopen (activate) keeps single manager & session hooks intact

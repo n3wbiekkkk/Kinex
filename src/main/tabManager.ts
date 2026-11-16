@@ -448,6 +448,7 @@ export class TabManager {
     }
     const currentWcUrl = existing.webContents.getURL();
     if (tab?.isCrashed || currentWcUrl.startsWith('kinex://crashed')) {
+      if (existing.webContents.isLoading()) existing.webContents.stop();
       this.host.updateTab(tabId, { isCrashed: false }, false);
       if (tab && !tab.url.startsWith('kinex://crashed')) {
         void this.navigationManager.navigateWebContents(existing.webContents, tab.url);
