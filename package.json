@@ -1,7 +1,7 @@
 {
   "name": "kinex-browser",
   "version": "7.0.1",
-  "description": "Kinex Browser \u2014 a fast, private macOS Chromium workspace browser",
+  "description": "Kinex Browser — a fast, private macOS Chromium workspace browser",
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
@@ -11,19 +11,21 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build",
+    "build:native": "npm --prefix node_modules/adblock-rs run build-release",
     "start": "npm run build && electron .",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
     "test:integration": "npm run build && node tests/integration/run-integration.mjs",
     "test:e2e": "npm run build && node tests/e2e/run-e2e.mjs",
     "test:leak": "npm run build && node tests/perf/run-leak-stress.mjs",
-    "test:all": "npm run typecheck && npm test && npm run test:integration && npm run test:e2e && npm run test:keyboard && npm run test:experience",
+    "test:all": "npm run typecheck && npm test && npm run test:integration && npm run test:e2e && npm run test:keyboard && npm run test:experience && npm run test:shields",
     "bench": "npm run build && node tests/perf/run-benchmarks.mjs",
     "bench:memory-saver": "npm run build && node tests/perf/run-memory-saver-bench.mjs",
     "package:mac": "npm run build && electron-builder --mac",
     "release:local": "node scripts/release-local.mjs",
     "test:keyboard": "npm run build && node tests/e2e/run-keyboard-only.mjs",
-    "test:experience": "npm run build && node tests/integration/run-experience.mjs"
+    "test:experience": "npm run build && node tests/integration/run-experience.mjs",
+    "test:shields": "npm run build && node tests/integration/run-shields.mjs"
   },
   "build": {
     "appId": "com.kinex.browser",
@@ -41,7 +43,11 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "resources/filters/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/adblock-rs/js/index.node"
     ],
     "mac": {
       "category": "public.app-category.productivity",
@@ -66,8 +72,10 @@
     }
   },
   "dependencies": {
+    "adblock-rs": "^0.13.5",
     "electron-updater": "^6.8.11",
-    "lucide-react": "^0.511.0"
+    "lucide-react": "^0.511.0",
+    "tldts": "^7.5.4"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

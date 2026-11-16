@@ -149,3 +149,18 @@ Re-measured after all `v0.7.0` Tab Search, Recently Closed Groups, Duplicate Det
 | Reddit (`/r/mac/`) | 2,251 | 1,981.2 | `true` | Completed Reddit JS challenge and scrolled |
 | Google Docs (`docs.google.com`) | 1,030 | 2,106.6 | `true` | Redirected to Google Accounts sign-in gate (`Sign in - Google Accounts`) |
 | Gmail (`mail.google.com`) | 2,572 | 2,325.0 | `false` (probe) | Redirected to `workspace.google.com/intl/en-US/gmail/`; CDP hostname match in probe missed cross-domain redirect |
+
+---
+
+## 8. `v7.0.1` + Kinex Shields Regression Check (Native `adblock-rs` Engine)
+
+Re-measured after integrating the native Rust **Kinex Shields** subsystem (`145,405` Standard-tier rules across 6 lists, `170,813` total across all 7 bundled lists including Aggressive tier). Full engine benchmarks and 8-site compatibility matrices are detailed in [SHIELDS_BENCHMARKS.md](SHIELDS_BENCHMARKS.md):
+
+| Benchmark Metric | `v0.7.0` Baseline | `v7.0.1` + Kinex Shields | Notes |
+| --- | --- | --- | --- |
+| Cold First Usable (mean / med / p95) | 280.1 / 284.0 / 284.8 ms | **445.7 / 448.1 / 452.1 ms** | First-launch gzip parse (`83.65 ms`) + `.bin` cache creation |
+| Warm First Usable (mean / med / p95) | 275.9 / 277.4 / 282.6 ms | **381.8 / 378.8 / 396.0 ms** | Binary `.bin` cache hit (`3.88 ms` deserialize) + `adblock-rs` N-API addon |
+| 1 Tab Settled RSS (`Main / Total`) | — / 570.4 MB | **239.0 / 719.5 MB** | Includes native Rust `Engine` filter tables (`+~60 MB` main RSS) |
+| 50 Live Tabs Settled / Peak RSS | 4,771.0 / 4,771.9 MB | **4,900.5 / 4,951.5 MB** | `+2.7%` total tree RSS with 145k rules active across all partitions |
+| 50 Live Tabs Switch Latency (median) | 1.6 ms | **4.7 ms** | Sub-5ms tab switches with full Shields coordinator active |
+| `170,813`-Rule 10k Query Latency | `26` suffix host entries | **2.93 µs mean / 2.67 µs median / 3.62 µs p95** | V8 JS heap impact `0 MB` (`61.58 MB` native Rust RSS across all 7 lists) |

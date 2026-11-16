@@ -37,6 +37,8 @@ const definitions = [
   ['previous-space', 'Previous Space', 'Spaces', 'Ctrl+CmdOrCtrl+Left', 'Switch to the previous workspace'],
   ['toggle-dark-mode', 'Toggle Dark Mode', 'View', '', 'Switch the active Space between Light and Dark'],
   ['toggle-adblock', 'Toggle Ad & Tracker Shields', 'Tools', '', 'Enable or disable request blocking'],
+  ['open-shields', 'Open Kinex Shields', 'Tools', 'CmdOrCtrl+Shift+K', 'Inspect blocked items and per-site protection'],
+  ['activate-element-picker', 'Pick Element to Block', 'Tools', '', 'Visually select and hide an unwanted page element'],
   ['toggle-boosts', 'Open Boosts Studio', 'Tools', 'CmdOrCtrl+Shift+B', 'Edit per-site CSS, JavaScript and hidden elements'],
   ['little-kinex', 'Open Little Kinex', 'Kinex', 'Alt+CmdOrCtrl+N', 'Open a floating browser window'],
   ['open-private-window', 'New Private Window', 'Kinex', 'CmdOrCtrl+Shift+N', 'Open a separate ephemeral browsing session'],

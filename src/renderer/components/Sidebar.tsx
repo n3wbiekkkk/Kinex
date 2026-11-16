@@ -794,11 +794,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
 
             <button
               className="shield-pill"
-              title="Ad & Tracker Shields"
-              onClick={() => dispatch({ type: 'toggle-adblock' })}
+              title="Open Kinex Shields (⌘⇧K)"
+              aria-label="Open Kinex Shields"
+              onClick={() => dispatch({ type: 'set-overlay', overlay: { mode: 'shields' } })}
             >
               {state.adBlockEnabled ? <Shield size={12} /> : <ShieldOff size={12} />}
-              <span>{state.adBlockEnabled ? state.blockedRequestsCount : 'Off'}</span>
+              <span>
+                {state.adBlockEnabled
+                  ? focusedTab
+                    ? state.shieldsRuntime.tabStats[focusedTab.id]?.total ?? 0
+                    : state.blockedRequestsCount
+                  : 'Off'}
+              </span>
             </button>
           </div>
         </div>

@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build Native Adblock Engine (Rust N-API)
+        run: npm run build:native
+
       - name: Run Verification Suite
         run: npm run typecheck && npm test && npm run build
 

@@ -32,7 +32,7 @@
   - Explicit protocol allowlisting (`https:`, `http:`, `kinex:`, `nook:` -> `kinex://`, `about:blank`) and prompt-gated external handoff (`mailto:`, `tel:`)
   - **HTTPS-Only Mode** with network error classification (never silently downgrading on DNS, offline, timeout, or TLS certificate errors; insecure HTTP fallback requires explicit user confirmation)
   - **Isolated Private Windows (`⌘⇧N`)**: Ephemeral non-persistent Chromium partitions with strict sensitive permission denial, no history/download recording, disabled silent promotion into regular tabs, and session storage/cache purge on close
-  - **Ad & Tracker Shields** (`webRequest` filtering) and **Clean Copy URL** (`⌘⇧C` strips `utm_*`, `fbclid`, `gclid`, etc.)
+  - **Kinex Shields (`adblock-rs` + `tldts`)**: Native Rust content-blocking engine with 7 bundled offline filter lists (`EasyList`, `EasyPrivacy`, `uBlock Origin Filters/Privacy/Quick Fixes`, `Peter Lowe's`, and `Fanboy Cookie`), Standard/Aggressive/Disabled global and per-site precedence, dynamic isolated-world cosmetic filtering, Element Picker, HTTPS list updates, and **Clean Copy URL** (`⌘⇧C` / navigation param stripping) — documented in [SHIELDS_BENCHMARKS.md](SHIELDS_BENCHMARKS.md)
 - **Migration & Import**: Backward-compatible state migration from legacy `NOOK/nook-state.json` and `nook://` URLs while preserving existing `persist:nook-*` profile cookies/sessions, plus Arc (`StorableSidebar.json`), Chrome (`Bookmarks`), and HTML bookmark import.
 - **In-App Auto-Updater**: Built on `electron-updater` / `Squirrel.Mac`, validating update feeds (`https://`, localhost, or local release directory) against `latest-mac.yml`.
 
@@ -58,8 +58,8 @@ src/
 │   ├── importController.ts   # Arc, Chrome & HTML bookmark import flows
 │   ├── persistence.ts        # Atomic JSON state persistence & NOOK -> Kinex migration
 │   ├── security.ts           # URL guards, Chromium error classification, tracker stripping
-│   ├── adblock.ts            # Session webRequest ad & tracker filter
-│   ├── boosts.ts             # Per-domain CSS/JS injection & Element Zapper
+│   ├── shields/              # Kinex Shields: adblock-rs engine, lists, scriptlets, cosmetics, coordinator
+│   ├── boosts.ts             # Per-domain CSS/JS injection & Boosts Zapper
 │   ├── internalPages.ts      # kinex://welcome, kinex://private, kinex://crashed HTML templates
 │   └── updater.ts            # KinexAutoUpdater (remote HTTPS & local feed server)
 ├── preload/
@@ -97,8 +97,9 @@ npm run typecheck          # Typecheck Electron main/preload + React renderer
 npm test                   # Unit tests (domain, migration, IPC validation, security policies)
 npm run test:integration   # Real Electron main-process, session isolation & Memory Saver tests
 npm run test:e2e           # Full 15-workflow CDP E2E suite against a local HTTP test server
+npm run test:shields       # Kinex Shields network, cosmetic, scriptlet & privacy integration suite
 npm run test:leak          # 7-scenario stress & memory leak test suite
-npm run test:all           # Run typecheck + unit + integration + E2E suites
+npm run test:all           # Run typecheck + unit + integration + E2E + keyboard + experience + shields
 npm run bench              # Run reproducible startup + 1/5/10/25/50-tab benchmarks
 npm run bench:memory-saver # Measure 25/50-tab RSS savings with Memory Saver enabled
 npm start                  # Build and launch Kinex locally

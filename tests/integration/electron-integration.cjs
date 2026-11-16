@@ -192,7 +192,7 @@ async function run() {
       recordDecision: () => {},
       revokeDecision: () => {},
     });
-    const sm = new SessionManager(pm, dm, () => true, () => {});
+    const sm = new SessionManager(pm, dm, { attachSession() {} });
     const priv = sm.createPrivateSession();
     assert.equal(priv.sess.isPersistent(), false, 'Private session partition must be non-persistent');
 

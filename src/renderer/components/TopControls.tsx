@@ -10,12 +10,15 @@ import {
   PictureInPicture2,
   Printer,
   RotateCw,
+  Shield,
+  ShieldAlert,
+  ShieldOff,
   SlidersHorizontal,
   Sparkles,
   SplitSquareHorizontal,
   X,
 } from 'lucide-react';
-import { extractHostname, getActiveSplit } from '../../shared/domain';
+import { extractHostname, getActiveSplit, resolveEffectiveShieldsMode } from '../../shared/domain';
 import { BROWSER_COMMANDS, formatShortcut } from '../../shared/commands';
 import type { KinexIntent, KinexStateSnapshot, ReaderTheme } from '../../shared/types';
 
@@ -30,6 +33,12 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
     .map((id) => state.tabs.find((t) => t.id === id))
     .filter((t): t is NonNullable<typeof t> => Boolean(t));
   const focusedTab = panes[split.focusedIndex] ?? panes[0];
+  const focusedEffectiveShields = resolveEffectiveShieldsMode(
+    state.shields,
+    focusedTab?.url ?? '',
+    extractHostname(focusedTab?.url ?? '')
+  );
+  const focusedBlockedCount = focusedTab ? state.shieldsRuntime.tabStats[focusedTab.id]?.total ?? 0 : 0;
 
   return (
     <div className={`top-controls ${state.sidebarOpen ? '' : 'sidebar-closed'}`} role="toolbar" aria-label="Browser Toolbar" onKeyDown={(event) => {
@@ -280,6 +289,24 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
         }
       >
         <PictureInPicture2 size={14} />
+      </button>
+
+      <button
+        className="icon-btn"
+        title="Kinex Shields (⌘⇧K)"
+        aria-label="Open Kinex Shields"
+        onClick={() => dispatch({ type: 'set-overlay', overlay: { mode: 'shields' } })}
+      >
+        {focusedEffectiveShields.mode === 'disabled' ? (
+          <ShieldOff size={14} style={{ opacity: 0.55 }} />
+        ) : focusedEffectiveShields.mode === 'aggressive' ? (
+          <ShieldAlert size={14} style={{ color: 'var(--warning)' }} />
+        ) : (
+          <Shield size={14} />
+        )}
+        {focusedBlockedCount > 0 && (
+          <span className="toolbar-shield-badge">{focusedBlockedCount}</span>
+        )}
       </button>
 
       <button

@@ -1,5 +1,9 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isBlockedAdOrTrackerUrl } from './adblock';
+import { createDefaultShieldsSettings } from '../shared/domain';
+import { KinexShieldsEngine } from './shields/engine';
 import { compileBoostCss } from './boosts';
 import {
   classifySecurityState,
@@ -31,10 +35,41 @@ describe('NOOK adblock, boosts, security, and updater', () => {
   });
 
   it('blocks known tracker hosts while allowing normal content and localhost', () => {
-    expect(isBlockedAdOrTrackerUrl('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js')).toBe(true);
-    expect(isBlockedAdOrTrackerUrl('https://www.google-analytics.com/analytics.js')).toBe(true);
-    expect(isBlockedAdOrTrackerUrl('https://github.com/morluto/rea')).toBe(false);
-    expect(isBlockedAdOrTrackerUrl('http://localhost:3000/doubleclick.net')).toBe(false);
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinex-features-shields-'));
+    try {
+      const engine = new KinexShieldsEngine(tmpDir, createDefaultShieldsSettings());
+      engine.initializeSync();
+      expect(
+        engine.evaluateNetworkRequest({
+          url: 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js',
+          sourceUrl: 'https://example.org',
+          resourceType: 'script',
+        }).blocked
+      ).toBe(true);
+      expect(
+        engine.evaluateNetworkRequest({
+          url: 'https://www.google-analytics.com/analytics.js',
+          sourceUrl: 'https://example.org',
+          resourceType: 'script',
+        }).blocked
+      ).toBe(true);
+      expect(
+        engine.evaluateNetworkRequest({
+          url: 'https://github.com/n3wbiekkkk/Kinex',
+          sourceUrl: 'https://github.com/n3wbiekkkk',
+          resourceType: 'script',
+        }).blocked
+      ).toBe(false);
+      expect(
+        engine.evaluateNetworkRequest({
+          url: 'http://localhost:3000/doubleclick.net',
+          sourceUrl: 'http://localhost:3000/',
+          resourceType: 'script',
+        }).blocked
+      ).toBe(false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it('compiles matching boost rules into CSS including zapped selectors', () => {

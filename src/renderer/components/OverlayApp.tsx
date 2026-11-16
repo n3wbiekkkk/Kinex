@@ -26,6 +26,7 @@ import type { FindInPageStatus, KinexIntent, KinexStateSnapshot } from '../../sh
 import { BoostPanel } from './BoostPanel';
 import { CommandBar } from './CommandBar';
 import { SettingsView } from './SettingsView';
+import { ShieldsPanel } from './ShieldsPanel';
 import { SpaceEditor } from './SpaceEditor';
 import { useModalFocus } from '../focus';
 
@@ -266,6 +267,10 @@ const OverlayContent: React.FC<OverlayAppProps & { active: boolean }> = ({ state
         <SettingsView state={state} initialSection={overlay.section} dispatch={dispatch} />
       )}
 
+      {overlay.mode === 'shields' && (
+        <ShieldsPanel state={state} focusedTab={focusedTab} dispatch={dispatch} onClose={close} />
+      )}
+
       {overlay.mode === 'history' && (
         <div className="modal-card" role="dialog" aria-modal="true" aria-label="Browsing History" onClick={(event) => event.stopPropagation()}>
           <div className="modal-header">
@@ -321,9 +326,9 @@ const OverlayContent: React.FC<OverlayAppProps & { active: boolean }> = ({ state
             <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', wordBreak: 'break-all' }}>{focusedTab.url}</div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn-secondary" onClick={() => dispatch({ type: 'toggle-adblock' })}>
+              <button className="btn-secondary" onClick={() => dispatch({ type: 'set-overlay', overlay: { mode: 'shields' } })}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Shield size={13} /> Shields: {state.adBlockEnabled ? 'On' : 'Off'}
+                  <Shield size={13} /> Kinex Shields ({state.shieldsRuntime.tabStats[focusedTab.id]?.total ?? 0})
                 </span>
               </button>
               <button

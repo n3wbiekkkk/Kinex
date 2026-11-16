@@ -25,6 +25,7 @@ interface ManagedAuxiliaryWindow {
 
 export interface AuxiliaryWindowHost {
   onWebContentsCreated: (wc: WebContents) => void;
+  onApplyShieldsCosmetics?: (wc: WebContents, url?: string) => Promise<void> | void;
   getRendererUrl: (view: 'shell' | 'overlay' | 'little' | 'private') => string;
   getSearchEngine: () => SearchEngineId;
   getRegularSessionForActiveSpace: () => Session;
@@ -35,7 +36,12 @@ export class AuxiliaryWindowManager {
   private littleWindow: ManagedAuxiliaryWindow | null = null;
   private readonly auxByHeaderWcId = new Map<number, ManagedAuxiliaryWindow>();
   private readonly privateWindows = new Set<ManagedAuxiliaryWindow>();
+  private readonly privateWcIds = new Set<number>();
   private disposed = false;
+
+  isPrivateWebContents(wcId: number): boolean {
+    return this.privateWcIds.has(wcId);
+  }
 
   constructor(
     private readonly host: AuxiliaryWindowHost,
@@ -164,8 +170,20 @@ export class AuxiliaryWindowManager {
     };
 
     const headerWc = headerView.webContents;
+    const contentWcId = webView.webContents.id;
+    if (opts.isPrivate) {
+      this.privateWcIds.add(contentWcId);
+    }
     this.host.onWebContentsCreated(headerWc);
     this.host.onWebContentsCreated(webView.webContents);
+    webView.webContents.on('dom-ready', () => {
+      if (!this.disposed && !webView.webContents.isDestroyed()) {
+        void this.host.onApplyShieldsCosmetics?.(webView.webContents);
+      }
+    });
+    webView.webContents.once('destroyed', () => {
+      this.privateWcIds.delete(contentWcId);
+    });
     const headerId = headerWc.id;
     this.auxByHeaderWcId.set(headerId, state);
     this.ipcRegistry.register(headerId, opts.isPrivate ? 'private-header' : 'little-kinex');
@@ -212,8 +230,18 @@ export class AuxiliaryWindowManager {
       isPrivate: opts.isPrivate,
       onDidCreatePopupWindow: (popup) => {
         state.popupWindows.add(popup);
+        const popupWcId = popup.webContents.id;
+        if (opts.isPrivate) {
+          this.privateWcIds.add(popupWcId);
+        }
         this.host.onWebContentsCreated(popup.webContents);
+        popup.webContents.on('dom-ready', () => {
+          if (!this.disposed && !popup.isDestroyed() && !popup.webContents.isDestroyed()) {
+            void this.host.onApplyShieldsCosmetics?.(popup.webContents);
+          }
+        });
         popup.once('closed', () => {
+          this.privateWcIds.delete(popupWcId);
           state.popupWindows.delete(popup);
         });
       },
@@ -235,6 +263,7 @@ export class AuxiliaryWindowManager {
         state.currentUrl = url;
         state.canGoBack = wc.navigationHistory.canGoBack();
         state.canGoForward = wc.navigationHistory.canGoForward();
+        void this.host.onApplyShieldsCosmetics?.(wc, url);
         syncHeader();
       },
       onDidFinishNavigation: (url, title) => {
@@ -245,6 +274,7 @@ export class AuxiliaryWindowManager {
         state.isLoading = false;
         state.canGoBack = wc.navigationHistory.canGoBack();
         state.canGoForward = wc.navigationHistory.canGoForward();
+        void this.host.onApplyShieldsCosmetics?.(wc, url);
         syncHeader();
       },
     });

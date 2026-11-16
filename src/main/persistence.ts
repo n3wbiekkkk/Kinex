@@ -1,12 +1,122 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createDefaultPersistedData, DEFAULT_UPDATE_FEED_URL, SEARCH_ENGINES, SPACE_THEME_PRESETS } from '../shared/domain';
-import type { MemorySaverTimeout, NewTabConfig, PersistedKinexData, SearchEngineId } from '../shared/types';
+import {
+  createDefaultPersistedData,
+  createDefaultShieldsFilterLists,
+  createDefaultShieldsSettings,
+  DEFAULT_UPDATE_FEED_URL,
+  normalizeShieldsSiteKey,
+  SEARCH_ENGINES,
+  SPACE_THEME_PRESETS,
+} from '../shared/domain';
+import type {
+  MemorySaverTimeout,
+  NewTabConfig,
+  PersistedKinexData,
+  PersistedShieldsSettings,
+  SearchEngineId,
+  ShieldsMode,
+} from '../shared/types';
 import { isSafeNavigationUrl, isSafeUpdateFeedUrl } from './security';
 
 const VALID_MEMORY_SAVER = new Set<MemorySaverTimeout>(['disabled', '5m', '15m', '30m', '60m']);
 const VALID_NEW_TAB_PRESETS = new Set(['minimal', 'focus', 'personal']);
 const VALID_NEW_TAB_BGS = new Set(['clean', 'mist', 'dusk', 'sage']);
+const VALID_SHIELDS_MODES = new Set<ShieldsMode>(['standard', 'aggressive', 'disabled']);
+
+function sanitizePersistedShields(
+  rawShields: unknown,
+  legacyAdBlockEnabled: boolean
+): PersistedShieldsSettings {
+  const defaults = createDefaultShieldsSettings();
+  if (!rawShields || typeof rawShields !== 'object') {
+    if (!legacyAdBlockEnabled) {
+      return { ...defaults, globalMode: 'disabled' };
+    }
+    return defaults;
+  }
+
+  const obj = rawShields as Record<string, unknown>;
+  const globalMode =
+    typeof obj.globalMode === 'string' && VALID_SHIELDS_MODES.has(obj.globalMode as ShieldsMode)
+      ? (obj.globalMode as ShieldsMode)
+      : legacyAdBlockEnabled
+        ? defaults.globalMode
+        : 'disabled';
+  const lastActiveMode =
+    obj.lastActiveMode === 'aggressive' || obj.lastActiveMode === 'standard'
+      ? obj.lastActiveMode
+      : globalMode === 'aggressive'
+        ? 'aggressive'
+        : 'standard';
+
+  const siteOverrides: Record<string, ShieldsMode> = {};
+  if (obj.siteOverrides && typeof obj.siteOverrides === 'object' && !Array.isArray(obj.siteOverrides)) {
+    for (const [rawKey, mode] of Object.entries(obj.siteOverrides as Record<string, unknown>)) {
+      const key = normalizeShieldsSiteKey(rawKey);
+      if (key && typeof mode === 'string' && VALID_SHIELDS_MODES.has(mode as ShieldsMode)) {
+        siteOverrides[key] = mode as ShieldsMode;
+      }
+    }
+  }
+
+  const savedListsById = new Map<string, Record<string, unknown>>();
+  if (Array.isArray(obj.filterLists)) {
+    for (const item of obj.filterLists) {
+      if (item && typeof item === 'object' && typeof (item as Record<string, unknown>).id === 'string') {
+        savedListsById.set((item as Record<string, unknown>).id as string, item as Record<string, unknown>);
+      }
+    }
+  }
+
+  const filterLists = createDefaultShieldsFilterLists().map((def) => {
+    const saved = savedListsById.get(def.id);
+    if (!saved) return def;
+    return {
+      ...def,
+      enabled: typeof saved.enabled === 'boolean' ? saved.enabled : def.enabled,
+      ruleCount: typeof saved.ruleCount === 'number' && saved.ruleCount >= 0 ? saved.ruleCount : def.ruleCount,
+      lastUpdatedAt: typeof saved.lastUpdatedAt === 'number' ? saved.lastUpdatedAt : undefined,
+      lastError: typeof saved.lastError === 'string' ? saved.lastError : undefined,
+    };
+  });
+
+  const customCosmeticRules: Record<string, string[]> = {};
+  if (obj.customCosmeticRules && typeof obj.customCosmeticRules === 'object' && !Array.isArray(obj.customCosmeticRules)) {
+    for (const [rawDomain, rules] of Object.entries(obj.customCosmeticRules as Record<string, unknown>)) {
+      const key = normalizeShieldsSiteKey(rawDomain);
+      if (key && Array.isArray(rules)) {
+        const cleaned = Array.from(
+          new Set(
+            rules
+              .filter((r): r is string => typeof r === 'string')
+              .map((r) => r.trim())
+              .filter((r) => r.length > 0 && r.length <= 512 && !/[{}\n\r;]/.test(r))
+          )
+        );
+        if (cleaned.length > 0) {
+          customCosmeticRules[key] = cleaned;
+        }
+      }
+    }
+  }
+
+  return {
+    globalMode,
+    lastActiveMode,
+    stripTrackingParams:
+      typeof obj.stripTrackingParams === 'boolean' ? obj.stripTrackingParams : defaults.stripTrackingParams,
+    cosmeticFilteringEnabled:
+      typeof obj.cosmeticFilteringEnabled === 'boolean'
+        ? obj.cosmeticFilteringEnabled
+        : defaults.cosmeticFilteringEnabled,
+    siteOverrides,
+    filterLists,
+    customCosmeticRules,
+    lastGlobalUpdateAt:
+      typeof obj.lastGlobalUpdateAt === 'number' ? obj.lastGlobalUpdateAt : undefined,
+  };
+}
 
 function resolvePersistedUpdateFeedUrl(rawFeed: unknown, fallback: string): string {
   if (typeof rawFeed !== 'string') return fallback;
@@ -103,6 +213,7 @@ export class KinexPersistence {
         : defaults.sidebarWidth;
 
       const resolvedFeedUrl = resolvePersistedUpdateFeedUrl(parsed.updateFeedUrl, defaults.updateFeedUrl);
+      const shields = sanitizePersistedShields(parsed.shields, parsed.adBlockEnabled ?? defaults.adBlockEnabled);
 
       return {
         ...defaults,
@@ -159,7 +270,8 @@ export class KinexPersistence {
               : defaults.readerOptions.theme,
         },
         sidebarWidth: Math.min(380, Math.max(200, Math.round(rawSidebarWidth))),
-        adBlockEnabled: parsed.adBlockEnabled ?? defaults.adBlockEnabled,
+        shields,
+        adBlockEnabled: shields.globalMode !== 'disabled',
         httpsOnly: parsed.httpsOnly ?? defaults.httpsOnly,
         cleanCopyUrl: parsed.cleanCopyUrl ?? defaults.cleanCopyUrl,
         sitePermissions: Array.isArray(parsed.sitePermissions) ? parsed.sitePermissions : [],

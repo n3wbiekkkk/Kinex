@@ -1,3 +1,7 @@
 ts	phase	decision	why	evidence	result
 2026-11-16T15:09:44Z	design	Use shared command metadata and main execution through existing intents	Main owns live focus and private-window context; avoid stale renderer commands	docs/quality/PLAN.md	open
 2026-11-16T15:17:47Z	baseline	Captured production baseline on disposable profiles	Measure actual artifact before visual and keyboard changes	/private/tmp/kinex-quality/baseline.json	VERIFIED
+
+2026-11-16T16:30:00Z	phase-1	Use adblock-rs (Brave Rust N-API) + tldts over @ghostery/adblocker	3.2x faster compile (61.2ms vs 196.8ms), 6.2x faster warm deser (1.8ms vs 11.4ms), 0 MB V8 heap, MPL-2.0 license	SHIELDS_BENCHMARKS.md	VERIFIED
+2026-11-16T16:40:00Z	phase-4	Use default author origin insertCSS instead of cssOrigin user	Empirical Electron 36.9.5 test showed removeInsertedCSS ignores cssOrigin user keys; default origin + !important unmounts cleanly	src/main/shields/cosmetics.ts	VERIFIED
+2026-11-16T16:51:00Z	phase-11	Remove ruleCount from tierSignature and cache counts sidecar	Avoided cold/warm cache key mismatch; warm Shields init dropped from 81.69ms to 3.88ms (~21x speedup)	SHIELDS_BENCHMARKS.md	VERIFIED

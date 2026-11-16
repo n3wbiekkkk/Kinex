@@ -1,8 +1,8 @@
 import { session, type Protocol, type Session } from 'electron';
-import { attachAdBlocker } from './adblock';
 import type { DownloadManager } from './downloadManager';
 import { renderKinexInternalHtml, type NewTabRenderContext } from './internalPages';
 import type { PermissionManager } from './permissionManager';
+import type { KinexShieldsCoordinator } from './shields/coordinator';
 
 const protocolRegisteredSessions = new WeakSet<Session>();
 
@@ -50,8 +50,7 @@ export class SessionManager {
   constructor(
     private readonly permissionManager: PermissionManager,
     private readonly downloadManager: DownloadManager,
-    private readonly isAdBlockEnabled: () => boolean,
-    private readonly onAdBlocked: () => void,
+    private readonly shieldsCoordinator?: Pick<KinexShieldsCoordinator, 'attachSession'>,
     private readonly getNewTabContext?: () => NewTabRenderContext
   ) {}
 
@@ -59,7 +58,7 @@ export class SessionManager {
     const safePartition = partition || 'persist:nook-default';
     const sess = session.fromPartition(safePartition);
     registerKinexProtocolOnSession(sess, this.getNewTabContext);
-    attachAdBlocker(sess, this.isAdBlockEnabled, this.onAdBlocked);
+    this.shieldsCoordinator?.attachSession(sess);
     this.permissionManager.attachToSession(sess, { isPrivate: false });
     this.downloadManager.attachRegularSession(sess);
     return sess;
@@ -71,7 +70,7 @@ export class SessionManager {
     const partition = `kinex-private-${Date.now()}-${this.privateCounter}`;
     const sess = session.fromPartition(partition, { cache: false });
     registerKinexProtocolOnSession(sess);
-    attachAdBlocker(sess, this.isAdBlockEnabled, this.onAdBlocked);
+    this.shieldsCoordinator?.attachSession(sess);
     this.permissionManager.attachToSession(sess, { isPrivate: true });
     this.downloadManager.attachPrivateSession(sess);
     return { partition, sess };

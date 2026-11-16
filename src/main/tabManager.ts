@@ -13,6 +13,9 @@ export type PageContextAction =
 
 export interface TabManagerHost {
   onWebContentsCreated: (wc: WebContents) => void;
+  onTabWebContentsCreated?: (tabId: string, wc: WebContents) => void;
+  onTabWebContentsDestroyed?: (wcId: number) => void;
+  onApplyShieldsCosmetics?: (wc: WebContents, url?: string) => Promise<void> | void;
   getMainWindow: () => BrowserWindow | null;
   getTabById: (tabId: string) => TabItem | undefined;
   updateTab: (tabId: string, patch: Partial<TabItem>, persist?: boolean) => void;
@@ -112,6 +115,12 @@ export class TabManager {
 
     const wc = view.webContents;
     this.host.onWebContentsCreated(wc);
+    this.host.onTabWebContentsCreated?.(tabId, wc);
+    wc.on('dom-ready', () => {
+      if (!this.disposed && !wc.isDestroyed()) {
+        void this.host.onApplyShieldsCosmetics?.(wc);
+      }
+    });
     wc.setAudioMuted(tab.isMuted);
     const savedZoom = tab.zoomFactor ?? this.host.getZoomForUrl(tab.url);
     if (savedZoom) {
@@ -170,6 +179,7 @@ export class TabManager {
           },
           true
         );
+        void this.host.onApplyShieldsCosmetics?.(wc, url);
       },
       onDidFinishNavigation: (url, title) => {
         if (this.disposed || wc.isDestroyed()) return;
@@ -199,6 +209,7 @@ export class TabManager {
           true
         );
         void applyBoostsToWebContents(wc, this.host.getBoosts(), this.injectedCssKeys);
+        void this.host.onApplyShieldsCosmetics?.(wc, url);
         this.host.onNavigationFinished(tabId, url, title);
       },
       onFoundInPage: (result) => {
@@ -405,6 +416,7 @@ export class TabManager {
       if (!this.disposed) {
         this.host.onHtmlFullscreenChanged?.(tabId, false);
       }
+      this.host.onTabWebContentsDestroyed?.(wc.id);
       this.injectedCssKeys.delete(wc.id);
       this.certErrorTabIds.delete(tabId);
       this.throttlingStateByWc.delete(wc.id);

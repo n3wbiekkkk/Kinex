@@ -14,6 +14,7 @@ import {
   getFocusedTab,
   moveTabToSpace,
   normalizeNavigationInput,
+  normalizeShieldsSiteKey,
   reorderSpaces,
   reorderTabs,
   restoreClosedTabs,
@@ -54,6 +55,9 @@ import {
   registerKinexProtocolOnSession,
   SessionManager,
 } from './sessionManager';
+import { runShieldsElementPicker, ShieldsCosmeticInjector, stopShieldsElementPicker } from './shields/cosmetics';
+import { KinexShieldsCoordinator } from './shields/coordinator';
+import { KinexShieldsEngine } from './shields/engine';
 import { TabManager } from './tabManager';
 import { KinexAutoUpdater } from './updater';
 import { ViewLayoutManager } from './viewLayoutManager';
@@ -68,7 +72,6 @@ export class KinexWindowManager {
   private readonly persistence: KinexPersistence;
   private persisted: PersistedKinexData;
   private overlay: OverlayState = { mode: 'none' };
-  private blockedRequestsCount = 0;
   private toastMessage: string | null = null;
   private updateStatus: UpdateStatus = { state: 'idle' };
   private startupUrl: string | undefined;
@@ -81,6 +84,10 @@ export class KinexWindowManager {
   private duplicatePrompt: DuplicateTabPrompt | null = null;
   private readonly findQueryByTabId = new Map<string, string>();
   private readonly readerDocsByTabId = new Map<string, ReaderDocument>();
+  private readonly tabIdByWcId = new Map<number, string>();
+  private readonly needsReloadByTabId = new Set<string>();
+  private updatingShieldsLists = false;
+  private pickerActiveTabId: string | null = null;
 
   private speedLimited = false;
   private thermalLimited = false;
@@ -112,6 +119,9 @@ export class KinexWindowManager {
   public readonly ipcRegistry = new TrustedIpcRegistry();
   private readonly permissionManager: PermissionManager;
   private readonly downloadManager: DownloadManager;
+  private readonly shieldsEngine: KinexShieldsEngine;
+  private readonly shieldsCosmetics: ShieldsCosmeticInjector;
+  private readonly shieldsCoordinator: KinexShieldsCoordinator;
   private readonly sessionManager: SessionManager;
   private readonly navigationManager: NavigationManager;
   private readonly tabManager: TabManager;
@@ -157,14 +167,41 @@ export class KinexWindowManager {
       if (!this.disposed) this.scheduleBroadcast();
     });
 
+    this.shieldsEngine = new KinexShieldsEngine(userDataDir, this.persisted.shields);
+    if (this.shieldsEngine.hasWarmCache()) {
+      const { updatedLists } = this.shieldsEngine.initializeSync();
+      this.persisted = {
+        ...this.persisted,
+        shields: { ...this.persisted.shields, filterLists: updatedLists },
+        adBlockEnabled: this.persisted.shields.globalMode !== 'disabled',
+      };
+    } else {
+      setImmediate(() => {
+        if (this.disposed) return;
+        const { updatedLists } = this.shieldsEngine.initializeSync();
+        this.persisted = {
+          ...this.persisted,
+          shields: { ...this.persisted.shields, filterLists: updatedLists },
+          adBlockEnabled: this.persisted.shields.globalMode !== 'disabled',
+        };
+        this.persistence.scheduleSave(this.persisted);
+        this.applyCosmeticsToVisibleTabs();
+        this.scheduleBroadcast();
+      });
+    }
+    this.shieldsCosmetics = new ShieldsCosmeticInjector(this.shieldsEngine);
+    this.shieldsCoordinator = new KinexShieldsCoordinator(this.shieldsEngine, {
+      resolveTabIdByWebContentsId: (wcId) => this.tabIdByWcId.get(wcId),
+      isPrivateWebContents: (wcId) => this.auxiliaryWindows.isPrivateWebContents(wcId),
+      onStatsChanged: () => {
+        if (!this.disposed) this.scheduleBroadcast();
+      },
+    });
+
     this.sessionManager = new SessionManager(
       this.permissionManager,
       this.downloadManager,
-      () => this.persisted.adBlockEnabled,
-      () => {
-        this.blockedRequestsCount += 1;
-        if (!this.disposed) this.scheduleBroadcast();
-      },
+      this.shieldsCoordinator,
       () => this.buildNewTabContext()
     );
 
@@ -183,6 +220,14 @@ export class KinexWindowManager {
           this.attachKeyboard(wc);
           this.attachOverlayFocusGuard(wc);
         },
+        onTabWebContentsCreated: (tabId, wc) => {
+          this.tabIdByWcId.set(wc.id, tabId);
+        },
+        onTabWebContentsDestroyed: (wcId) => {
+          this.tabIdByWcId.delete(wcId);
+          this.shieldsCoordinator.clearWebContentsTracking(wcId);
+        },
+        onApplyShieldsCosmetics: (wc, url) => this.shieldsCosmetics.applyForWebContents(wc, url),
         getTabById: (tabId) => this.persisted.tabs.find((t) => t.id === tabId),
         updateTab: (tabId, patch, persist = false) => {
           const patchKeys = Object.keys(patch) as Array<keyof TabItem>;
@@ -216,6 +261,7 @@ export class KinexWindowManager {
           return host ? this.persisted.zoomByHost[host] : undefined;
         },
         onNavigationFinished: (tabId, url, title) => {
+          this.needsReloadByTabId.delete(tabId);
           if (!url.startsWith('kinex://reader')) {
             this.readerDocsByTabId.delete(tabId);
           }
@@ -282,6 +328,7 @@ export class KinexWindowManager {
       {
         getRendererUrl: (view) => this.getRendererUrl(view),
         onWebContentsCreated: (wc) => this.attachKeyboard(wc),
+        onApplyShieldsCosmetics: (wc, url) => this.shieldsCosmetics.applyForWebContents(wc, url),
         getSearchEngine: () => this.persisted.searchEngine,
         getRegularSessionForActiveSpace: () => this.getSessionForSpace(this.persisted.activeSpaceId),
         onPromoteUrl: (url, _title) => {
@@ -566,7 +613,16 @@ export class KinexWindowManager {
       reducedEffects: this.speedLimited || this.thermalLimited,
       overlay: this.overlay,
       downloads: this.downloadManager.getDownloads(),
-      blockedRequestsCount: this.blockedRequestsCount,
+      blockedRequestsCount: this.shieldsCoordinator.getTotalBlockedCount(),
+      shieldsRuntime: {
+        updatingLists: this.updatingShieldsLists,
+        needsReloadByTabId: Object.fromEntries(Array.from(this.needsReloadByTabId).map((id) => [id, true])),
+        tabStats: this.shieldsCoordinator.getTabStatsMap(),
+        totalRuleCount: this.shieldsEngine.getTotalRuleCount(),
+        engineReady: this.shieldsEngine.isReady(),
+        engineError: this.shieldsEngine.getError(),
+        pickerActiveTabId: this.pickerActiveTabId,
+      },
       zapperActiveTabId: this.tabManager.getZapperActiveTabId(),
       toastMessage: this.toastMessage,
       isDefaultBrowser: this.cachedIsDefaultBrowser,
@@ -1213,6 +1269,8 @@ export class KinexWindowManager {
         const result = closeOrResetTab(this.persisted, intent.tabId);
         this.persisted = result.next;
         if (result.destroyedTabId) {
+          this.needsReloadByTabId.delete(result.destroyedTabId);
+          this.shieldsCoordinator.clearTabStats(result.destroyedTabId);
           this.readerDocsByTabId.delete(result.destroyedTabId);
           this.findQueryByTabId.delete(result.destroyedTabId);
           this.tabManager.destroyTabView(result.destroyedTabId);
@@ -1232,6 +1290,8 @@ export class KinexWindowManager {
         const res = closeOtherTabsForSpace(this.persisted, intent.tabId);
         this.persisted = res.next;
         for (const id of res.destroyedTabIds) {
+          this.needsReloadByTabId.delete(id);
+          this.shieldsCoordinator.clearTabStats(id);
           this.readerDocsByTabId.delete(id);
           this.findQueryByTabId.delete(id);
           this.tabManager.destroyTabView(id);
@@ -1248,6 +1308,8 @@ export class KinexWindowManager {
         const res = closeTabsToRightForSpace(this.persisted, intent.tabId);
         this.persisted = res.next;
         for (const id of res.destroyedTabIds) {
+          this.needsReloadByTabId.delete(id);
+          this.shieldsCoordinator.clearTabStats(id);
           this.readerDocsByTabId.delete(id);
           this.findQueryByTabId.delete(id);
           this.tabManager.destroyTabView(id);
@@ -1713,8 +1775,173 @@ export class KinexWindowManager {
       }
 
       case 'toggle-adblock': {
-        this.persisted = { ...this.persisted, adBlockEnabled: !this.persisted.adBlockEnabled };
-        this.persistAndBroadcast();
+        const current = this.persisted.shields;
+        const nextMode = current.globalMode === 'disabled' ? current.lastActiveMode || 'standard' : 'disabled';
+        this.applyShieldsUpdate({
+          ...current,
+          globalMode: nextMode,
+          ...(nextMode !== 'disabled' ? { lastActiveMode: nextMode } : {}),
+        });
+        return;
+      }
+
+      case 'set-shields-global-mode': {
+        const current = this.persisted.shields;
+        this.applyShieldsUpdate({
+          ...current,
+          globalMode: intent.mode,
+          ...(intent.mode !== 'disabled' ? { lastActiveMode: intent.mode } : {}),
+        });
+        return;
+      }
+
+      case 'set-shields-site-mode': {
+        const current = this.persisted.shields;
+        const key = normalizeShieldsSiteKey(intent.domain);
+        if (!key) return;
+        const nextOverrides = { ...current.siteOverrides };
+        if (intent.mode === 'inherit') {
+          delete nextOverrides[key];
+        } else {
+          nextOverrides[key] = intent.mode;
+        }
+        this.applyShieldsUpdate({ ...current, siteOverrides: nextOverrides }, key);
+        return;
+      }
+
+      case 'set-shields-strip-params': {
+        const current = this.persisted.shields;
+        this.applyShieldsUpdate({ ...current, stripTrackingParams: intent.enabled });
+        return;
+      }
+
+      case 'set-shields-cosmetic-enabled': {
+        const current = this.persisted.shields;
+        this.applyShieldsUpdate({ ...current, cosmeticFilteringEnabled: intent.enabled });
+        return;
+      }
+
+      case 'toggle-filter-list': {
+        const current = this.persisted.shields;
+        const nextLists = current.filterLists.map((l) =>
+          l.id === intent.listId ? { ...l, enabled: intent.enabled } : l
+        );
+        this.applyShieldsUpdate({ ...current, filterLists: nextLists });
+        return;
+      }
+
+      case 'update-filter-lists': {
+        if (this.updatingShieldsLists) return;
+        this.updatingShieldsLists = true;
+        this.broadcastState();
+        try {
+          const { lists, updatedCount } = await this.shieldsEngine.updateAllEnabledLists();
+          if (this.disposed) return;
+          this.persisted = {
+            ...this.persisted,
+            shields: {
+              ...this.persisted.shields,
+              filterLists: lists,
+              lastGlobalUpdateAt: Date.now(),
+            },
+          };
+          this.applyCosmeticsToVisibleTabs();
+          this.persistAndBroadcast();
+          this.showToast(`Updated ${updatedCount} filter list${updatedCount === 1 ? '' : 's'}`);
+        } finally {
+          this.updatingShieldsLists = false;
+          if (!this.disposed) this.broadcastState();
+        }
+        return;
+      }
+
+      case 'restore-default-filter-lists': {
+        const defaults = this.shieldsEngine.restoreDefaultLists();
+        this.applyShieldsUpdate({ ...this.persisted.shields, filterLists: defaults });
+        this.showToast('Restored default Shields filter lists');
+        return;
+      }
+
+      case 'add-shields-cosmetic-rule': {
+        const key = normalizeShieldsSiteKey(intent.domain);
+        const sel = intent.selector.trim();
+        if (!key || !sel) return;
+        const current = this.persisted.shields;
+        const existing = current.customCosmeticRules[key] ?? [];
+        if (existing.includes(sel)) return;
+        this.applyShieldsUpdate(
+          {
+            ...current,
+            customCosmeticRules: {
+              ...current.customCosmeticRules,
+              [key]: [...existing, sel],
+            },
+          },
+          key
+        );
+        return;
+      }
+
+      case 'remove-shields-cosmetic-rule': {
+        const key = normalizeShieldsSiteKey(intent.domain);
+        const sel = intent.selector.trim();
+        if (!key || !sel) return;
+        const current = this.persisted.shields;
+        const remaining = (current.customCosmeticRules[key] ?? []).filter((s) => s !== sel);
+        const nextMap = { ...current.customCosmeticRules };
+        if (remaining.length > 0) nextMap[key] = remaining;
+        else delete nextMap[key];
+        this.applyShieldsUpdate(
+          {
+            ...current,
+            customCosmeticRules: nextMap,
+          },
+          key
+        );
+        return;
+      }
+
+      case 'start-element-picker': {
+        const focused = getFocusedTab(this.persisted);
+        const view = focused ? this.tabManager.getView(focused.id) : undefined;
+        if (!focused || !view || view.webContents.isDestroyed()) return;
+        this.overlay = { mode: 'none' };
+        this.pickerActiveTabId = focused.id;
+        this.layoutViews();
+        this.broadcastState();
+        this.focusActiveTabView();
+        const selector = await runShieldsElementPicker(view.webContents);
+        this.pickerActiveTabId = null;
+        if (selector && !this.disposed) {
+          const domainKey = normalizeShieldsSiteKey(focused.url) || '*';
+          const current = this.persisted.shields;
+          const existing = current.customCosmeticRules[domainKey] ?? [];
+          if (!existing.includes(selector)) {
+            this.applyShieldsUpdate(
+              {
+                ...current,
+                customCosmeticRules: {
+                  ...current.customCosmeticRules,
+                  [domainKey]: [...existing, selector],
+                },
+              },
+              domainKey
+            );
+          }
+          this.showToast(`Shields hid ${selector}`);
+        } else if (!this.disposed) {
+          this.broadcastState();
+        }
+        return;
+      }
+
+      case 'stop-element-picker': {
+        if (this.pickerActiveTabId) {
+          const view = this.tabManager.getView(this.pickerActiveTabId);
+          stopShieldsElementPicker(view?.webContents);
+          this.pickerActiveTabId = null;
+          this.broadcastState();
+        }
         return;
       }
 
@@ -2011,6 +2238,56 @@ export class KinexWindowManager {
         return;
       }
     }
+  }
+
+  private applyCosmeticsToVisibleTabs(): void {
+    const activeIds = getActiveSplit(this.persisted).tabIds;
+    for (const tabId of activeIds) {
+      const view = this.tabManager.getView(tabId);
+      const tab = this.persisted.tabs.find((t) => t.id === tabId);
+      if (view && !view.webContents.isDestroyed()) {
+        void this.shieldsCosmetics.applyForWebContents(view.webContents, tab?.url);
+      }
+    }
+  }
+
+  private applyShieldsUpdate(
+    nextShields: PersistedKinexData['shields'],
+    affectedDomainKey?: string
+  ): void {
+    const prevModeByTab = new Map<string, string>();
+    const activeIds = getActiveSplit(this.persisted).tabIds;
+    for (const id of activeIds) {
+      const t = this.persisted.tabs.find((tab) => tab.id === id);
+      if (t) {
+        prevModeByTab.set(id, this.shieldsEngine.resolveModeForPage(t.url).mode);
+      }
+    }
+
+    this.shieldsEngine.updateSettings(nextShields);
+    const updatedMeta = this.shieldsEngine.getSettings().filterLists;
+    const syncedShields = { ...nextShields, filterLists: updatedMeta };
+
+    this.persisted = {
+      ...this.persisted,
+      shields: syncedShields,
+      adBlockEnabled: syncedShields.globalMode !== 'disabled',
+    };
+
+    for (const id of activeIds) {
+      const t = this.persisted.tabs.find((tab) => tab.id === id);
+      if (!t || t.url.startsWith('kinex://') || t.url.startsWith('nook://')) continue;
+      const nextResolved = this.shieldsEngine.resolveModeForPage(t.url);
+      if (
+        prevModeByTab.get(id) !== nextResolved.mode ||
+        (affectedDomainKey && normalizeShieldsSiteKey(t.url) === affectedDomainKey && prevModeByTab.get(id) !== nextResolved.mode)
+      ) {
+        this.needsReloadByTabId.add(id);
+      }
+    }
+
+    this.applyCosmeticsToVisibleTabs();
+    this.persistAndBroadcast();
   }
 
   private buildNewTabContext(): NewTabRenderContext {
@@ -2343,6 +2620,7 @@ export class KinexWindowManager {
       case 'find-in-page': await overlay({ mode: 'find' }); return;
       case 'new-space': await overlay({ mode: 'space-editor' }); return;
       case 'rename-space': await overlay({ mode: 'space-editor', spaceId: state.activeSpaceId }); return;
+      case 'open-shields': await overlay({ mode: 'shields' }); return;
       case 'toggle-boosts': await overlay({ mode: 'boosts', domain: extractHostname(tab?.url ?? '') || '*' }); return;
     }
     await closeOverlay();
@@ -2364,6 +2642,7 @@ export class KinexWindowManager {
       case 'new-split': await this.handleIntent({ type: 'toggle-split' }); break;
       case 'next-pane': await this.handleIntent({ type: 'focus-pane', paneIndex: (split.focusedIndex + 1) % split.tabIds.length }); break;
       case 'toggle-adblock': await this.handleIntent({ type: 'toggle-adblock' }); break;
+      case 'activate-element-picker': await this.handleIntent({ type: 'start-element-picker' }); break;
       case 'copy-url': await this.handleIntent({ type: 'copy-current-url' }); break;
       case 'zoom-in': await this.handleIntent({ type: 'set-zoom', delta: 'in' }); break;
       case 'zoom-out': await this.handleIntent({ type: 'set-zoom', delta: 'out' }); break;
@@ -2441,6 +2720,9 @@ export class KinexWindowManager {
     this.tabManager.disposeAll();
     this.auxiliaryWindows.disposeAll();
     this.updater.dispose();
+    this.tabIdByWcId.clear();
+    this.needsReloadByTabId.clear();
+    this.pickerActiveTabId = null;
     this.findQueryByTabId.clear();
     this.readerDocsByTabId.clear();
     this.findStatus = null;

@@ -2,6 +2,14 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [Unreleased]
+### Added
+- **Kinex Shields Native Blocking Engine (`adblock-rs` + `tldts`)**: Replaced legacy 26-domain suffix filtering with a native Rust `adblock-rs` content-blocking subsystem (`MPL-2.0`) supporting EasyList/ABP filter syntax, resource-type matching, Public Suffix List first/third-party classification, vetted local scriptlets (`nobab`, `abort-on-property-read/write`, `set-constant`, `no-setTimeout/Interval-if`, `nowebrtc`, `no-fetch-if`), and redirect stubs (`noopjs`, `1x1.gif`, `2x2.png`).
+- **Offline Filter Lists & Safe HTTPS Updates**: Bundled 7 compressed upstream filter lists (`EasyList`, `EasyPrivacy`, `uBlock Origin Filters`, `uBlock Origin Privacy`, `uBlock Quick Fixes`, `Peter Lowe's`, `Fanboy Cookie`) in `resources/filters/` with HTTPS-only list refresh, 12 MB validation/null-byte/HTML rejection, atomic disk replacement, automatic rollback on bad fetches, and binary `.bin` cache serialization (`3.88 ms` warm deserialization).
+- **Per-Tab Network Coordinator & Cosmetic Filtering**: Single unified `webRequest.onBeforeRequest` coordinator across regular, Space profile, isolated Private Window (with redacted `[Private request blocked]` stats), and Little Kinex sessions; isolated-world (`99`) cosmetic CSS + procedural filtering (`:has`, `:has-text`, `:upward`) with serialized key cleanup so site toggles apply immediately without page reload.
+- **Kinex Shields Panel & Settings (`⌘⇧K`)**: Added toolbar Shields toggle + per-tab blocked badge, detailed per-tab request inspector, reload banner, `Standard` / `Aggressive` / `Disabled` precedence (`exact host > registrable eTLD+1 domain > global`), hover/keyboard **Element Picker**, and `Settings -> Shields & Filters` list/rule management.
+- **Benchmarks & Shields Test Suite**: Added [SHIELDS_BENCHMARKS.md](SHIELDS_BENCHMARKS.md), `npm run test:shields`, `tests/perf/run-shields-benchmark.mjs`, and `tests/perf/run-shields-compatibility.mjs`.
+
 ## [7.0.1] - 2026-11-16
 ### Fixed
 - **Edge-to-Edge HTML5 Video Fullscreen**: Entering HTML5 element fullscreen (e.g., YouTube player fullscreen) now hides the Sidebar, top insets, and sibling Split View panes in the main window (as well as the header bar in Private Windows and Little Kinex) so fullscreen content fills the entire `{ x: 0, y: 0, width, height }` viewport and cleanly restores inset bounds on exit, tab switch, or Space change.

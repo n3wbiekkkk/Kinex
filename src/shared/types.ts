@@ -24,9 +24,68 @@ export type SettingsSection =
   | 'general'
   | 'spaces'
   | 'privacy'
+  | 'shields'
   | 'shortcuts'
   | 'import'
   | 'updates';
+
+export type ShieldsMode = 'standard' | 'aggressive' | 'disabled';
+
+export type ShieldsBlockedCategory = 'ad' | 'tracker' | 'other';
+
+export type ShieldsFilterCategory = 'ads' | 'privacy' | 'annoyances' | 'fixes';
+
+export interface ShieldsFilterListMeta {
+  id: string;
+  name: string;
+  description: string;
+  sourceUrl: string;
+  bundledFile: string;
+  license: string;
+  category: ShieldsFilterCategory;
+  tier: 'standard' | 'aggressive';
+  enabled: boolean;
+  ruleCount: number;
+  lastUpdatedAt?: number;
+  lastError?: string;
+}
+
+export interface ShieldsBlockedSample {
+  id: string;
+  host: string;
+  resourceType: string;
+  category: ShieldsBlockedCategory;
+  listName: string;
+}
+
+export interface TabShieldsStats {
+  total: number;
+  ads: number;
+  trackers: number;
+  other: number;
+  recentBlocked: ShieldsBlockedSample[];
+}
+
+export interface PersistedShieldsSettings {
+  globalMode: ShieldsMode;
+  lastActiveMode: 'standard' | 'aggressive';
+  stripTrackingParams: boolean;
+  cosmeticFilteringEnabled: boolean;
+  siteOverrides: Record<string, ShieldsMode>;
+  filterLists: ShieldsFilterListMeta[];
+  customCosmeticRules: Record<string, string[]>;
+  lastGlobalUpdateAt?: number;
+}
+
+export interface ShieldsRuntimeSnapshot {
+  updatingLists: boolean;
+  needsReloadByTabId: Record<string, boolean>;
+  tabStats: Record<string, TabShieldsStats>;
+  totalRuleCount: number;
+  engineReady: boolean;
+  engineError?: string;
+  pickerActiveTabId: string | null;
+}
 
 export interface SpaceTheme {
   id: string;
@@ -201,6 +260,7 @@ export type OverlayState =
   | { mode: 'downloads' }
   | { mode: 'find' }
   | { mode: 'settings'; section?: SettingsSection }
+  | { mode: 'shields' }
   | { mode: 'site-info' };
 
 export interface PersistedKinexData {
@@ -219,6 +279,7 @@ export interface PersistedKinexData {
   sidebarOpen: boolean;
   sidebarWidth: number;
   adBlockEnabled: boolean;
+  shields: PersistedShieldsSettings;
   httpsOnly: boolean;
   cleanCopyUrl: boolean;
   sitePermissions: SitePermissionDecision[];
@@ -235,6 +296,7 @@ export interface KinexStateSnapshot extends PersistedKinexData {
   overlay: OverlayState;
   downloads: DownloadItem[];
   blockedRequestsCount: number;
+  shieldsRuntime: ShieldsRuntimeSnapshot;
   zapperActiveTabId: string | null;
   toastMessage: string | null;
   isDefaultBrowser: boolean;
@@ -343,6 +405,17 @@ export type KinexIntent =
   | { type: 'start-zapper' }
   | { type: 'stop-zapper' }
   | { type: 'toggle-adblock' }
+  | { type: 'set-shields-global-mode'; mode: ShieldsMode }
+  | { type: 'set-shields-site-mode'; domain: string; mode: ShieldsMode | 'inherit' }
+  | { type: 'set-shields-strip-params'; enabled: boolean }
+  | { type: 'set-shields-cosmetic-enabled'; enabled: boolean }
+  | { type: 'toggle-filter-list'; listId: string; enabled: boolean }
+  | { type: 'update-filter-lists' }
+  | { type: 'restore-default-filter-lists' }
+  | { type: 'add-shields-cosmetic-rule'; domain: string; selector: string }
+  | { type: 'remove-shields-cosmetic-rule'; domain: string; selector: string }
+  | { type: 'start-element-picker' }
+  | { type: 'stop-element-picker' }
   | { type: 'copy-current-url'; tabId?: string }
   | { type: 'open-devtools' }
   | { type: 'print-page' }

@@ -7,6 +7,7 @@ import type {
   MemorySaverTimeout,
   OverlayState,
   SearchEngineId,
+  ShieldsMode,
   SpaceTheme,
   TabLocation,
 } from '../shared/types';
@@ -22,6 +23,7 @@ const SEARCH_ENGINES = new Set<SearchEngineId>(['google', 'duckduckgo', 'bing', 
 const NEW_TAB_PRESETS = new Set(['minimal', 'focus', 'personal']);
 const NEW_TAB_BACKGROUNDS = new Set(['clean', 'mist', 'dusk', 'sage']);
 const MEMORY_SAVER_TIMEOUTS = new Set<MemorySaverTimeout>(['disabled', '5m', '15m', '30m', '60m']);
+const SHIELDS_MODES = new Set<ShieldsMode>(['standard', 'aggressive', 'disabled']);
 const CLEAR_SCOPES = new Set(['history', 'cookies', 'cache', 'archived']);
 const IMPORT_SOURCES = new Set(['arc', 'chrome', 'file']);
 const LITTLE_ACTIONS = new Set<LittleKinexAction>([
@@ -127,6 +129,7 @@ function isOverlayState(value: unknown): value is OverlayState {
     case 'history':
     case 'downloads':
     case 'find':
+    case 'shields':
     case 'site-info':
       return true;
     case 'command-bar':
@@ -141,7 +144,7 @@ function isOverlayState(value: unknown): value is OverlayState {
     case 'settings':
       return (
         value.section === undefined ||
-        ['general', 'spaces', 'privacy', 'shortcuts', 'import', 'updates'].includes(String(value.section))
+        ['general', 'spaces', 'privacy', 'shields', 'shortcuts', 'import', 'updates'].includes(String(value.section))
       );
     default:
       return false;
@@ -488,6 +491,10 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
     case 'start-zapper':
     case 'stop-zapper':
     case 'toggle-adblock':
+    case 'update-filter-lists':
+    case 'restore-default-filter-lists':
+    case 'start-element-picker':
+    case 'stop-element-picker':
     case 'open-devtools':
     case 'print-page':
     case 'stop-find-in-page':
@@ -496,6 +503,55 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
     case 'download-update':
     case 'install-update':
       return { ok: true, value: { type: raw.type } };
+
+    case 'set-shields-global-mode':
+      return typeof raw.mode === 'string' && SHIELDS_MODES.has(raw.mode as ShieldsMode)
+        ? { ok: true, value: { type: 'set-shields-global-mode', mode: raw.mode as ShieldsMode } }
+        : { ok: false, error: 'Invalid Shields global mode' };
+
+    case 'set-shields-site-mode':
+      return isNonEmptyString(raw.domain, 255) &&
+        typeof raw.mode === 'string' &&
+        (raw.mode === 'inherit' || SHIELDS_MODES.has(raw.mode as ShieldsMode))
+        ? {
+            ok: true,
+            value: {
+              type: 'set-shields-site-mode',
+              domain: raw.domain.trim().toLowerCase(),
+              mode: raw.mode as ShieldsMode | 'inherit',
+            },
+          }
+        : { ok: false, error: 'Invalid Shields per-site override' };
+
+    case 'set-shields-strip-params':
+      return typeof raw.enabled === 'boolean'
+        ? { ok: true, value: { type: 'set-shields-strip-params', enabled: raw.enabled } }
+        : { ok: false, error: 'Invalid stripTrackingParams flag' };
+
+    case 'set-shields-cosmetic-enabled':
+      return typeof raw.enabled === 'boolean'
+        ? { ok: true, value: { type: 'set-shields-cosmetic-enabled', enabled: raw.enabled } }
+        : { ok: false, error: 'Invalid cosmeticFilteringEnabled flag' };
+
+    case 'toggle-filter-list':
+      return isNonEmptyString(raw.listId, 128) && typeof raw.enabled === 'boolean'
+        ? { ok: true, value: { type: 'toggle-filter-list', listId: raw.listId, enabled: raw.enabled } }
+        : { ok: false, error: 'Invalid filter list toggle payload' };
+
+    case 'add-shields-cosmetic-rule':
+    case 'remove-shields-cosmetic-rule':
+      return isNonEmptyString(raw.domain, 255) &&
+        isNonEmptyString(raw.selector, 512) &&
+        !/[{}\n\r;]/.test(raw.selector)
+        ? {
+            ok: true,
+            value: {
+              type: raw.type,
+              domain: raw.domain.trim().toLowerCase(),
+              selector: raw.selector.trim(),
+            },
+          }
+        : { ok: false, error: 'Invalid cosmetic rule domain or selector' };
 
     case 'open-incognito':
       if (!isOptionalString(raw.url, MAX_URL_LEN)) {

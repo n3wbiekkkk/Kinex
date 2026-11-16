@@ -4,7 +4,10 @@ import type {
   CommandBarResult,
   PersistedKinexData,
   PersistedNookData,
+  PersistedShieldsSettings,
   SearchEngineId,
+  ShieldsFilterListMeta,
+  ShieldsMode,
   Space,
   SpaceTheme,
   SplitLayout,
@@ -21,6 +24,159 @@ export const SEARCH_ENGINES: Record<SearchEngineId, { name: string; template: st
 };
 
 export const DEFAULT_UPDATE_FEED_URL = 'https://github.com/n3wbiekkkk/Kinex/releases/latest/download';
+
+export function createDefaultShieldsFilterLists(): ShieldsFilterListMeta[] {
+  return [
+    {
+      id: 'easylist',
+      name: 'EasyList',
+      description: 'Primary international advertisement blocking rules & element hiding',
+      sourceUrl: 'https://easylist.to/easylist/easylist.txt',
+      bundledFile: 'easylist.txt.gz',
+      license: 'GPL-3.0+ / CC BY-SA 3.0+',
+      category: 'ads',
+      tier: 'standard',
+      enabled: true,
+      ruleCount: 0,
+    },
+    {
+      id: 'easyprivacy',
+      name: 'EasyPrivacy',
+      description: 'Blocks third-party analytics, beacons, and cross-site trackers',
+      sourceUrl: 'https://easylist.to/easylist/easyprivacy.txt',
+      bundledFile: 'easyprivacy.txt.gz',
+      license: 'GPL-3.0+ / CC BY-SA 3.0+',
+      category: 'privacy',
+      tier: 'standard',
+      enabled: true,
+      ruleCount: 0,
+    },
+    {
+      id: 'ublock-filters',
+      name: 'uBlock Origin Filters',
+      description: 'Maintained anti-ad, scriptlet, and redirect compatibility rules',
+      sourceUrl: 'https://ublockorigin.github.io/uAssets/filters/filters.txt',
+      bundledFile: 'ublock-filters.txt.gz',
+      license: 'GPL-3.0',
+      category: 'ads',
+      tier: 'standard',
+      enabled: true,
+      ruleCount: 0,
+    },
+    {
+      id: 'ublock-privacy',
+      name: 'uBlock Origin Privacy',
+      description: 'Additional tracker & query parameter removal protections',
+      sourceUrl: 'https://ublockorigin.github.io/uAssets/filters/privacy.txt',
+      bundledFile: 'ublock-privacy.txt.gz',
+      license: 'GPL-3.0',
+      category: 'privacy',
+      tier: 'standard',
+      enabled: true,
+      ruleCount: 0,
+    },
+    {
+      id: 'ublock-quickfixes',
+      name: 'uBlock Quick Fixes',
+      description: 'Rapid site-compatibility fixes for media & web apps',
+      sourceUrl: 'https://ublockorigin.github.io/uAssets/filters/quick-fixes.txt',
+      bundledFile: 'ublock-quickfixes.txt.gz',
+      license: 'GPL-3.0',
+      category: 'fixes',
+      tier: 'standard',
+      enabled: true,
+      ruleCount: 0,
+    },
+    {
+      id: 'peter-lowe',
+      name: "Peter Lowe's Ad & Tracking Servers",
+      description: 'Curated host list of known ad and telemetry servers',
+      sourceUrl: 'https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext',
+      bundledFile: 'peterlowe.txt.gz',
+      license: 'Permissive attribution',
+      category: 'ads',
+      tier: 'standard',
+      enabled: true,
+      ruleCount: 0,
+    },
+    {
+      id: 'fanboy-cookies',
+      name: 'Fanboy Cookie & Annoyance Notices',
+      description: 'Blocks cookie consent overlays & aggressive promotional banners (Aggressive tier)',
+      sourceUrl: 'https://secure.fanboy.co.nz/fanboy-cookiemonster.txt',
+      bundledFile: 'fanboy-cookies.txt.gz',
+      license: 'GPL-3.0+ / CC BY-SA 3.0+',
+      category: 'annoyances',
+      tier: 'aggressive',
+      enabled: true,
+      ruleCount: 0,
+    },
+  ];
+}
+
+export function createDefaultShieldsSettings(): PersistedShieldsSettings {
+  return {
+    globalMode: 'standard',
+    lastActiveMode: 'standard',
+    stripTrackingParams: true,
+    cosmeticFilteringEnabled: true,
+    siteOverrides: {},
+    filterLists: createDefaultShieldsFilterLists(),
+    customCosmeticRules: {},
+  };
+}
+
+export function normalizeShieldsSiteKey(rawUrlOrHost: string): string {
+  const trimmed = rawUrlOrHost.trim().toLowerCase();
+  if (!trimmed) return '';
+  try {
+    const parsed = trimmed.includes('://') ? new URL(trimmed) : new URL(`https://${trimmed}`);
+    return parsed.hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return trimmed.replace(/^www\./, '').replace(/[^a-z0-9.-]/g, '');
+  }
+}
+
+export function resolveEffectiveShieldsMode(
+  shields: Pick<PersistedShieldsSettings, 'globalMode' | 'siteOverrides'>,
+  rawUrl: string,
+  registrableDomain?: string | null
+): { mode: ShieldsMode; source: 'internal' | 'site' | 'domain' | 'global'; domainKey: string } {
+  const lower = rawUrl.trim().toLowerCase();
+  if (
+    !lower ||
+    lower.startsWith('kinex://') ||
+    lower.startsWith('nook://') ||
+    lower.startsWith('about:') ||
+    lower.startsWith('devtools:') ||
+    lower.startsWith('file:')
+  ) {
+    return { mode: 'disabled', source: 'internal', domainKey: '' };
+  }
+
+  let exactHost = '';
+  try {
+    exactHost = new URL(rawUrl).hostname.toLowerCase();
+  } catch {
+    exactHost = '';
+  }
+  const normalizedHost = exactHost.replace(/^www\./, '');
+  if (normalizedHost && normalizedHost in shields.siteOverrides) {
+    return { mode: shields.siteOverrides[normalizedHost], source: 'site', domainKey: normalizedHost };
+  }
+  if (exactHost && exactHost in shields.siteOverrides) {
+    return { mode: shields.siteOverrides[exactHost], source: 'site', domainKey: exactHost };
+  }
+  const reg = registrableDomain?.trim().toLowerCase();
+  if (reg && reg in shields.siteOverrides) {
+    return { mode: shields.siteOverrides[reg], source: 'domain', domainKey: reg };
+  }
+  return {
+    mode: shields.globalMode,
+    source: 'global',
+    domainKey: reg || normalizedHost,
+  };
+}
 
 export const SPACE_THEME_PRESETS: SpaceTheme[] = [
   {
@@ -262,6 +418,7 @@ export function createDefaultPersistedData(): PersistedNookData {
     sidebarOpen: true,
     sidebarWidth: 256,
     adBlockEnabled: true,
+    shields: createDefaultShieldsSettings(),
     httpsOnly: true,
     cleanCopyUrl: true,
     sitePermissions: [],
@@ -731,8 +888,15 @@ const SETTINGS_RESULTS: CommandBarResult[] = [
     id: 'set:privacy',
     kind: 'settings',
     title: 'Settings: Privacy & Security',
-    subtitle: 'Ad & Tracker Shields, HTTPS-Only, Permissions & Clear Data',
+    subtitle: 'HTTPS-Only, Permissions & Clear Data',
     settingsSection: 'privacy',
+  },
+  {
+    id: 'set:shields',
+    kind: 'settings',
+    title: 'Settings: Shields & Filter Lists',
+    subtitle: 'Protection modes, EasyList/EasyPrivacy, per-site rules & custom selectors',
+    settingsSection: 'shields',
   },
   {
     id: 'set:shortcuts',
