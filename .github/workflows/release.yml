@@ -1,0 +1,45 @@
+name: Release Kinex macOS
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-mac:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Verification Suite
+        run: npm run typecheck && npm test && npm run build
+
+      - name: Package macOS Release Assets
+        run: npx electron-builder --mac --publish never
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/latest-mac.yml release/Kinex-*-mac.zip release/Kinex-*-mac.zip.blockmap --clobber
+          else
+            gh release create "$TAG" release/latest-mac.yml release/Kinex-*-mac.zip release/Kinex-*-mac.zip.blockmap \
+              --title "Kinex Browser $TAG" \
+              --generate-notes
+          fi

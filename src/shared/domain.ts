@@ -20,6 +20,8 @@ export const SEARCH_ENGINES: Record<SearchEngineId, { name: string; template: st
   kagi: { name: 'Kagi', template: 'https://kagi.com/search?q=%s' },
 };
 
+export const DEFAULT_UPDATE_FEED_URL = 'https://github.com/n3wbiekkkk/Kinex/releases/latest/download';
+
 export const SPACE_THEME_PRESETS: SpaceTheme[] = [
   {
     id: 'graphite-glass',
@@ -265,7 +267,7 @@ export function createDefaultPersistedData(): PersistedNookData {
     sitePermissions: [],
     airTrafficRules: [],
     searchEngine: 'google',
-    updateFeedUrl: 'https://github.com/n3wbiekkkk/Kinex/releases/latest/download',
+    updateFeedUrl: DEFAULT_UPDATE_FEED_URL,
     memorySaverTimeout: '30m',
     memorySaverExemptPinned: true,
     newTabConfig: {

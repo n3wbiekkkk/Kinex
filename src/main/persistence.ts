@@ -1,12 +1,28 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createDefaultPersistedData, SEARCH_ENGINES, SPACE_THEME_PRESETS } from '../shared/domain';
+import { createDefaultPersistedData, DEFAULT_UPDATE_FEED_URL, SEARCH_ENGINES, SPACE_THEME_PRESETS } from '../shared/domain';
 import type { MemorySaverTimeout, NewTabConfig, PersistedKinexData, SearchEngineId } from '../shared/types';
 import { isSafeNavigationUrl, isSafeUpdateFeedUrl } from './security';
 
 const VALID_MEMORY_SAVER = new Set<MemorySaverTimeout>(['disabled', '5m', '15m', '30m', '60m']);
 const VALID_NEW_TAB_PRESETS = new Set(['minimal', 'focus', 'personal']);
 const VALID_NEW_TAB_BGS = new Set(['clean', 'mist', 'dusk', 'sage']);
+
+function resolvePersistedUpdateFeedUrl(rawFeed: unknown, fallback: string): string {
+  if (typeof rawFeed !== 'string') return fallback;
+  const trimmed = rawFeed.trim();
+  if (!trimmed || !isSafeUpdateFeedUrl(trimmed)) return fallback;
+  if (/releases\.nook\.dev/i.test(trimmed)) return fallback;
+  if (!/^https?:\/\//i.test(trimmed)) {
+    const resolved = path.resolve(trimmed);
+    // Migrate stale legacy NOOK local release paths or missing local folders back to GitHub Releases
+    if (/(?:^|[\\/])nook(?:[\\/]|$)/i.test(resolved) || !fs.existsSync(resolved)) {
+      return DEFAULT_UPDATE_FEED_URL;
+    }
+    return trimmed;
+  }
+  return trimmed;
+}
 
 function sanitizePersistedUrl(rawUrl: unknown, fallback = 'kinex://welcome'): string {
   if (typeof rawUrl !== 'string') return fallback;
@@ -86,7 +102,7 @@ export class KinexPersistence {
         ? parsed.sidebarWidth
         : defaults.sidebarWidth;
 
-      const feedCandidate = typeof parsed.updateFeedUrl === 'string' ? parsed.updateFeedUrl : defaults.updateFeedUrl;
+      const resolvedFeedUrl = resolvePersistedUpdateFeedUrl(parsed.updateFeedUrl, defaults.updateFeedUrl);
 
       return {
         ...defaults,
@@ -152,7 +168,7 @@ export class KinexPersistence {
           typeof parsed.searchEngine === 'string' && parsed.searchEngine in SEARCH_ENGINES
             ? (parsed.searchEngine as SearchEngineId)
             : defaults.searchEngine,
-        updateFeedUrl: isSafeUpdateFeedUrl(feedCandidate) ? feedCandidate : defaults.updateFeedUrl,
+        updateFeedUrl: resolvedFeedUrl,
         memorySaverTimeout:
           typeof parsed.memorySaverTimeout === 'string' &&
           VALID_MEMORY_SAVER.has(parsed.memorySaverTimeout as MemorySaverTimeout)

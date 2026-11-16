@@ -1,5 +1,5 @@
 import { BROWSER_COMMANDS, formatShortcut } from '../../shared/commands';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowUpCircle,
   Download,
@@ -11,7 +11,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { SEARCH_ENGINES } from '../../shared/domain';
+import { DEFAULT_UPDATE_FEED_URL, SEARCH_ENGINES } from '../../shared/domain';
 import kinexLogo from '../assets/kinex-logo.png';
 import type {
   KinexIntent,
@@ -36,6 +36,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [feedUrl, setFeedUrl] = useState(state.updateFeedUrl);
+  useEffect(() => {
+    setFeedUrl(state.updateFeedUrl);
+  }, [state.updateFeedUrl]);
   const [newProfileName, setNewProfileName] = useState('');
   const [rulePattern, setRulePattern] = useState('');
   const [ruleSpaceId, setRuleSpaceId] = useState(state.spaces[0]?.id ?? '');
@@ -583,6 +586,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   >
                     Save Feed
                   </button>
+                  {feedUrl !== DEFAULT_UPDATE_FEED_URL && (
+                    <button
+                      className="btn-secondary"
+                      onClick={() => {
+                        setFeedUrl(DEFAULT_UPDATE_FEED_URL);
+                        dispatch({ type: 'set-update-feed-url', url: DEFAULT_UPDATE_FEED_URL });
+                      }}
+                    >
+                      Use GitHub Releases
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

@@ -7,6 +7,7 @@ All notable releases of **Kinex Browser** follow a traditional, lightweight, pri
 - **Edge-to-Edge HTML5 Video Fullscreen**: Entering HTML5 element fullscreen (e.g., YouTube player fullscreen) now hides the Sidebar, top insets, and sibling Split View panes in the main window (as well as the header bar in Private Windows and Little Kinex) so fullscreen content fills the entire `{ x: 0, y: 0, width, height }` viewport and cleanly restores inset bounds on exit, tab switch, or Space change.
 - **Overlay Focus Guard During Navigation Swaps**: Prevented background or newly relocated `WebContentsView` navigation commits from stealing native focus while Command Bar, Settings, Find in Page, or other browser overlays are open.
 - **Window View Disposal Safety**: Detached `shellView` and `overlayView` from `mainWindow.contentView` prior to closing their `WebContents`, and dismissed native context menus cleanly on automated test exit.
+- **Auto-Updater Feed Migration & GitHub Release Publishing**: Automatically migrates stale legacy Nook update feed paths (`releases.nook.dev` or missing local `Nook/release` folders) to `https://github.com/n3wbiekkkk/Kinex/releases/latest/download`, adds a one-click **Use GitHub Releases** reset in Settings (`Updates & About`), formats HTTP 404/network updater errors clearly, and adds `.github/workflows/release.yml` for tag-triggered macOS release asset uploads.
 
 ## [0.7.0] - 2026-11-16
 ### Added

@@ -3,8 +3,20 @@ import http from 'node:http';
 import path from 'node:path';
 import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import { DEFAULT_UPDATE_FEED_URL } from '../shared/domain';
 import type { UpdateStatus } from '../shared/types';
 import { isSafeUpdateFeedUrl } from './security';
+
+function formatUpdaterError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err || 'Update check failed');
+  if (/404|Cannot find latest-mac\.yml|ERR_UPDATER_LATEST_VERSION_NOT_FOUND/i.test(raw)) {
+    return 'No release manifest (latest-mac.yml) published at this update feed yet';
+  }
+  if (/ENOTFOUND|ECONNREFUSED|ERR_NAME_NOT_RESOLVED|ETIMEDOUT/i.test(raw)) {
+    return 'Unable to reach update server — check your internet connection or feed URL';
+  }
+  return raw.split('\n')[0].slice(0, 140) || 'Update check failed';
+}
 
 export type FeedSource =
   | { kind: 'remote'; url: string }
@@ -77,7 +89,7 @@ export class KinexAutoUpdater {
     });
 
     autoUpdater.on('error', (err) => {
-      this.setStatus({ state: 'error', message: err?.message || 'Update check failed' });
+      this.setStatus({ state: 'error', message: formatUpdaterError(err) });
       this.stopLocalFeedServer();
     });
   }
@@ -163,7 +175,9 @@ export class KinexAutoUpdater {
     try {
       this.setStatus({ state: 'checking' });
       if (source.kind === 'local-dir') {
-        if (!fs.existsSync(path.join(source.dir, 'latest-mac.yml'))) {
+        if (!fs.existsSync(source.dir)) {
+          autoUpdater.setFeedURL({ provider: 'generic', url: DEFAULT_UPDATE_FEED_URL });
+        } else if (!fs.existsSync(path.join(source.dir, 'latest-mac.yml'))) {
           if (silentIfUnconfigured) {
             this.setStatus({ state: 'idle' });
             return;
@@ -173,9 +187,10 @@ export class KinexAutoUpdater {
             version: app.getVersion(),
           });
           return;
+        } else {
+          const localUrl = await this.startLocalFeedServer(source.dir);
+          autoUpdater.setFeedURL({ provider: 'generic', url: localUrl });
         }
-        const localUrl = await this.startLocalFeedServer(source.dir);
-        autoUpdater.setFeedURL({ provider: 'generic', url: localUrl });
       } else {
         autoUpdater.setFeedURL({ provider: 'generic', url: source.url });
       }
@@ -184,7 +199,7 @@ export class KinexAutoUpdater {
       this.stopLocalFeedServer();
       this.setStatus({
         state: 'error',
-        message: err instanceof Error ? err.message : 'Update check failed',
+        message: formatUpdaterError(err),
       });
     }
   }

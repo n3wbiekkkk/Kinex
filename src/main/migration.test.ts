@@ -101,6 +101,19 @@ describe('KinexPersistence legacy NOOK migration & state hardening', () => {
     expect(loaded.sidebarWidth).toBe(380);
     expect(loaded.updateFeedUrl.startsWith('https://')).toBe(true);
 
+    // Migrates stale legacy Nook local/remote update feeds back to default GitHub feed
+    fs.writeFileSync(
+      path.join(userDataDir, 'kinex-state.json'),
+      JSON.stringify({
+        spaces: [{ id: 'space-1', name: 'Personal', icon: '✦', profilePartition: 'persist:nook-default' }],
+        tabs: [],
+        updateFeedUrl: '/Users/dev/Developer/Nook/release',
+      }),
+      'utf8'
+    );
+    const migratedFeed = persistence.load();
+    expect(migratedFeed.updateFeedUrl).toBe('https://github.com/n3wbiekkkk/Kinex/releases/latest/download');
+
     // Save writes to kinex-state.json without clobbering legacy file
     persistence.save(loaded);
     expect(fs.existsSync(path.join(userDataDir, 'kinex-state.json'))).toBe(true);
