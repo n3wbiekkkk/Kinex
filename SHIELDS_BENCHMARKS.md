@@ -51,11 +51,11 @@ Measured in Electron (`ELECTRON_RUN_AS_NODE=1`) constructing `KinexShieldsEngine
 
 ---
 
-## 4. Browser Application Impact (`v0.7.0` Baseline vs `v7.0.1 + Kinex Shields`)
+## 4. Browser Application Impact (`v0.7.0` Baseline vs `v7.0.2 + Kinex Shields`)
 
 Measured with `npm run bench` (`tests/perf/run-benchmarks.mjs`, 5 cold launches + 5 warm launches + 1/5/10/25/50 local multi-origin tabs):
 
-| Benchmark Metric | `v0.7.0` (Pre-Shields) | `v7.0.1` + Kinex Shields | Notes |
+| Benchmark Metric | `v0.7.0` (Pre-Shields) | `v7.0.2` + Kinex Shields | Notes |
 | --- | --- | --- | --- |
 | Cold Shell Hydrated (mean / med / p95) | `278.7 / 282.5 / 283.6 ms` | `443.3 / 445.2 / 449.7 ms` | Deferred `setImmediate` first-ever compile of `145,405` rules |
 | Cold First Usable (mean / med / p95) | `280.1 / 284.0 / 284.8 ms` | `445.7 / 448.1 / 452.1 ms` | One-time per fresh profile before `.bin` cache exists |

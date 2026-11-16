@@ -2,7 +2,7 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
-## [Unreleased]
+## [7.0.2] - 2026-11-17
 ### Added
 - **Kinex Shields Native Blocking Engine (`adblock-rs` + `tldts`)**: Replaced legacy 26-domain suffix filtering with a native Rust `adblock-rs` content-blocking subsystem (`MPL-2.0`) supporting EasyList/ABP filter syntax, resource-type matching, Public Suffix List first/third-party classification, vetted local scriptlets (`nobab`, `abort-on-property-read/write`, `set-constant`, `no-setTimeout/Interval-if`, `nowebrtc`, `no-fetch-if`), and redirect stubs (`noopjs`, `1x1.gif`, `2x2.png`).
 - **Offline Filter Lists & Safe HTTPS Updates**: Bundled 7 compressed upstream filter lists (`EasyList`, `EasyPrivacy`, `uBlock Origin Filters`, `uBlock Origin Privacy`, `uBlock Quick Fixes`, `Peter Lowe's`, `Fanboy Cookie`) in `resources/filters/` with HTTPS-only list refresh, 12 MB validation/null-byte/HTML rejection, atomic disk replacement, automatic rollback on bad fetches, and binary `.bin` cache serialization (`3.88 ms` warm deserialization).

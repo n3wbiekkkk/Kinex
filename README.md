@@ -1,6 +1,6 @@
 <div align="center">
   <img src="build/icon.png" alt="Kinex Browser" width="112" height="112" />
-  <h1>Kinex Browser (v7.0.1)</h1>
+  <h1>Kinex Browser (v7.0.2)</h1>
   <p>A fast, memory-efficient, everyday privacy-focused macOS desktop browser built on Chromium and Electron — with zero AI bloat.</p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square" alt="License: GPL v3" /></a>

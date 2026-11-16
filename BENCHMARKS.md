@@ -152,11 +152,11 @@ Re-measured after all `v0.7.0` Tab Search, Recently Closed Groups, Duplicate Det
 
 ---
 
-## 8. `v7.0.1` + Kinex Shields Regression Check (Native `adblock-rs` Engine)
+## 8. `v7.0.2` + Kinex Shields Regression Check (Native `adblock-rs` Engine)
 
 Re-measured after integrating the native Rust **Kinex Shields** subsystem (`145,405` Standard-tier rules across 6 lists, `170,813` total across all 7 bundled lists including Aggressive tier). Full engine benchmarks and 8-site compatibility matrices are detailed in [SHIELDS_BENCHMARKS.md](SHIELDS_BENCHMARKS.md):
 
-| Benchmark Metric | `v0.7.0` Baseline | `v7.0.1` + Kinex Shields | Notes |
+| Benchmark Metric | `v0.7.0` Baseline | `v7.0.2` + Kinex Shields | Notes |
 | --- | --- | --- | --- |
 | Cold First Usable (mean / med / p95) | 280.1 / 284.0 / 284.8 ms | **445.7 / 448.1 / 452.1 ms** | First-launch gzip parse (`83.65 ms`) + `.bin` cache creation |
 | Warm First Usable (mean / med / p95) | 275.9 / 277.4 / 282.6 ms | **381.8 / 378.8 / 396.0 ms** | Binary `.bin` cache hit (`3.88 ms` deserialize) + `adblock-rs` N-API addon |
