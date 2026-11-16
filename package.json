@@ -1,0 +1,76 @@
+{
+  "name": "kinex-browser",
+  "version": "0.3.0",
+  "description": "Kinex Browser — a fast, private macOS Chromium workspace browser",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/n3wbiekkkk/Kinex.git"
+  },
+  "main": "dist-electron/main/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "vitest run",
+    "package:mac": "npm run build && electron-builder --mac",
+    "release:local": "node scripts/release-local.mjs"
+  },
+  "build": {
+    "appId": "com.kinex.browser",
+    "productName": "Kinex",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/n3wbiekkkk/Kinex/releases/latest/download"
+      }
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "target": [
+        "zip",
+        "dir"
+      ],
+      "extendInfo": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "Web URL",
+            "CFBundleURLSchemes": [
+              "http",
+              "https",
+              "kinex",
+              "nook"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "lucide-react": "^0.511.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "electron": "^36.2.0",
+    "electron-builder": "^26.0.12",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3"
+  }
+}
