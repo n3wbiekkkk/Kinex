@@ -1,132 +1,316 @@
+import { matchShortcut, type CommandId } from '../shared/commands';
 import fs from 'node:fs';
-import os from 'node:os';
+import { app, BrowserWindow, clipboard, dialog, Menu, type Session, type WebContents, webContents, systemPreferences, powerMonitor, WebContentsView } from 'electron';
 import path from 'node:path';
-import {
-  app,
-  BrowserWindow,
-  clipboard,
-  dialog,
-  Menu,
-  session,
-  shell,
-  WebContentsView,
-} from 'electron';
+import { pathToFileURL } from 'node:url';
 import {
   clearTodayTabsForSpace,
   closeOrResetTab,
+  closeOtherTabsForSpace,
+  closeTabsToRightForSpace,
   extractHostname,
+  findDuplicateOpenTab,
   getActiveSplit,
   getFocusedTab,
+  moveTabToSpace,
   normalizeNavigationInput,
+  reorderSpaces,
   reorderTabs,
+  restoreClosedTabs,
+  SEARCH_ENGINES,
   setTabLocation,
 } from '../shared/domain';
-import {
-  parseArcStorableSidebarJson,
-  parseChromeBookmarksJson,
-  parseHtmlBookmarks,
-} from '../shared/importer';
 import type {
-  BoostRule,
-  DownloadItem,
-  NookIntent,
-  NookStateSnapshot,
+  DuplicateTabPrompt,
+  FocusRegion,
+  FindInPageStatus,
+  KinexIntent,
+  KinexStateSnapshot,
+  LittleKinexAction,
+  LittleKinexInfo,
   OverlayState,
-  PersistedNookData,
-  Space,
+  PersistedKinexData,
   TabItem,
+  UpdateStatus,
 } from '../shared/types';
-import { attachAdBlocker } from './adblock';
-import { applyBoostsToWebContents, runElementZapper } from './boosts';
-import { NookPersistence } from './persistence';
+import { extractArticleFromWebContents, renderReaderHtml, type ReaderDocument } from './readerMode';
+import { buildAndInstallApplicationMenu } from './appMenu';
+import { AuxiliaryWindowManager } from './auxiliaryWindows';
+import { DownloadManager } from './downloadManager';
+import { runBrowserImport } from './importController';
+import { TrustedIpcRegistry } from './ipcValidation';
+import { evaluateDiscardEligibility, MEMORY_SAVER_TIMEOUT_MS } from './memorySaver';
+import { NavigationManager } from './navigationManager';
+import { PermissionManager } from './permissionManager';
+import type { NewTabRenderContext } from './internalPages';
+import { KinexPersistence } from './persistence';
 import {
   classifySecurityState,
-  isDangerousPermission,
-  isSafeNavigationUrl,
   matchAirTrafficSpace,
   stripTrackingParams,
-  upgradeUrlToHttpsIfNeeded,
 } from './security';
-import { NookAutoUpdater } from './updater';
+import {
+  registerDefaultAppProtocols,
+  registerKinexProtocolOnSession,
+  SessionManager,
+} from './sessionManager';
+import { TabManager } from './tabManager';
+import { KinexAutoUpdater } from './updater';
+import { ViewLayoutManager } from './viewLayoutManager';
 
-const FRAME_PAD = 8;
-const TOP_BAR_HEIGHT = 42;
-const SPLIT_GAP = 6;
-
-interface LittleNookWindowState {
-  win: BrowserWindow;
-  webView: WebContentsView;
-  url: string;
-  title: string;
-  isLoading: boolean;
-  canGoBack: boolean;
-  canGoForward: boolean;
+export function ensureAppName(): void {
+  if (app.getName() !== 'Kinex') {
+    app.setName('Kinex');
+  }
 }
 
-const registeredNookProtocolSessions = new WeakSet<Electron.Session>();
-const configuredPermissionSessions = new WeakSet<Electron.Session>();
-
-export function registerNookProtocolOnSession(sess: Electron.Session): void {
-  if (registeredNookProtocolSessions.has(sess)) return;
-  registeredNookProtocolSessions.add(sess);
-  const { renderNookInternalHtml } = require('./internalPages') as typeof import('./internalPages');
-  const handler = (request: { url: string }) => {
-    const html = renderNookInternalHtml(request.url);
-    return new Response(html, {
-      status: 200,
-      headers: { 'content-type': 'text/html; charset=utf-8' },
-    });
-  };
-  sess.protocol.handle('kinex', handler);
-  sess.protocol.handle('nook', handler);
-}
-
-export class NookWindowManager {
-  private readonly persistence: NookPersistence;
-  private data: PersistedNookData;
+export class KinexWindowManager {
+  private readonly persistence: KinexPersistence;
+  private persisted: PersistedKinexData;
   private overlay: OverlayState = { mode: 'none' };
-  private downloads: DownloadItem[] = [];
   private blockedRequestsCount = 0;
-  private zapperActiveTabId: string | null = null;
   private toastMessage: string | null = null;
-  private toastTimer: NodeJS.Timeout | null = null;
+  private updateStatus: UpdateStatus = { state: 'idle' };
+  private startupUrl: string | undefined;
+  private disposed = false;
+  private cachedIsDefaultBrowser = false;
+  private lastDefaultCheckAt = 0;
+  private isWindowOccluded = false;
+  private overlayNeedsCloseSync = false;
+  private findStatus: FindInPageStatus | null = null;
+  private duplicatePrompt: DuplicateTabPrompt | null = null;
+  private readonly findQueryByTabId = new Map<string, string>();
+  private readonly readerDocsByTabId = new Map<string, ReaderDocument>();
+
+  private speedLimited = false;
+  private thermalLimited = false;
+  private readonly onSpeedLimit = ({ limit }: { limit: number }) => {
+    this.speedLimited = limit < 100;
+    this.scheduleBroadcast();
+  };
+  private readonly onThermalState = ({ state }: { state: string }) => {
+    this.thermalLimited = state === 'serious' || state === 'critical';
+    this.scheduleBroadcast();
+  };
+  private overlayOrigin: 'shell' | 'content' = 'content';
+  private shellRegion: FocusRegion = 'sidebar';
+  private overlayClosing = false;
+  private overlayCloseTimer: NodeJS.Timeout | null = null;
   private htmlFullscreenTabId: string | null = null;
+  private enforcingOverlayFocus = false;
 
   private mainWindow: BrowserWindow | null = null;
+  private shellView: WebContentsView | null = null;
   private overlayView: WebContentsView | null = null;
-  private readonly tabViews = new Map<string, WebContentsView>();
-  private readonly injectedCssKeys = new Map<number, string[]>();
-  private littleNook: LittleNookWindowState | null = null;
-  private readonly miniWindows = new Map<number, LittleNookWindowState>();
-  private readonly devServerUrl: string | undefined;
-  private readonly updater: NookAutoUpdater;
-  private updateCheckTimer: NodeJS.Timeout | null = null;
 
-  private readonly insecureFallbackHosts = new Set<string>();
-  private readonly certErrorTabIds = new Set<string>();
-  private readonly allowedCertOrigins = new Set<string>();
-  private manualUpdateCheck = false;
+  private toastTimer: NodeJS.Timeout | null = null;
+  private broadcastTimer: NodeJS.Timeout | null = null;
+  private memorySaverTimer: NodeJS.Timeout | null = null;
+  private startupUpdateTimer: NodeJS.Timeout | null = null;
+  private periodicUpdateTimer: NodeJS.Timeout | null = null;
 
-  constructor(userDataDir: string, devServerUrl?: string) {
-    this.persistence = new NookPersistence(userDataDir);
-    this.data = this.persistence.load();
-    this.devServerUrl = devServerUrl;
-    this.updater = new NookAutoUpdater(
-      () => this.data.updateFeedUrl,
+  public readonly ipcRegistry = new TrustedIpcRegistry();
+  private readonly permissionManager: PermissionManager;
+  private readonly downloadManager: DownloadManager;
+  private readonly sessionManager: SessionManager;
+  private readonly navigationManager: NavigationManager;
+  private readonly tabManager: TabManager;
+  private readonly layoutManager = new ViewLayoutManager();
+  private readonly auxiliaryWindows: AuxiliaryWindowManager;
+  private readonly updater: KinexAutoUpdater;
+
+  constructor(
+    userDataDir: string,
+    private readonly devServerUrl?: string
+  ) {
+    this.persistence = new KinexPersistence(userDataDir);
+    this.persisted = this.persistence.load();
+
+    const distHtmlUrl = pathToFileURL(path.join(__dirname, '../../dist/index.html')).toString();
+    this.ipcRegistry.addAllowedBaseUrl(this.devServerUrl || distHtmlUrl);
+
+    this.permissionManager = new PermissionManager({
+      getMainWindow: () => this.mainWindow,
+      getDecisions: () => this.persisted.sitePermissions,
+      recordDecision: (origin, permission, decision) => {
+        const filtered = this.persisted.sitePermissions.filter(
+          (p) => !(p.origin === origin && p.permission === permission)
+        );
+        this.persisted = {
+          ...this.persisted,
+          sitePermissions: [...filtered, { origin, permission, decision, updatedAt: Date.now() }],
+        };
+        this.persistAndBroadcast();
+      },
+      revokeDecision: (origin, permission) => {
+        this.persisted = {
+          ...this.persisted,
+          sitePermissions: this.persisted.sitePermissions.filter(
+            (p) => !(p.origin === origin && p.permission === permission)
+          ),
+        };
+        this.persistAndBroadcast();
+      },
+    });
+
+    this.downloadManager = new DownloadManager(() => {
+      if (!this.disposed) this.scheduleBroadcast();
+    });
+
+    this.sessionManager = new SessionManager(
+      this.permissionManager,
+      this.downloadManager,
+      () => this.persisted.adBlockEnabled,
+      () => {
+        this.blockedRequestsCount += 1;
+        if (!this.disposed) this.scheduleBroadcast();
+      },
+      () => this.buildNewTabContext()
+    );
+
+    this.navigationManager = new NavigationManager({
+      getDialogParentWindow: () => BrowserWindow.getFocusedWindow() ?? this.mainWindow,
+      isHttpsOnly: () => this.persisted.httpsOnly,
+      onBlockedNavigation: (rawUrl, reason) => {
+        this.showToast(`${reason}: ${rawUrl.slice(0, 60)}`);
+      },
+    });
+
+    this.tabManager = new TabManager(
+      {
+        getMainWindow: () => this.mainWindow,
+        onWebContentsCreated: (wc) => {
+          this.attachKeyboard(wc);
+          this.attachOverlayFocusGuard(wc);
+        },
+        getTabById: (tabId) => this.persisted.tabs.find((t) => t.id === tabId),
+        updateTab: (tabId, patch, persist = false) => {
+          const patchKeys = Object.keys(patch) as Array<keyof TabItem>;
+          let changed = false;
+          this.persisted = {
+            ...this.persisted,
+            tabs: this.persisted.tabs.map((t) => {
+              if (t.id !== tabId) return t;
+              const hasDiff = patchKeys.some((k) => t[k] !== patch[k]);
+              if (!hasDiff) return t;
+              changed = true;
+              return { ...t, ...patch };
+            }),
+          };
+          if (!changed || this.disposed) return;
+          if ('isAudible' in patch) {
+            this.syncBackgroundThrottling();
+          }
+          if ('zoomFactor' in patch && getFocusedTab(this.persisted)?.id === tabId) this.layoutViews();
+          if (persist) {
+            this.persistAndBroadcast(false);
+          } else {
+            this.scheduleBroadcast();
+          }
+        },
+        getSessionForTab: (tab) => this.getSessionForSpace(tab.spaceId),
+        getPartitionForTab: (tab) => this.getPartitionForSpace(tab.spaceId),
+        getBoosts: () => this.persisted.boosts,
+        getZoomForUrl: (url) => {
+          const host = extractHostname(url);
+          return host ? this.persisted.zoomByHost[host] : undefined;
+        },
+        onNavigationFinished: (tabId, url, title) => {
+          if (!url.startsWith('kinex://reader')) {
+            this.readerDocsByTabId.delete(tabId);
+          }
+          this.recordHistory(url, title);
+          this.layoutViews();
+          this.persistAndBroadcast(false);
+          this.syncBackgroundThrottling();
+        },
+        onFoundInPage: (tabId, result) => {
+          const query = this.findQueryByTabId.get(tabId) ?? '';
+          this.findStatus = query
+            ? {
+                tabId,
+                query,
+                activeMatchOrdinal: result.activeMatchOrdinal,
+                matches: result.matches,
+              }
+            : null;
+          this.scheduleBroadcast();
+        },
+        onPageContextAction: (action) => {
+          if (action.type === 'open-link') {
+            if (action.target === 'private') {
+              this.auxiliaryWindows.openPrivateWindow(action.url);
+            } else {
+              this.openUrl(action.url, action.target, action.spaceId);
+            }
+          } else if (action.type === 'find') {
+            void this.handleIntent({ type: 'set-overlay', overlay: { mode: 'find' } });
+          } else if (action.type === 'print') {
+            void this.handleIntent({ type: 'print-page' });
+          } else if (action.type === 'save-pdf') {
+            void this.handleIntent({ type: 'save-page-pdf' });
+          } else if (action.type === 'toggle-reader') {
+            void this.handleIntent({ type: 'toggle-reader-mode', tabId: action.tabId });
+          }
+        },
+        onOpenPopupInTab: (sourceTabId, url, disposition) => {
+          const sourceTab = this.persisted.tabs.find((t) => t.id === sourceTabId);
+          this.openUrl(
+            url,
+            disposition === 'background' ? 'new-tab-background' : 'new-tab',
+            sourceTab?.spaceId
+          );
+        },
+        onSpaceMismatchCheck: (tabId, url) => this.handleAirTrafficRouting(tabId, url),
+        onHtmlFullscreenChanged: (tabId, isFullscreen) => {
+          if (this.disposed) return;
+          if (isFullscreen) {
+            this.htmlFullscreenTabId = tabId;
+            this.layoutViews();
+          } else if (this.htmlFullscreenTabId === tabId) {
+            this.htmlFullscreenTabId = null;
+            this.layoutViews();
+          }
+        },
+        onStateChanged: () => this.scheduleBroadcast(),
+        onShowToast: (msg) => this.showToast(msg),
+      },
+      this.navigationManager
+    );
+
+    this.auxiliaryWindows = new AuxiliaryWindowManager(
+      {
+        getRendererUrl: (view) => this.getRendererUrl(view),
+        onWebContentsCreated: (wc) => this.attachKeyboard(wc),
+        getSearchEngine: () => this.persisted.searchEngine,
+        getRegularSessionForActiveSpace: () => this.getSessionForSpace(this.persisted.activeSpaceId),
+        onPromoteUrl: (url, _title) => {
+          this.openUrl(url, 'new-tab');
+          this.mainWindow?.focus();
+        },
+      },
+      this.ipcRegistry,
+      this.sessionManager,
+      this.navigationManager
+    );
+
+    this.updater = new KinexAutoUpdater(
+      () => this.persisted.updateFeedUrl,
       (status) => {
-        if (status.state === 'downloaded') {
-          this.manualUpdateCheck = false;
-          this.showToast(`Kinex v${status.version} ready — click Restart to update`);
-        } else if (this.manualUpdateCheck && status.state === 'up-to-date') {
-          this.manualUpdateCheck = false;
-          this.showToast(`Kinex v${status.version} is up to date`);
-        } else if (this.manualUpdateCheck && status.state === 'error') {
-          this.manualUpdateCheck = false;
-          this.showToast(`Update error: ${status.message}`);
+        this.updateStatus = status;
+        if (!this.disposed) {
+          this.broadcastState();
         }
-        this.broadcastState();
       }
     );
+  }
+
+  setStartupUrl(rawUrl?: string): void {
+    this.startupUrl = rawUrl;
+  }
+
+  hasWindow(): boolean {
+    return Boolean(this.mainWindow && !this.mainWindow.isDestroyed());
   }
 
   focusMainWindow(): void {
@@ -134,380 +318,63 @@ export class NookWindowManager {
       if (this.mainWindow.isMinimized()) this.mainWindow.restore();
       this.mainWindow.show();
       this.mainWindow.focus();
-    } else {
-      void this.createMainWindow();
     }
   }
 
-  getSnapshot(): NookStateSnapshot {
+  getPersistenceFilePath(): string {
+    return this.persistence.getStateFilePath();
+  }
+
+  getMetricsSnapshot(): {
+    tabCount: number;
+    activeViewCount: number;
+    privateWindowCount: number;
+    hasLittleWindow: boolean;
+    memory: NodeJS.MemoryUsage;
+  } {
     return {
-      ...this.data,
-      overlay: this.overlay,
-      downloads: this.downloads,
-      blockedRequestsCount: this.blockedRequestsCount,
-      zapperActiveTabId: this.zapperActiveTabId,
-      toastMessage: this.toastMessage,
-      isDefaultBrowser: app.isDefaultProtocolClient('https'),
-      appVersion: app.getVersion(),
-      updateStatus: this.updater.getStatus(),
+      tabCount: this.persisted.tabs.length,
+      activeViewCount: this.tabManager.getActiveViewCount(),
+      privateWindowCount: this.auxiliaryWindows.getPrivateWindowCount(),
+      hasLittleWindow: this.auxiliaryWindows.hasLittleWindow(),
+      memory: process.memoryUsage(),
     };
   }
 
-  getLittleNookInfo(senderId?: number) {
-    const target = (senderId ? this.miniWindows.get(senderId) : undefined) ?? this.littleNook;
-    if (!target) {
-      return { url: '', title: 'Little Kinex', isLoading: false, canGoBack: false, canGoForward: false };
+  createWindow(): BrowserWindow {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.focusMainWindow();
+      return this.mainWindow;
     }
-    return {
-      url: target.url,
-      title: target.title,
-      isLoading: target.isLoading,
-      canGoBack: target.canGoBack,
-      canGoForward: target.canGoForward,
-    };
-  }
 
-  private getPreloadPath(): string {
-    return path.join(__dirname, '../preload/shell.js');
-  }
+    this.disposed = false;
+    this.onThermalState({ state: powerMonitor.getCurrentThermalState() });
+    powerMonitor.on('speed-limit-change', this.onSpeedLimit);
+    powerMonitor.on('thermal-state-change', this.onThermalState);
+    this.tabManager.resetForNewWindow();
+    this.auxiliaryWindows.resetForNewWindow();
+    this.downloadManager.resetForNewWindow();
 
-  private getRendererUrl(viewQuery?: string): string {
-    if (this.devServerUrl) {
-      return viewQuery ? `${this.devServerUrl}?view=${viewQuery}` : this.devServerUrl;
-    }
-    const indexPath = path.join(__dirname, '../../dist/index.html');
-    const url = new URL(`file://${indexPath}`);
-    if (viewQuery) url.searchParams.set('view', viewQuery);
-    return url.toString();
-  }
-
-  async createMainWindow(): Promise<BrowserWindow> {
-    const preloadPath = this.getPreloadPath();
-    this.mainWindow = new BrowserWindow({
-      width: 1360,
-      height: 860,
+    const win = new BrowserWindow({
+      width: 1380,
+      height: 880,
       minWidth: 880,
       minHeight: 580,
-      title: 'Kinex',
       titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 14, y: 15 },
-      backgroundColor: '#00000000',
+      trafficLightPosition: { x: 16, y: 16 },
       vibrancy: 'under-window',
       visualEffectState: 'active',
+      backgroundColor: '#00000000',
+      transparent: process.platform === 'darwin',
+      show: false,
+      title: 'Kinex',
+    });
+
+    this.mainWindow = win;
+
+    const shellView = new WebContentsView({
       webPreferences: {
-        preload: preloadPath,
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    });
-
-    this.overlayView = new WebContentsView({
-      webPreferences: {
-        preload: preloadPath,
-        contextIsolation: true,
-        nodeIntegration: false,
-        transparent: true,
-      },
-    });
-    this.overlayView.setBackgroundColor('#00000000');
-    await this.overlayView.webContents.loadURL(this.getRendererUrl('overlay'));
-
-    await this.mainWindow.loadURL(this.getRendererUrl());
-
-    this.mainWindow.on('resize', () => this.layoutViews());
-    this.mainWindow.on('closed', () => {
-      if (this.updateCheckTimer) clearInterval(this.updateCheckTimer);
-      this.updater.dispose();
-      this.mainWindow = null;
-      this.overlayView = null;
-      this.tabViews.clear();
-    });
-
-    this.installApplicationMenu();
-    this.syncActiveTabViews();
-    this.layoutViews();
-    this.broadcastState();
-
-    setTimeout(() => {
-      void this.updater.checkForUpdates(true);
-    }, 8000);
-    this.updateCheckTimer = setInterval(() => {
-      void this.updater.checkForUpdates(true);
-    }, 4 * 60 * 60 * 1000);
-
-    return this.mainWindow;
-  }
-
-  private broadcastState(): void {
-    const snapshot = this.getSnapshot();
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('nook:state-updated', snapshot);
-    }
-    if (this.overlayView && !this.overlayView.webContents.isDestroyed()) {
-      this.overlayView.webContents.send('nook:state-updated', snapshot);
-    }
-  }
-
-  private persistAndBroadcast(): void {
-    this.persistence.save(this.data);
-    this.broadcastState();
-  }
-
-  private showToast(message: string): void {
-    this.toastMessage = message;
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => {
-      this.toastMessage = null;
-      this.broadcastState();
-    }, 2400);
-    this.broadcastState();
-  }
-
-  private getSessionForSpace(spaceId: string): Electron.Session {
-    const space = this.data.spaces.find((s) => s.id === spaceId);
-    const partition = space?.profilePartition || 'persist:nook-default';
-    const sess = session.fromPartition(partition);
-    registerNookProtocolOnSession(sess);
-    this.attachPermissions(sess);
-    attachAdBlocker(
-      sess,
-      () => this.data.adBlockEnabled,
-      () => {
-        this.blockedRequestsCount += 1;
-        this.broadcastState();
-      }
-    );
-    this.attachDownloadTracker(sess);
-    return sess;
-  }
-
-  private attachPermissions(sess: Electron.Session): void {
-    if (configuredPermissionSessions.has(sess)) return;
-    configuredPermissionSessions.add(sess);
-
-    const autoAllow = new Set(['fullscreen', 'clipboard-sanitized-write', 'mediaKeySystem']);
-    sess.setPermissionRequestHandler((wc, permission, callback) => {
-      if (isDangerousPermission(permission)) {
-        callback(false);
-        return;
-      }
-      if (autoAllow.has(permission)) {
-        callback(true);
-        return;
-      }
-      let origin = '';
-      try {
-        origin = new URL(wc.getURL()).origin;
-      } catch {
-        callback(false);
-        return;
-      }
-      const existing = this.data.sitePermissions.find(
-        (p) => p.origin === origin && p.permission === permission
-      );
-      if (existing) {
-        callback(existing.decision === 'allow');
-        return;
-      }
-      if (!this.mainWindow || this.mainWindow.isDestroyed()) {
-        callback(false);
-        return;
-      }
-      void dialog
-        .showMessageBox(this.mainWindow, {
-          type: 'question',
-          buttons: ['Allow', 'Block'],
-          defaultId: 1,
-          cancelId: 1,
-          title: 'Site Permission Request',
-          message: `${origin} wants to access "${permission}"`,
-        })
-        .then((res) => {
-          const decision = res.response === 0 ? 'allow' : 'deny';
-          this.data = {
-            ...this.data,
-            sitePermissions: [
-              ...this.data.sitePermissions.filter(
-                (p) => !(p.origin === origin && p.permission === permission)
-              ),
-              { origin, permission, decision, updatedAt: Date.now() },
-            ],
-          };
-          this.persistAndBroadcast();
-          callback(decision === 'allow');
-        })
-        .catch(() => callback(false));
-    });
-  }
-
-  private readonly trackedDownloadSessions = new WeakSet<Electron.Session>();
-  private attachDownloadTracker(sess: Electron.Session): void {
-    if (this.trackedDownloadSessions.has(sess)) return;
-    this.trackedDownloadSessions.add(sess);
-
-    sess.on('will-download', (_event, item) => {
-      const id = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const entry: DownloadItem = {
-        id,
-        filename: item.getFilename(),
-        url: item.getURL(),
-        savePath: item.getSavePath(),
-        receivedBytes: 0,
-        totalBytes: item.getTotalBytes(),
-        state: 'progressing',
-        startedAt: Date.now(),
-      };
-      this.downloads = [entry, ...this.downloads].slice(0, 30);
-      this.showToast(`Downloading ${entry.filename}`);
-
-      item.on('updated', () => {
-        this.downloads = this.downloads.map((d) =>
-          d.id === id
-            ? {
-                ...d,
-                savePath: item.getSavePath() || d.savePath,
-                receivedBytes: item.getReceivedBytes(),
-                totalBytes: item.getTotalBytes(),
-              }
-            : d
-        );
-        this.broadcastState();
-      });
-
-      item.once('done', (_e, state) => {
-        this.downloads = this.downloads.map((d) =>
-          d.id === id
-            ? {
-                ...d,
-                savePath: item.getSavePath() || d.savePath,
-                receivedBytes: item.getReceivedBytes(),
-                totalBytes: item.getTotalBytes(),
-                state,
-              }
-            : d
-        );
-        if (state === 'completed') {
-          this.showToast(`Downloaded ${entry.filename}`);
-        }
-        this.broadcastState();
-      });
-    });
-  }
-
-  private attachWebContentsContextMenu(wc: WebContentsView['webContents'], tabId: string): void {
-    wc.on('context-menu', (_event, params) => {
-      const items: Electron.MenuItemConstructorOptions[] = [];
-
-      if (params.linkURL) {
-        items.push(
-          {
-            label: 'Open Link in New Tab',
-            click: () => void this.handleIntent({ type: 'open-url', url: params.linkURL, target: 'new-tab' }),
-          },
-          {
-            label: 'Open Link in Split View',
-            click: () => void this.handleIntent({ type: 'open-url', url: params.linkURL, target: 'split' }),
-          },
-          {
-            label: 'Open Link in Little Kinex',
-            click: () => void this.handleIntent({ type: 'open-url', url: params.linkURL, target: 'little-nook' }),
-          },
-          {
-            label: 'Copy Link Address',
-            click: () => {
-              clipboard.writeText(params.linkURL);
-              this.showToast('Copied Link Address');
-            },
-          },
-          { type: 'separator' }
-        );
-      }
-
-      if (params.mediaType === 'image' && params.srcURL) {
-        items.push(
-          {
-            label: 'Save Image As...',
-            click: () => wc.downloadURL(params.srcURL),
-          },
-          {
-            label: 'Copy Image',
-            click: () => wc.copyImageAt(params.x, params.y),
-          },
-          { type: 'separator' }
-        );
-      }
-
-      if (params.isEditable) {
-        items.push(
-          { role: 'cut', enabled: params.editFlags.canCut },
-          { role: 'copy', enabled: params.editFlags.canCopy },
-          { role: 'paste', enabled: params.editFlags.canPaste },
-          { role: 'selectAll', enabled: params.editFlags.canSelectAll },
-          { type: 'separator' }
-        );
-      } else if (params.selectionText) {
-        const snippet = params.selectionText.trim().slice(0, 40);
-        items.push(
-          { role: 'copy' },
-          {
-            label: `Search for "${snippet}${params.selectionText.length > 40 ? '...' : ''}"`,
-            click: () =>
-              void this.handleIntent({
-                type: 'open-url',
-                url: params.selectionText.trim(),
-                target: 'new-tab',
-              }),
-          },
-          { type: 'separator' }
-        );
-      }
-
-      items.push(
-        {
-          label: 'Back',
-          enabled: wc.navigationHistory.canGoBack(),
-          click: () => wc.navigationHistory.goBack(),
-        },
-        {
-          label: 'Forward',
-          enabled: wc.navigationHistory.canGoForward(),
-          click: () => wc.navigationHistory.goForward(),
-        },
-        {
-          label: 'Reload',
-          click: () => wc.reload(),
-        },
-        { type: 'separator' },
-        {
-          label: 'Zap Element (Boost)',
-          click: () => {
-            void this.handleIntent({ type: 'select-tab', tabId }).then(() =>
-              this.handleIntent({ type: 'start-zapper' })
-            );
-          },
-        },
-        {
-          label: 'Inspect Element',
-          click: () => wc.inspectElement(params.x, params.y),
-        }
-      );
-
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        Menu.buildFromTemplate(items).popup({ window: this.mainWindow });
-      }
-    });
-  }
-
-  private ensureTabView(tab: TabItem): WebContentsView {
-    const existing = this.tabViews.get(tab.id);
-    if (existing && !existing.webContents.isDestroyed()) {
-      return existing;
-    }
-
-    const sess = this.getSessionForSpace(tab.spaceId);
-    const view = new WebContentsView({
-      webPreferences: {
-        session: sess,
+        preload: path.join(__dirname, '../preload/shell.js'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -516,373 +383,664 @@ export class NookWindowManager {
         navigateOnDragDrop: false,
       },
     });
-    view.setBorderRadius(10);
-    view.setBackgroundColor('#ffffff');
+    shellView.setBackgroundColor('#00000000');
+    this.shellView = shellView;
+    win.contentView.addChildView(shellView);
+    this.ipcRegistry.register(shellView.webContents.id, 'shell');
+    this.hardenInternalView(shellView, 'shell');
+    this.attachKeyboard(shellView.webContents);
+    this.attachOverlayFocusGuard(shellView.webContents);
 
-    const wc = view.webContents;
-    if (typeof tab.zoomFactor === 'number' && tab.zoomFactor > 0) {
-      wc.setZoomFactor(tab.zoomFactor);
-    }
+    // Start shell load + active tab view immediately; overlayView is created lazily on first open
+    void shellView.webContents.loadURL(this.getRendererUrl('shell'));
 
-    const syncNavMeta = () => {
-      const url = wc.getURL() || tab.url;
-      const title = wc.getTitle() || url;
-      const securityState = classifySecurityState(url, this.certErrorTabIds.has(tab.id));
-      this.updateTab(tab.id, {
-        url,
-        title,
-        isLoading: wc.isLoading(),
-        canGoBack: wc.navigationHistory.canGoBack(),
-        canGoForward: wc.navigationHistory.canGoForward(),
-        securityState,
-      });
+    this.ensureActiveViewsLoaded();
+    this.layoutViews();
+    this.syncBackgroundThrottling();
+
+    let presented = false;
+    const presentWindow = () => {
+      if (presented || win.isDestroyed()) return;
+      presented = true;
+      win.show();
+      this.focusActiveTabView();
+      this.installApplicationMenu();
+      setTimeout(() => {
+        if (!this.disposed) this.refreshDefaultBrowserFlag(false);
+      }, 1500).unref?.();
+      if (this.startupUrl) {
+        this.openUrl(this.startupUrl, 'new-tab');
+        this.startupUrl = undefined;
+      }
     };
+    win.once('ready-to-show', presentWindow);
+    shellView.webContents.once('did-finish-load', presentWindow);
 
-    wc.on('will-navigate', (event, targetUrl) => {
-      if (!isSafeNavigationUrl(targetUrl)) {
-        event.preventDefault();
-        this.showToast('Blocked unsafe navigation protocol');
-        return;
-      }
-      const upgraded = upgradeUrlToHttpsIfNeeded(
-        targetUrl,
-        this.data.httpsOnly,
-        this.insecureFallbackHosts
-      );
-      if (upgraded !== targetUrl) {
-        event.preventDefault();
-        void wc.loadURL(upgraded);
-      }
-    });
-
-    wc.on('did-fail-load', (_e, errorCode, _desc, validatedURL, isMainFrame) => {
-      if (!isMainFrame || errorCode === -3) return;
-      if (this.data.httpsOnly && validatedURL.startsWith('https://')) {
-        try {
-          const parsed = new URL(validatedURL);
-          if (!this.insecureFallbackHosts.has(parsed.hostname.toLowerCase())) {
-            this.insecureFallbackHosts.add(parsed.hostname.toLowerCase());
-            parsed.protocol = 'http:';
-            this.showToast(`HTTPS unavailable for ${parsed.hostname} — falling back to HTTP`);
-            void wc.loadURL(parsed.toString());
-          }
-        } catch {
-          // Ignore malformed fallback URL
-        }
-      }
-    });
-
-    wc.on('certificate-error', (event, url, error, _cert, callback) => {
-      event.preventDefault();
-      let origin = url;
-      try {
-        origin = new URL(url).origin;
-      } catch {
-        // Keep raw URL
-      }
-      if (this.allowedCertOrigins.has(origin)) {
-        callback(true);
-        return;
-      }
-      this.certErrorTabIds.add(tab.id);
-      this.updateTab(tab.id, { securityState: 'cert-warning' });
-      if (!this.mainWindow || this.mainWindow.isDestroyed()) {
-        callback(false);
-        return;
-      }
-      void dialog
-        .showMessageBox(this.mainWindow, {
-          type: 'warning',
-          buttons: ['Go Back (Safe)', 'Proceed Anyway'],
-          defaultId: 0,
-          cancelId: 0,
-          title: 'Certificate Warning',
-          message: `Kinex cannot verify the identity of ${origin} (${error}).`,
-        })
-        .then((res) => {
-          const proceed = res.response === 1;
-          if (proceed) this.allowedCertOrigins.add(origin);
-          callback(proceed);
-        })
-        .catch(() => callback(false));
-    });
-
-    wc.on('did-start-loading', () => {
-      this.certErrorTabIds.delete(tab.id);
-      this.updateTab(tab.id, { isLoading: true });
-    });
-    wc.on('did-stop-loading', syncNavMeta);
-    wc.on('did-navigate', (_e, url) => {
-      syncNavMeta();
-      this.recordHistory(url, wc.getTitle() || url);
-    });
-    wc.on('did-navigate-in-page', syncNavMeta);
-    wc.on('page-title-updated', (_e, title) => {
-      this.updateTab(tab.id, { title });
-      this.recordHistory(wc.getURL(), title);
-    });
-    wc.on('page-favicon-updated', (_e, favicons) => {
-      if (favicons.length > 0) {
-        this.updateTab(tab.id, { favicon: favicons[0] });
-      }
-    });
-    wc.on('media-started-playing', () => this.updateTab(tab.id, { isAudible: true }));
-    wc.on('media-paused', () => this.updateTab(tab.id, { isAudible: false }));
-    wc.on('did-finish-load', () => {
-      void applyBoostsToWebContents(wc, this.data.boosts, this.injectedCssKeys);
-    });
-    wc.on('dom-ready', () => {
-      void applyBoostsToWebContents(wc, this.data.boosts, this.injectedCssKeys);
-    });
-    wc.on('enter-html-full-screen', () => {
-      this.htmlFullscreenTabId = tab.id;
-      this.layoutViews();
-    });
-    wc.on('leave-html-full-screen', () => {
+    win.on('resize', () => this.layoutViews());
+    win.on('enter-full-screen', () => this.layoutViews());
+    win.on('leave-full-screen', () => {
       this.htmlFullscreenTabId = null;
       this.layoutViews();
     });
-    wc.on('render-process-gone', (_e, details) => {
-      this.showToast(`Tab crashed (${details.reason}) — click Reload to recover`);
-      this.updateTab(tab.id, { isLoading: false });
+    win.on('minimize', () => {
+      this.isWindowOccluded = true;
+      this.syncBackgroundThrottling();
+    });
+    win.on('hide', () => {
+      this.isWindowOccluded = true;
+      this.syncBackgroundThrottling();
+    });
+    win.on('restore', () => {
+      this.isWindowOccluded = false;
+      this.syncBackgroundThrottling();
+    });
+    win.on('show', () => {
+      this.isWindowOccluded = false;
+      this.syncBackgroundThrottling();
+    });
+    win.on('focus', () => {
+      if (this.isWindowOccluded) {
+        this.isWindowOccluded = false;
+        this.syncBackgroundThrottling();
+      }
     });
 
-    this.attachWebContentsContextMenu(wc, tab.id);
-
-    wc.setWindowOpenHandler(({ url, disposition, features }) => {
-      if (features && (features.includes('width=') || features.includes('popup'))) {
-        return { action: 'allow' };
-      }
-      if (disposition === 'new-window') {
-        void this.openLittleNook(url);
-        return { action: 'deny' };
-      }
-      void this.handleIntent({ type: 'open-url', url, target: 'new-tab' });
-      return { action: 'deny' };
+    win.on('closed', () => {
+      this.cleanupWindowResources();
     });
 
-    this.tabViews.set(tab.id, view);
-    void wc.loadURL(tab.url);
-    return view;
-  }
+    this.memorySaverTimer = setInterval(() => {
+      if (!this.disposed) {
+        void this.runMemorySaverSweep();
+      }
+    }, 60_000);
+    this.memorySaverTimer.unref?.();
 
-  private updateTab(tabId: string, patch: Partial<TabItem>): void {
-    let changed = false;
-    this.data = {
-      ...this.data,
-      tabs: this.data.tabs.map((t) => {
-        if (t.id !== tabId) return t;
-        changed = true;
-        return { ...t, ...patch };
-      }),
-    };
-    if (changed) {
-      this.persistAndBroadcast();
-    }
-  }
-
-  private recordHistory(url: string, title: string): void {
-    if (!url || url.startsWith('kinex://') || url.startsWith('nook://') || url.startsWith('about:')) return;
-    const existing = this.data.history.find((h) => h.url === url);
-    const now = Date.now();
-    const updated = existing
-      ? [
-          { ...existing, title: title || existing.title, visitedAt: now, visitCount: existing.visitCount + 1 },
-          ...this.data.history.filter((h) => h.url !== url),
-        ]
-      : [{ url, title: title || url, visitedAt: now, visitCount: 1 }, ...this.data.history];
-    this.data = {
-      ...this.data,
-      history: updated.slice(0, 300),
-    };
-    this.persistence.save(this.data);
-  }
-
-  private syncActiveTabViews(): void {
-    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
-    const contentView = this.mainWindow.contentView;
-    const split = getActiveSplit(this.data);
-    const activeSet = new Set(split.tabIds);
-
-    for (const [id, view] of this.tabViews.entries()) {
-      if (!activeSet.has(id)) {
-        try {
-          contentView.removeChildView(view);
-        } catch {
-          // Not attached
+    if (!process.env.KINEX_DISABLE_AUTO_UPDATER) {
+      this.startupUpdateTimer = setTimeout(() => {
+        if (!this.disposed) {
+          void this.updater.checkForUpdates(true);
         }
-      }
+      }, 8000);
+      this.periodicUpdateTimer = setInterval(() => {
+        if (!this.disposed) {
+          void this.updater.checkForUpdates(true);
+        }
+      }, 4 * 60 * 60 * 1000);
     }
 
+    return win;
+  }
+
+  private hardenInternalView(view: WebContentsView, mode: 'shell' | 'overlay'): void {
+    const wc = view.webContents;
+    const base = this.getRendererUrl(mode).split('?')[0];
+    wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+    wc.on('will-navigate', (event, url) => {
+      if (!url.startsWith(base)) {
+        event.preventDefault();
+      }
+    });
+    wc.on('render-process-gone', () => {
+      if (!this.disposed && !wc.isDestroyed()) {
+        void wc.loadURL(this.getRendererUrl(mode));
+      }
+    });
+  }
+
+  private getRendererUrl(view: 'shell' | 'overlay' | 'little' | 'private'): string {
+    if (this.devServerUrl) {
+      return `${this.devServerUrl}?view=${view}`;
+    }
+    const htmlPath = path.join(__dirname, '../../dist/index.html');
+    return `${pathToFileURL(htmlPath).toString()}?view=${view}`;
+  }
+
+  private getPartitionForSpace(spaceId: string): string {
+    const space = this.persisted.spaces.find((s) => s.id === spaceId) ?? this.persisted.spaces[0];
+    return space?.profilePartition || 'persist:nook-default';
+  }
+
+  private getSessionForSpace(spaceId: string): Session {
+    return this.sessionManager.getRegularSession(this.getPartitionForSpace(spaceId));
+  }
+
+  private showToast(message: string): void {
+    if (this.disposed) return;
+    this.toastMessage = message;
+    this.broadcastState();
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => {
+      this.toastTimer = null;
+      if (!this.disposed) {
+        this.toastMessage = null;
+        this.broadcastState();
+      }
+    }, 2800);
+  }
+
+  private ensureOverlayView(): WebContentsView | null {
+    if (this.disposed || !this.mainWindow || this.mainWindow.isDestroyed()) return null;
+    if (this.overlayView && !this.overlayView.webContents.isDestroyed()) {
+      return this.overlayView;
+    }
+
+    const overlayView = new WebContentsView({
+      webPreferences: {
+        preload: path.join(__dirname, '../preload/shell.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        navigateOnDragDrop: false,
+      },
+    });
+    overlayView.setBackgroundColor('#00000000');
+    overlayView.setVisible(false);
+    this.overlayView = overlayView;
+    this.mainWindow.contentView.addChildView(overlayView);
+    this.ipcRegistry.register(overlayView.webContents.id, 'overlay');
+    this.hardenInternalView(overlayView, 'overlay');
+    this.attachKeyboard(overlayView.webContents);
+    void overlayView.webContents.loadURL(this.getRendererUrl('overlay'));
+    return overlayView;
+  }
+
+  private refreshDefaultBrowserFlag(broadcastIfChanged = true): void {
+    const now = Date.now();
+    if (broadcastIfChanged && now - this.lastDefaultCheckAt < 30_000) return;
+    this.lastDefaultCheckAt = now;
+    const next = app.isDefaultProtocolClient('http') && app.isDefaultProtocolClient('https');
+    if (next !== this.cachedIsDefaultBrowser) {
+      this.cachedIsDefaultBrowser = next;
+      if (broadcastIfChanged && !this.disposed) {
+        this.scheduleBroadcast();
+      }
+    }
+  }
+
+  getSnapshot(): KinexStateSnapshot {
+    return {
+      ...this.persisted,
+      reducedEffects: this.speedLimited || this.thermalLimited,
+      overlay: this.overlay,
+      downloads: this.downloadManager.getDownloads(),
+      blockedRequestsCount: this.blockedRequestsCount,
+      zapperActiveTabId: this.tabManager.getZapperActiveTabId(),
+      toastMessage: this.toastMessage,
+      isDefaultBrowser: this.cachedIsDefaultBrowser,
+      appVersion: app.getVersion(),
+      updateStatus: this.updateStatus,
+      findStatus: this.findStatus,
+      duplicatePrompt: this.duplicatePrompt,
+      readerTabIds: Array.from(this.readerDocsByTabId.keys()),
+    };
+  }
+
+  private persistAndBroadcast(immediateBroadcast = true): void {
+    if (this.disposed) return;
+    this.persistence.scheduleSave(this.persisted);
+    if (immediateBroadcast) {
+      this.broadcastState();
+    } else {
+      this.scheduleBroadcast();
+    }
+  }
+
+  private scheduleBroadcast(): void {
+    if (this.disposed || this.broadcastTimer) return;
+    this.broadcastTimer = setTimeout(() => {
+      this.broadcastTimer = null;
+      this.broadcastState();
+    }, 16);
+    this.broadcastTimer.unref?.();
+  }
+
+  private broadcastState(): void {
+    if (this.disposed) return;
+    if (this.broadcastTimer) {
+      clearTimeout(this.broadcastTimer);
+      this.broadcastTimer = null;
+    }
+    const snapshot = this.getSnapshot();
+    if (this.shellView && !this.shellView.webContents.isDestroyed()) {
+      this.shellView.webContents.send('kinex:state-updated', snapshot);
+    }
+    const shouldUpdateOverlay =
+      this.overlay.mode !== 'none' || Boolean(this.duplicatePrompt) || this.overlayNeedsCloseSync;
+    if (
+      shouldUpdateOverlay &&
+      this.overlayView &&
+      !this.overlayView.webContents.isDestroyed()
+    ) {
+      this.overlayView.webContents.send('kinex:state-updated', snapshot);
+      this.overlayNeedsCloseSync = this.overlay.mode !== 'none' || Boolean(this.duplicatePrompt);
+    }
+  }
+
+  private syncBackgroundThrottling(): void {
+    if (this.disposed) return;
+    const visibleIds = new Set(getActiveSplit(this.persisted).tabIds);
+    this.tabManager.syncBackgroundThrottling(
+      visibleIds,
+      this.isWindowOccluded,
+      (wcId) =>
+        this.downloadManager.hasActiveDownloadForWebContents(wcId) ||
+        this.permissionManager.hasActiveMediaCapture(wcId)
+    );
+  }
+
+  private async tryDiscardTab(tabId: string, bypassTimeout = false): Promise<boolean> {
+    if (this.disposed) return false;
+    const tab = this.persisted.tabs.find((t) => t.id === tabId);
+    if (!tab) return false;
+
+    const view = this.tabManager.getView(tabId);
+    const wc = view && !view.webContents.isDestroyed() ? view.webContents : null;
+    const visibleIds = new Set(getActiveSplit(this.persisted).tabIds);
+    const thresholdMs = MEMORY_SAVER_TIMEOUT_MS[this.persisted.memorySaverTimeout];
+    const idleMs = Date.now() - (tab.lastActiveAt || 0);
+
+    const fastCheck = evaluateDiscardEligibility({
+      tab,
+      isVisible: visibleIds.has(tabId),
+      hasLiveView: Boolean(wc),
+      isCurrentlyAudible: wc ? wc.isCurrentlyAudible() : false,
+      hasActiveDownload: wc ? this.downloadManager.hasActiveDownloadForWebContents(wc.id) : false,
+      hasActiveMediaCapture: wc ? this.permissionManager.hasActiveMediaCapture(wc.id) : false,
+      hasUnsavedFormData: false,
+      pinnedExempt: this.persisted.memorySaverExemptPinned,
+      idleMs,
+      thresholdMs,
+      bypassTimeout,
+    });
+    if (!fastCheck.eligible) return false;
+
+    const dirtyForm = await this.tabManager.hasPotentiallyUnsavedFormData(tabId);
+    if (this.disposed) return false;
+
+    const refreshedTab = this.persisted.tabs.find((t) => t.id === tabId);
+    const refreshedView = this.tabManager.getView(tabId);
+    const refreshedWc =
+      refreshedView && !refreshedView.webContents.isDestroyed() ? refreshedView.webContents : null;
+    const currentVisible = new Set(getActiveSplit(this.persisted).tabIds);
+
+    if (!refreshedTab || !refreshedWc) return false;
+
+    const finalCheck = evaluateDiscardEligibility({
+      tab: refreshedTab,
+      isVisible: currentVisible.has(tabId),
+      hasLiveView: true,
+      isCurrentlyAudible: refreshedWc.isCurrentlyAudible(),
+      hasActiveDownload: this.downloadManager.hasActiveDownloadForWebContents(refreshedWc.id),
+      hasActiveMediaCapture: this.permissionManager.hasActiveMediaCapture(refreshedWc.id),
+      hasUnsavedFormData: dirtyForm,
+      pinnedExempt: this.persisted.memorySaverExemptPinned,
+      idleMs: Date.now() - (refreshedTab.lastActiveAt || 0),
+      thresholdMs,
+      bypassTimeout,
+    });
+    if (!finalCheck.eligible) return false;
+
+    return this.tabManager.discardTabView(tabId);
+  }
+
+  private async runMemorySaverSweep(): Promise<void> {
+    if (this.disposed) return;
+    if (this.persisted.memorySaverTimeout === 'disabled') return;
+    const liveIds = Array.from(this.tabManager.getAllViews().keys());
+    for (const tabId of liveIds) {
+      if (this.disposed) break;
+      await this.tryDiscardTab(tabId, false);
+    }
+  }
+
+  private focusActiveTabView(explicitTabId?: string): void {
+    if (this.disposed || this.overlay.mode !== 'none' || Boolean(this.duplicatePrompt)) return;
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    const focused = explicitTabId
+      ? this.persisted.tabs.find((t) => t.id === explicitTabId)
+      : getFocusedTab(this.persisted);
+    if (!focused) return;
+    const view = this.tabManager.getView(focused.id);
+    if (view && !view.webContents.isDestroyed()) {
+      view.webContents.focus();
+    }
+  }
+
+  private ensureActiveViewsLoaded(): void {
+    const split = getActiveSplit(this.persisted);
     for (const tabId of split.tabIds) {
-      const tab = this.data.tabs.find((t) => t.id === tabId);
-      if (!tab) continue;
-      const view = this.ensureTabView(tab);
-      if (!contentView.children.includes(view)) {
-        contentView.addChildView(view);
-      }
-    }
-
-    if (this.overlayView) {
-      try {
-        contentView.removeChildView(this.overlayView);
-      } catch {
-        // Not attached
-      }
-      if (this.overlay.mode !== 'none') {
-        contentView.addChildView(this.overlayView);
-      }
+      this.tabManager.ensureTabView(tabId);
     }
   }
 
   private layoutViews(): void {
-    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
-    const [width, height] = this.mainWindow.getContentSize();
+    const split = getActiveSplit(this.persisted);
+    const focused = getFocusedTab(this.persisted);
+    if (this.htmlFullscreenTabId && !split.tabIds.includes(this.htmlFullscreenTabId)) {
+      const staleId = this.htmlFullscreenTabId;
+      this.htmlFullscreenTabId = null;
+      const staleView = this.tabManager.getView(staleId);
+      if (staleView && !staleView.webContents.isDestroyed()) {
+        void staleView.webContents
+          .executeJavaScript('if (document.fullscreenElement) { void document.exitFullscreen?.(); }')
+          .catch(() => {});
+      }
+    }
+    this.layoutManager.applyLayout({
+      mainWindow: this.mainWindow,
+      shellView: this.shellView,
+      overlayView: this.overlayView,
+      allTabViews: this.tabManager.getAllViews(),
+      activeTabIds: split.tabIds,
+      sidebarOpen: this.persisted.sidebarOpen,
+      sidebarWidth: this.persisted.sidebarWidth,
+      splitRatio: split.splitRatio || 0.5,
+      toolbarVisible: Boolean(focused && (this.readerDocsByTabId.has(focused.id) || (focused.zoomFactor ?? 1) !== 1)),
+      hasOverlay: this.overlay.mode !== 'none' || Boolean(this.duplicatePrompt) || this.overlayClosing,
+      htmlFullscreenTabId: this.htmlFullscreenTabId,
+    });
+    this.syncBackgroundThrottling();
+  }
 
-    if (this.htmlFullscreenTabId) {
-      const fsView = this.tabViews.get(this.htmlFullscreenTabId);
-      if (fsView) {
-        fsView.setBounds({ x: 0, y: 0, width, height });
-        if (this.overlayView) this.overlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+  private handleAirTrafficRouting(tabId: string, url: string): boolean {
+    const routedSpaceId = matchAirTrafficSpace(url, this.persisted.airTrafficRules);
+    const currentTab = this.persisted.tabs.find((t) => t.id === tabId);
+    if (
+      !routedSpaceId ||
+      !currentTab ||
+      currentTab.location !== 'unpinned' ||
+      routedSpaceId === currentTab.spaceId ||
+      !this.persisted.spaces.some((s) => s.id === routedSpaceId)
+    ) {
+      return false;
+    }
+
+    const routedSpace = this.persisted.spaces.find((s) => s.id === routedSpaceId);
+    const nextTabId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const newTab: TabItem = {
+      ...currentTab,
+      id: nextTabId,
+      spaceId: routedSpaceId,
+      url,
+      lastActiveAt: Date.now(),
+    };
+    this.persisted = {
+      ...this.persisted,
+      activeSpaceId: routedSpaceId,
+      tabs: [...this.persisted.tabs.filter((t) => t.id !== tabId), newTab],
+      splitsBySpace: {
+        ...this.persisted.splitsBySpace,
+        [routedSpaceId]: { tabIds: [nextTabId], focusedIndex: 0, splitRatio: 0.5 },
+      },
+    };
+    this.tabManager.destroyTabView(tabId);
+    this.ensureActiveViewsLoaded();
+    this.layoutViews();
+    this.persistAndBroadcast();
+    this.showToast(`Air Traffic routed to ${routedSpace?.name ?? 'Space'}`);
+    return true;
+  }
+
+  private recordHistory(url: string, title: string): void {
+    if (!url || url.startsWith('kinex://') || url.startsWith('nook://') || url === 'about:blank') {
+      return;
+    }
+    const existing = this.persisted.history.find((h) => h.url === url);
+    const nextHistory = [
+      {
+        url,
+        title: title || url,
+        visitedAt: Date.now(),
+        visitCount: (existing?.visitCount ?? 0) + 1,
+      },
+      ...this.persisted.history.filter((h) => h.url !== url),
+    ].slice(0, 250);
+    this.persisted = { ...this.persisted, history: nextHistory };
+  }
+
+  openUrl(
+    rawInput: string,
+    target: 'current' | 'new-tab' | 'new-tab-background' | 'split' | 'little-kinex' | 'little-nook',
+    explicitSpaceId?: string,
+    duplicatePolicy: 'prompt' | 'allow' = 'allow'
+  ): void {
+    const normalized = normalizeNavigationInput(rawInput, this.persisted.searchEngine);
+    if (target === 'little-kinex' || target === 'little-nook') {
+      this.auxiliaryWindows.openLittleKinex(normalized);
+      return;
+    }
+
+    if (
+      duplicatePolicy === 'prompt' &&
+      (target === 'new-tab' || target === 'split') &&
+      !normalized.startsWith('kinex://')
+    ) {
+      const existing = findDuplicateOpenTab(this.persisted, normalized);
+      if (existing) {
+        this.captureOverlayOrigin();
+        this.duplicatePrompt = {
+          url: normalized,
+          existingTabId: existing.id,
+          existingTabTitle: existing.title || existing.url,
+          existingSpaceId: existing.spaceId,
+          target,
+          requestedSpaceId: explicitSpaceId,
+        };
+        this.ensureOverlayView();
+        this.layoutViews();
+        this.broadcastState();
+        this.overlayView?.webContents.focus();
         return;
       }
     }
 
-    const split = getActiveSplit(this.data);
-    const showTopBar = !this.data.sidebarOpen || split.tabIds.length > 1;
-    const sidebarW = this.data.sidebarOpen ? this.data.sidebarWidth : 0;
-    const areaX = this.data.sidebarOpen ? sidebarW + 4 : FRAME_PAD;
-    const areaY = showTopBar ? TOP_BAR_HEIGHT : FRAME_PAD;
-    const areaW = Math.max(200, width - areaX - FRAME_PAD);
-    const areaH = Math.max(200, height - areaY - FRAME_PAD);
+    this.duplicatePrompt = null;
 
-    if (split.tabIds.length === 1) {
-      const view = this.tabViews.get(split.tabIds[0]);
-      view?.setBounds({ x: areaX, y: areaY, width: areaW, height: areaH });
-    } else if (split.tabIds.length === 2) {
-      const leftW = Math.max(160, Math.round((areaW - SPLIT_GAP) * (split.splitRatio || 0.5)));
-      const rightW = Math.max(160, areaW - SPLIT_GAP - leftW);
-      const v0 = this.tabViews.get(split.tabIds[0]);
-      const v1 = this.tabViews.get(split.tabIds[1]);
-      v0?.setBounds({ x: areaX, y: areaY, width: leftW, height: areaH });
-      v1?.setBounds({ x: areaX + leftW + SPLIT_GAP, y: areaY, width: rightW, height: areaH });
-    }
+    const routedSpaceId =
+      explicitSpaceId ?? matchAirTrafficSpace(normalized, this.persisted.airTrafficRules) ?? this.persisted.activeSpaceId;
+    const spaceId = this.persisted.spaces.some((s) => s.id === routedSpaceId)
+      ? routedSpaceId
+      : this.persisted.activeSpaceId;
 
-    if (this.overlayView) {
-      if (this.overlay.mode === 'none') {
-        this.overlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-      } else {
-        this.overlayView.setBounds({ x: 0, y: 0, width, height });
+    if (target === 'current') {
+      const focused = getFocusedTab(this.persisted);
+      if (focused) {
+        this.persisted = {
+          ...this.persisted,
+          tabs: this.persisted.tabs.map((t) =>
+            t.id === focused.id ? { ...t, url: normalized, isCrashed: false, lastActiveAt: Date.now() } : t
+          ),
+        };
+        this.tabManager.navigateTab(focused.id, normalized);
+        this.focusActiveTabView(focused.id);
+        this.persistAndBroadcast();
+        return;
       }
     }
+
+    const newTab: TabItem = {
+      id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      spaceId,
+      location: 'unpinned',
+      url: normalized,
+      title: normalized,
+      isLoading: true,
+      canGoBack: false,
+      canGoForward: false,
+      isMuted: false,
+      isAudible: false,
+      securityState: classifySecurityState(normalized, false),
+      lastActiveAt: Date.now(),
+    };
+
+    const currentSplit = getActiveSplit(this.persisted, spaceId);
+    const nextSplitIds =
+      target === 'split'
+        ? [currentSplit.tabIds[0] ?? newTab.id, newTab.id].slice(0, 2)
+        : target === 'new-tab-background' && currentSplit.tabIds.length > 0
+          ? currentSplit.tabIds
+          : [newTab.id];
+
+    const nextFocusedIdx =
+      target === 'split' ? nextSplitIds.length - 1 : currentSplit.focusedIndex;
+
+    this.persisted = {
+      ...this.persisted,
+      activeSpaceId: target === 'new-tab-background' ? this.persisted.activeSpaceId : spaceId,
+      tabs: [...this.persisted.tabs, newTab],
+      splitsBySpace: {
+        ...this.persisted.splitsBySpace,
+        [spaceId]: {
+          ...currentSplit,
+          tabIds: nextSplitIds,
+          focusedIndex: target === 'new-tab-background' ? Math.min(nextFocusedIdx, nextSplitIds.length - 1) : nextFocusedIdx,
+        },
+      },
+    };
+    this.ensureActiveViewsLoaded();
+    this.layoutViews();
+    if (target !== 'new-tab-background') {
+      this.focusActiveTabView(newTab.id);
+    }
+    this.persistAndBroadcast();
   }
 
-  async handleIntent(intent: NookIntent): Promise<void> {
+  async handleIntent(intent: KinexIntent): Promise<void> {
+    if (this.disposed) return;
+
     switch (intent.type) {
+      case 'run-command':
+        await this.executeCommand(intent.commandId);
+        return;
+      case 'focus-region':
+        this.focusBrowserRegion(intent.region);
+        return;
+
       case 'select-space': {
-        if (!this.data.spaces.some((s) => s.id === intent.spaceId)) return;
-        this.data = { ...this.data, activeSpaceId: intent.spaceId };
-        this.syncActiveTabViews();
+        if (!this.persisted.spaces.some((s) => s.id === intent.spaceId)) return;
+        const now = Date.now();
+        const nextSplitIds = new Set(getActiveSplit(this.persisted, intent.spaceId).tabIds);
+        this.persisted = {
+          ...this.persisted,
+          activeSpaceId: intent.spaceId,
+          tabs: this.persisted.tabs.map((t) =>
+            nextSplitIds.has(t.id) ? { ...t, lastActiveAt: now } : t
+          ),
+        };
+        this.ensureActiveViewsLoaded();
+        this.refreshVisibleInternalPages();
         this.layoutViews();
+        this.focusActiveTabView();
         this.persistAndBroadcast();
         return;
       }
 
       case 'create-space': {
         const id = `space-${Date.now()}`;
-        const newSpace: Space = {
-          id,
-          name: intent.name.trim() || 'New Space',
-          icon: intent.icon || '✦',
-          theme: intent.theme,
-          profilePartition: intent.profilePartition || 'persist:nook-default',
-        };
-        const tabId = `tab-${Date.now()}`;
+        const partition = intent.profilePartition || this.persisted.profiles[0]?.partition || 'persist:nook-default';
         const welcomeTab: TabItem = {
-          id: tabId,
+          id: `tab-${Date.now()}-w`,
           spaceId: id,
           location: 'unpinned',
           url: 'kinex://newtab',
-          title: 'New Tab',
+          title: 'New Tab — Kinex',
           isLoading: false,
           canGoBack: false,
           canGoForward: false,
           isMuted: false,
           isAudible: false,
+          securityState: 'internal',
           lastActiveAt: Date.now(),
         };
-        this.data = {
-          ...this.data,
-          spaces: [...this.data.spaces, newSpace],
+        this.persisted = {
+          ...this.persisted,
+          spaces: [...this.persisted.spaces, { id, name: intent.name, icon: intent.icon, theme: intent.theme, profilePartition: partition }],
           activeSpaceId: id,
-          tabs: [...this.data.tabs, welcomeTab],
+          tabs: [...this.persisted.tabs, welcomeTab],
           splitsBySpace: {
-            ...this.data.splitsBySpace,
-            [id]: { tabIds: [tabId], focusedIndex: 0, splitRatio: 0.5 },
+            ...this.persisted.splitsBySpace,
+            [id]: { tabIds: [welcomeTab.id], focusedIndex: 0, splitRatio: 0.5 },
           },
         };
         this.overlay = { mode: 'none' };
-        this.syncActiveTabViews();
+        this.ensureActiveViewsLoaded();
         this.layoutViews();
+        this.focusActiveTabView(welcomeTab.id);
         this.persistAndBroadcast();
         return;
       }
 
       case 'update-space': {
-        const prevSpace = this.data.spaces.find((s) => s.id === intent.spaceId);
-        const nextPartition = intent.profilePartition || prevSpace?.profilePartition || 'persist:nook-default';
-        const partitionChanged = prevSpace && prevSpace.profilePartition !== nextPartition;
-        this.data = {
-          ...this.data,
-          spaces: this.data.spaces.map((s) =>
+        const previousSpace = this.persisted.spaces.find((s) => s.id === intent.spaceId);
+        const profileChanged = Boolean(intent.profilePartition && previousSpace?.profilePartition !== intent.profilePartition);
+        this.persisted = {
+          ...this.persisted,
+          spaces: this.persisted.spaces.map((s) =>
             s.id === intent.spaceId
               ? {
                   ...s,
-                  name: intent.name.trim() || s.name,
-                  icon: intent.icon || s.icon,
+                  name: intent.name,
+                  icon: intent.icon,
                   theme: intent.theme,
-                  profilePartition: nextPartition,
+                  profilePartition: intent.profilePartition || s.profilePartition,
                 }
               : s
           ),
         };
-        if (partitionChanged) {
-          for (const tab of this.data.tabs.filter((t) => t.spaceId === intent.spaceId)) {
-            this.destroyTabView(tab.id);
-          }
-        }
         this.overlay = { mode: 'none' };
-        this.syncActiveTabViews();
+        this.refreshVisibleInternalPages();
+        if (profileChanged) {
+          for (const tab of this.persisted.tabs.filter((t) => t.spaceId === intent.spaceId)) this.tabManager.destroyTabView(tab.id);
+          this.ensureActiveViewsLoaded();
+        }
         this.layoutViews();
         this.persistAndBroadcast();
         return;
       }
 
       case 'delete-space': {
-        if (this.data.spaces.length <= 1) {
-          this.showToast('Cannot delete the last Space');
+        if (this.persisted.spaces.length <= 1) {
+          this.showToast('Keep at least one Space');
           return;
         }
-        const removedTabs = this.data.tabs.filter((t) => t.spaceId === intent.spaceId);
-        for (const t of removedTabs) {
-          this.destroyTabView(t.id);
-        }
-        const remainingSpaces = this.data.spaces.filter((s) => s.id !== intent.spaceId);
+        const removedTabs = this.persisted.tabs.filter((t) => t.spaceId === intent.spaceId);
+        for (const t of removedTabs) this.tabManager.destroyTabView(t.id);
+        const remainingSpaces = this.persisted.spaces.filter((s) => s.id !== intent.spaceId);
         const nextActive =
-          this.data.activeSpaceId === intent.spaceId ? remainingSpaces[0].id : this.data.activeSpaceId;
-        const nextSplits = { ...this.data.splitsBySpace };
-        delete nextSplits[intent.spaceId];
-        this.data = {
-          ...this.data,
+          this.persisted.activeSpaceId === intent.spaceId ? remainingSpaces[0].id : this.persisted.activeSpaceId;
+        this.persisted = {
+          ...this.persisted,
           spaces: remainingSpaces,
-          folders: this.data.folders.filter((f) => f.spaceId !== intent.spaceId),
           activeSpaceId: nextActive,
-          tabs: this.data.tabs.filter((t) => t.spaceId !== intent.spaceId),
-          splitsBySpace: nextSplits,
+          tabs: this.persisted.tabs.filter((t) => t.spaceId !== intent.spaceId),
+          folders: this.persisted.folders.filter((f) => f.spaceId !== intent.spaceId),
         };
         this.overlay = { mode: 'none' };
-        this.syncActiveTabViews();
+        this.ensureActiveViewsLoaded();
+        this.refreshVisibleInternalPages();
         this.layoutViews();
+        this.focusActiveTabView();
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'rename-space': {
+        this.persisted = {
+          ...this.persisted,
+          spaces: this.persisted.spaces.map((s) =>
+            s.id === intent.spaceId ? { ...s, name: intent.name } : s
+          ),
+        };
+        this.refreshVisibleInternalPages();
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'reorder-space': {
+        this.persisted = reorderSpaces(this.persisted, intent.sourceSpaceId, intent.targetSpaceId);
         this.persistAndBroadcast();
         return;
       }
@@ -891,10 +1049,10 @@ export class NookWindowManager {
         const clean = intent.name.trim();
         if (!clean) return;
         const id = `prof-${Date.now()}`;
-        const partition = `persist:nook-${id}`;
-        this.data = {
-          ...this.data,
-          profiles: [...this.data.profiles, { id, name: clean, partition }],
+        const partition = `persist:kinex-${id}`;
+        this.persisted = {
+          ...this.persisted,
+          profiles: [...this.persisted.profiles, { id, name: clean, partition }],
         };
         this.persistAndBroadcast();
         this.showToast(`Created profile "${clean}"`);
@@ -902,17 +1060,21 @@ export class NookWindowManager {
       }
 
       case 'create-folder': {
-        const name = intent.name.trim() || 'New Folder';
-        const folder = { id: `fld-${Date.now()}`, spaceId: intent.spaceId, name, collapsed: false };
-        this.data = { ...this.data, folders: [...this.data.folders, folder] };
+        const clean = intent.name.trim();
+        if (!clean) return;
+        const id = `fld-${Date.now()}`;
+        this.persisted = {
+          ...this.persisted,
+          folders: [...this.persisted.folders, { id, spaceId: intent.spaceId, name: clean, collapsed: false }],
+        };
         this.persistAndBroadcast();
         return;
       }
 
       case 'toggle-folder': {
-        this.data = {
-          ...this.data,
-          folders: this.data.folders.map((f) =>
+        this.persisted = {
+          ...this.persisted,
+          folders: this.persisted.folders.map((f) =>
             f.id === intent.folderId ? { ...f, collapsed: !f.collapsed } : f
           ),
         };
@@ -921,10 +1083,10 @@ export class NookWindowManager {
       }
 
       case 'rename-folder': {
-        this.data = {
-          ...this.data,
-          folders: this.data.folders.map((f) =>
-            f.id === intent.folderId ? { ...f, name: intent.name.trim() || f.name } : f
+        this.persisted = {
+          ...this.persisted,
+          folders: this.persisted.folders.map((f) =>
+            f.id === intent.folderId ? { ...f, name: intent.name } : f
           ),
         };
         this.persistAndBroadcast();
@@ -932,10 +1094,10 @@ export class NookWindowManager {
       }
 
       case 'delete-folder': {
-        this.data = {
-          ...this.data,
-          folders: this.data.folders.filter((f) => f.id !== intent.folderId),
-          tabs: this.data.tabs.map((t) =>
+        this.persisted = {
+          ...this.persisted,
+          folders: this.persisted.folders.filter((f) => f.id !== intent.folderId),
+          tabs: this.persisted.tabs.map((t) =>
             t.folderId === intent.folderId ? { ...t, folderId: undefined } : t
           ),
         };
@@ -944,295 +1106,316 @@ export class NookWindowManager {
       }
 
       case 'move-tab-to-folder': {
-        this.data = {
-          ...this.data,
-          tabs: this.data.tabs.map((t) =>
-            t.id === intent.tabId
-              ? { ...t, location: 'pinned', pinnedUrl: t.pinnedUrl ?? t.url, folderId: intent.folderId }
-              : t
+        if (this.overlay.mode === 'command-bar') await this.handleIntent({ type: 'set-overlay', overlay: { mode: 'none' } });
+        this.persisted = {
+          ...this.persisted,
+          tabs: this.persisted.tabs.map((t) =>
+            t.id === intent.tabId ? { ...t, folderId: intent.folderId, location: 'pinned', pinnedUrl: t.pinnedUrl ?? t.url } : t
           ),
         };
         this.persistAndBroadcast();
         return;
       }
 
+      case 'move-tab-to-space': {
+        if (this.overlay.mode === 'command-bar') await this.handleIntent({ type: 'set-overlay', overlay: { mode: 'none' } });
+        const moved = moveTabToSpace(this.persisted, intent.tabId, intent.spaceId);
+        this.persisted = moved.next;
+        if (moved.profileChanged) {
+          this.tabManager.destroyTabView(intent.tabId);
+        }
+        this.ensureActiveViewsLoaded();
+        this.refreshVisibleInternalPages();
+        this.layoutViews();
+        this.focusActiveTabView(intent.tabId);
+        this.persistAndBroadcast();
+        if (moved.profileChanged) {
+          this.showToast('Moved tab using isolated destination Space profile');
+        }
+        return;
+      }
+
       case 'reorder-tab': {
-        this.data = reorderTabs(this.data, intent.sourceTabId, intent.targetTabId);
+        this.persisted = reorderTabs(this.persisted, intent.sourceTabId, intent.targetTabId);
         this.persistAndBroadcast();
         return;
       }
 
       case 'select-tab': {
-        const tab = this.data.tabs.find((t) => t.id === intent.tabId);
+        const tab = this.persisted.tabs.find((t) => t.id === intent.tabId);
         if (!tab) return;
-        const targetSpaceId = tab.location === 'topApp' ? this.data.activeSpaceId : tab.spaceId;
-        const currentSplit = getActiveSplit(this.data, targetSpaceId);
-        const nextIds = [...currentSplit.tabIds];
-        const existingIdx = nextIds.indexOf(tab.id);
-        let nextFocused = currentSplit.focusedIndex;
-
-        if (existingIdx !== -1) {
-          nextFocused = existingIdx;
-        } else if (typeof intent.paneIndex === 'number' && nextIds.length === 2) {
+        const targetSpaceId = tab.spaceId;
+        const split = getActiveSplit(this.persisted, targetSpaceId);
+        let nextIds = split.tabIds;
+        let nextFocus = split.focusedIndex;
+        if (typeof intent.paneIndex === 'number') {
+          nextIds = [...split.tabIds];
           nextIds[intent.paneIndex] = tab.id;
-          nextFocused = intent.paneIndex;
+          nextFocus = intent.paneIndex;
+        } else if (split.tabIds.includes(tab.id)) {
+          nextFocus = split.tabIds.indexOf(tab.id);
         } else {
-          const replaceIdx = Math.min(currentSplit.focusedIndex, Math.max(0, nextIds.length - 1));
-          nextIds[replaceIdx] = tab.id;
-          nextFocused = replaceIdx;
+          nextIds = split.tabIds.length === 2
+            ? split.tabIds.map((id, i) => (i === split.focusedIndex ? tab.id : id))
+            : [tab.id];
+          nextFocus = Math.min(nextFocus, nextIds.length - 1);
         }
-
-        this.data = {
-          ...this.data,
+        this.persisted = {
+          ...this.persisted,
           activeSpaceId: targetSpaceId,
-          tabs: this.data.tabs.map((t) => (t.id === tab.id ? { ...t, lastActiveAt: Date.now() } : t)),
+          tabs: this.persisted.tabs.map((t) =>
+            t.id === tab.id ? { ...t, lastActiveAt: Date.now() } : t
+          ),
           splitsBySpace: {
-            ...this.data.splitsBySpace,
-            [targetSpaceId]: {
-              ...currentSplit,
-              tabIds: nextIds,
-              focusedIndex: nextFocused,
-            },
+            ...this.persisted.splitsBySpace,
+            [targetSpaceId]: { ...split, tabIds: nextIds.slice(0, 2), focusedIndex: nextFocus },
           },
         };
         this.overlay = { mode: 'none' };
-        this.syncActiveTabViews();
+        this.ensureActiveViewsLoaded();
         this.layoutViews();
+        this.focusActiveTabView(tab.id);
         this.persistAndBroadcast();
+        return;
+      }
+
+      case 'duplicate-tab': {
+        const src = this.persisted.tabs.find((t) => t.id === intent.tabId);
+        if (src) this.openUrl(src.url, 'new-tab', src.spaceId);
         return;
       }
 
       case 'open-url': {
-        let normalized = normalizeNavigationInput(intent.url, this.data.searchEngine);
-        if (!isSafeNavigationUrl(normalized)) {
-          this.showToast('Blocked unsafe URL');
-          return;
-        }
-        normalized = upgradeUrlToHttpsIfNeeded(
-          normalized,
-          this.data.httpsOnly,
-          this.insecureFallbackHosts
-        );
-        if (intent.target === 'little-nook') {
-          this.overlay = { mode: 'none' };
-          this.syncActiveTabViews();
-          this.layoutViews();
-          await this.openLittleNook(normalized);
-          this.broadcastState();
-          return;
-        }
-
-        const routedSpace = intent.spaceId ? null : matchAirTrafficSpace(normalized, this.data.airTrafficRules);
-        const spaceId = intent.spaceId ?? routedSpace ?? this.data.activeSpaceId;
-        if (intent.target === 'current') {
-          const focused = getFocusedTab(this.data);
-          if (focused) {
-            const view = this.ensureTabView(focused);
-            this.overlay = { mode: 'none' };
-            this.syncActiveTabViews();
-            this.layoutViews();
-            await view.webContents.loadURL(normalized);
-            this.broadcastState();
-            return;
-          }
-        }
-
-        const newId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const newTab: TabItem = {
-          id: newId,
-          spaceId,
-          location: 'unpinned',
-          url: normalized,
-          title: normalized,
-          isLoading: true,
-          canGoBack: false,
-          canGoForward: false,
-          isMuted: false,
-          isAudible: false,
-          lastActiveAt: Date.now(),
-        };
-
-        const currentSplit = getActiveSplit(this.data, spaceId);
-        let nextTabIds: string[];
-        let nextFocus: number;
-
-        if (intent.target === 'split') {
-          if (currentSplit.tabIds.length === 0) {
-            nextTabIds = [newId];
-            nextFocus = 0;
-          } else {
-            nextTabIds = [currentSplit.tabIds[0], newId];
-            nextFocus = 1;
-          }
-        } else {
-          nextTabIds = [newId];
-          nextFocus = 0;
-        }
-
-        this.data = {
-          ...this.data,
-          activeSpaceId: spaceId,
-          tabs: [newTab, ...this.data.tabs],
-          splitsBySpace: {
-            ...this.data.splitsBySpace,
-            [spaceId]: {
-              ...currentSplit,
-              tabIds: nextTabIds,
-              focusedIndex: nextFocus,
-            },
-          },
-        };
         this.overlay = { mode: 'none' };
-        this.syncActiveTabViews();
+        this.openUrl(intent.url, intent.target, intent.spaceId, intent.duplicatePolicy ?? 'allow');
+        return;
+      }
+
+      case 'resolve-duplicate-open': {
+        const prompt = this.duplicatePrompt;
+        this.duplicatePrompt = null;
+        if (!prompt || intent.decision === 'cancel') {
+          this.layoutViews();
+          this.broadcastState();
+          this.restoreOverlayFocus();
+          return;
+        }
+        if (intent.decision === 'switch-existing') {
+          await this.handleIntent({ type: 'select-tab', tabId: prompt.existingTabId });
+          return;
+        }
+        this.openUrl(prompt.url, prompt.target, prompt.requestedSpaceId, 'allow');
         this.layoutViews();
-        this.persistAndBroadcast();
         return;
       }
 
       case 'close-tab': {
-        const res = closeOrResetTab(this.data, intent.tabId);
-        this.data = res.next;
-        if (res.destroyedTabId) {
-          this.destroyTabView(res.destroyedTabId);
-        } else if (res.resetTab) {
-          const view = this.tabViews.get(res.resetTab.id);
-          if (view && !view.webContents.isDestroyed()) {
-            void view.webContents.loadURL(res.resetTab.url);
-          }
+        const result = closeOrResetTab(this.persisted, intent.tabId);
+        this.persisted = result.next;
+        if (result.destroyedTabId) {
+          this.readerDocsByTabId.delete(result.destroyedTabId);
+          this.findQueryByTabId.delete(result.destroyedTabId);
+          this.tabManager.destroyTabView(result.destroyedTabId);
+        } else if (result.resetTab) {
+          this.readerDocsByTabId.delete(result.resetTab.id);
+          this.tabManager.navigateTab(result.resetTab.id, result.resetTab.url);
         }
-        this.syncActiveTabViews();
+        this.ensureActiveViewsLoaded();
+        this.refreshVisibleInternalPages();
         this.layoutViews();
+        this.focusActiveTabView();
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'close-other-tabs': {
+        const res = closeOtherTabsForSpace(this.persisted, intent.tabId);
+        this.persisted = res.next;
+        for (const id of res.destroyedTabIds) {
+          this.readerDocsByTabId.delete(id);
+          this.findQueryByTabId.delete(id);
+          this.tabManager.destroyTabView(id);
+        }
+        this.ensureActiveViewsLoaded();
+        this.refreshVisibleInternalPages();
+        this.layoutViews();
+        this.focusActiveTabView();
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'close-tabs-to-right': {
+        const res = closeTabsToRightForSpace(this.persisted, intent.tabId);
+        this.persisted = res.next;
+        for (const id of res.destroyedTabIds) {
+          this.readerDocsByTabId.delete(id);
+          this.findQueryByTabId.delete(id);
+          this.tabManager.destroyTabView(id);
+        }
+        this.ensureActiveViewsLoaded();
+        this.refreshVisibleInternalPages();
+        this.layoutViews();
+        this.focusActiveTabView();
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'reopen-closed-tab': {
+        const res = restoreClosedTabs(this.persisted, { closedId: intent.closedId });
+        if (res.restoredTabs.length === 0) {
+          this.showToast('No recently closed tabs');
+          return;
+        }
+        this.persisted = res.next;
+        this.overlay = { mode: 'none' };
+        this.ensureActiveViewsLoaded();
+        this.refreshVisibleInternalPages();
+        this.layoutViews();
+        this.focusActiveTabView(res.restoredTabs[0].id);
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'restore-closed-group': {
+        const res = restoreClosedTabs(this.persisted, { groupId: intent.groupId });
+        if (res.restoredTabs.length === 0) return;
+        this.persisted = res.next;
+        this.overlay = { mode: 'none' };
+        this.ensureActiveViewsLoaded();
+        this.refreshVisibleInternalPages();
+        this.layoutViews();
+        this.focusActiveTabView(res.restoredTabs[0].id);
+        this.persistAndBroadcast();
+        this.showToast(`Restored ${res.restoredTabs.length} tabs`);
+        return;
+      }
+
+      case 'clear-closed-tabs': {
+        this.persisted = { ...this.persisted, closedTabs: [] };
         this.persistAndBroadcast();
         return;
       }
 
       case 'reset-pinned-tab': {
-        const tab = this.data.tabs.find((t) => t.id === intent.tabId);
-        if (!tab || !tab.pinnedUrl) return;
-        this.updateTab(tab.id, { url: tab.pinnedUrl });
-        const view = this.tabViews.get(tab.id);
-        if (view && !view.webContents.isDestroyed()) {
-          void view.webContents.loadURL(tab.pinnedUrl);
-        }
+        const tab = this.persisted.tabs.find((t) => t.id === intent.tabId);
+        if (!tab) return;
+        const resetUrl = tab.pinnedUrl ?? tab.url;
+        this.persisted = {
+          ...this.persisted,
+          tabs: this.persisted.tabs.map((t) => (t.id === tab.id ? { ...t, url: resetUrl } : t)),
+        };
+        this.tabManager.navigateTab(tab.id, resetUrl);
+        this.persistAndBroadcast();
         return;
       }
 
       case 'set-tab-location': {
-        this.data = setTabLocation(this.data, intent.tabId, intent.location);
+        this.persisted = setTabLocation(this.persisted, intent.tabId, intent.location);
         this.persistAndBroadcast();
         return;
       }
 
       case 'clear-today-tabs': {
-        const res = clearTodayTabsForSpace(this.data, intent.spaceId);
-        this.data = res.next;
-        for (const id of res.destroyedTabIds) {
-          this.destroyTabView(id);
+        const cleared = clearTodayTabsForSpace(this.persisted, intent.spaceId);
+        this.persisted = cleared.next;
+        for (const id of cleared.destroyedTabIds) {
+          this.tabManager.destroyTabView(id);
         }
-        this.syncActiveTabViews();
+        this.ensureActiveViewsLoaded();
+        this.refreshVisibleInternalPages();
         this.layoutViews();
+        this.focusActiveTabView();
         this.persistAndBroadcast();
-        this.showToast(`Archived ${res.destroyedTabIds.length} Today tab(s)`);
         return;
       }
 
       case 'restore-archived-tab': {
-        const archived = this.data.archivedTabs.find((a) => a.id === intent.archivedId);
+        const archived = this.persisted.archivedTabs.find((a) => a.id === intent.archivedId);
         if (!archived) return;
-        this.data = {
-          ...this.data,
-          archivedTabs: this.data.archivedTabs.filter((a) => a.id !== intent.archivedId),
+        this.persisted = {
+          ...this.persisted,
+          archivedTabs: this.persisted.archivedTabs.filter((a) => a.id !== intent.archivedId),
         };
-        await this.handleIntent({
-          type: 'open-url',
-          url: archived.url,
-          target: 'new-tab',
-          spaceId: this.data.activeSpaceId,
-        });
+        this.overlay = { mode: 'none' };
+        this.openUrl(archived.url, 'new-tab', archived.spaceId);
         return;
       }
 
       case 'toggle-split': {
-        const spaceId = this.data.activeSpaceId;
-        const current = getActiveSplit(this.data, spaceId);
-        if (current.tabIds.length === 2 && !intent.tabId) {
-          const keep = current.tabIds[current.focusedIndex] ?? current.tabIds[0];
-          this.data = {
-            ...this.data,
+        const split = getActiveSplit(this.persisted);
+        if (split.tabIds.length > 1 && !intent.tabId) {
+          this.persisted = {
+            ...this.persisted,
             splitsBySpace: {
-              ...this.data.splitsBySpace,
-              [spaceId]: { ...current, tabIds: [keep], focusedIndex: 0 },
+              ...this.persisted.splitsBySpace,
+              [this.persisted.activeSpaceId]: { ...split, tabIds: [split.tabIds[0]], focusedIndex: 0 },
             },
           };
-          this.syncActiveTabViews();
-          this.layoutViews();
-          this.persistAndBroadcast();
-          return;
-        }
-        if (intent.tabId) {
-          const base = current.tabIds[0];
-          const second = intent.tabId === base ? current.tabIds[1] : intent.tabId;
-          if (second && second !== base) {
-            this.data = {
-              ...this.data,
-              splitsBySpace: {
-                ...this.data.splitsBySpace,
-                [spaceId]: { ...current, tabIds: [base, second], focusedIndex: 1 },
-              },
-            };
-            this.syncActiveTabViews();
-            this.layoutViews();
-            this.persistAndBroadcast();
+        } else {
+          const requestedTab =
+            intent.tabId &&
+            intent.tabId !== split.tabIds[0] &&
+            this.persisted.tabs.some((t) => t.id === intent.tabId)
+              ? intent.tabId
+              : undefined;
+          const secondId =
+            requestedTab ??
+            this.persisted.tabs.find(
+              (t) =>
+                t.id !== split.tabIds[0] &&
+                (t.spaceId === this.persisted.activeSpaceId || t.location === 'topApp')
+            )?.id;
+          if (!secondId) {
+            this.openUrl('kinex://newtab', 'split');
             return;
           }
-        }
-        const otherTab = this.data.tabs.find(
-          (t) => t.spaceId === spaceId && !current.tabIds.includes(t.id)
-        );
-        if (otherTab) {
-          this.data = {
-            ...this.data,
+          this.persisted = {
+            ...this.persisted,
             splitsBySpace: {
-              ...this.data.splitsBySpace,
-              [spaceId]: { ...current, tabIds: [current.tabIds[0], otherTab.id], focusedIndex: 1 },
+              ...this.persisted.splitsBySpace,
+              [this.persisted.activeSpaceId]: {
+                ...split,
+                tabIds: [split.tabIds[0], secondId].filter(Boolean).slice(0, 2),
+                focusedIndex: 1,
+              },
             },
           };
-          this.syncActiveTabViews();
-          this.layoutViews();
-          this.persistAndBroadcast();
-          return;
         }
-        await this.handleIntent({ type: 'open-url', url: 'kinex://newtab', target: 'split' });
+        this.ensureActiveViewsLoaded();
+        this.refreshVisibleInternalPages();
+        this.layoutViews();
+        this.focusActiveTabView();
+        this.persistAndBroadcast();
         return;
       }
 
       case 'close-split-pane': {
-        const spaceId = this.data.activeSpaceId;
-        const current = getActiveSplit(this.data, spaceId);
-        if (current.tabIds.length < 2) return;
-        const nextIds = current.tabIds.filter((_, idx) => idx !== intent.paneIndex);
-        this.data = {
-          ...this.data,
+        const split = getActiveSplit(this.persisted);
+        const remaining = split.tabIds.filter((_, idx) => idx !== intent.paneIndex);
+        this.persisted = {
+          ...this.persisted,
           splitsBySpace: {
-            ...this.data.splitsBySpace,
-            [spaceId]: { ...current, tabIds: nextIds, focusedIndex: 0 },
+            ...this.persisted.splitsBySpace,
+            [this.persisted.activeSpaceId]: {
+              ...split,
+              tabIds: remaining.length > 0 ? remaining : split.tabIds.slice(0, 1),
+              focusedIndex: 0,
+            },
           },
         };
-        this.syncActiveTabViews();
         this.layoutViews();
+        this.focusActiveTabView();
         this.persistAndBroadcast();
         return;
       }
 
       case 'set-split-ratio': {
-        const spaceId = this.data.activeSpaceId;
-        const current = getActiveSplit(this.data, spaceId);
-        const clamped = Math.min(0.78, Math.max(0.22, intent.ratio));
-        this.data = {
-          ...this.data,
+        const split = getActiveSplit(this.persisted);
+        this.persisted = {
+          ...this.persisted,
           splitsBySpace: {
-            ...this.data.splitsBySpace,
-            [spaceId]: { ...current, splitRatio: clamped },
+            ...this.persisted.splitsBySpace,
+            [this.persisted.activeSpaceId]: { ...split, splitRatio: intent.ratio },
           },
         };
         this.layoutViews();
@@ -1241,16 +1424,18 @@ export class NookWindowManager {
       }
 
       case 'focus-pane': {
-        const spaceId = this.data.activeSpaceId;
-        const current = getActiveSplit(this.data, spaceId);
-        if (intent.paneIndex < 0 || intent.paneIndex >= current.tabIds.length) return;
-        this.data = {
-          ...this.data,
+        const split = getActiveSplit(this.persisted);
+        this.persisted = {
+          ...this.persisted,
           splitsBySpace: {
-            ...this.data.splitsBySpace,
-            [spaceId]: { ...current, focusedIndex: intent.paneIndex },
+            ...this.persisted.splitsBySpace,
+            [this.persisted.activeSpaceId]: {
+              ...split,
+              focusedIndex: Math.min(intent.paneIndex, Math.max(0, split.tabIds.length - 1)),
+            },
           },
         };
+        this.focusActiveTabView();
         this.persistAndBroadcast();
         return;
       }
@@ -1259,287 +1444,526 @@ export class NookWindowManager {
       case 'nav-forward':
       case 'nav-reload':
       case 'nav-stop': {
-        const tab = intent.tabId
-          ? this.data.tabs.find((t) => t.id === intent.tabId)
-          : getFocusedTab(this.data);
-        if (!tab) return;
-        const wc = this.tabViews.get(tab.id)?.webContents;
-        if (!wc || wc.isDestroyed()) return;
+        const targetId = intent.tabId ?? getFocusedTab(this.persisted)?.id;
+        if (!targetId) return;
+        if (intent.type === 'nav-reload') {
+          this.tabManager.reloadTab(targetId);
+          this.focusActiveTabView(targetId);
+          return;
+        }
+        const view = this.tabManager.getView(targetId);
+        if (!view || view.webContents.isDestroyed()) return;
+        const wc = view.webContents;
         if (intent.type === 'nav-back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
         if (intent.type === 'nav-forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
-        if (intent.type === 'nav-reload') wc.reload();
         if (intent.type === 'nav-stop') wc.stop();
+        this.focusActiveTabView(targetId);
         return;
       }
 
       case 'set-zoom': {
-        const tab = intent.tabId
-          ? this.data.tabs.find((t) => t.id === intent.tabId)
-          : getFocusedTab(this.data);
-        if (!tab) return;
-        const wc = this.tabViews.get(tab.id)?.webContents;
-        if (!wc || wc.isDestroyed()) return;
-        const cur = wc.getZoomFactor();
-        const next =
+        const targetTab = intent.tabId
+          ? this.persisted.tabs.find((t) => t.id === intent.tabId)
+          : getFocusedTab(this.persisted);
+        if (!targetTab) return;
+        const current = targetTab.zoomFactor ?? 1;
+        const nextZoom =
           intent.delta === 'reset'
             ? 1
             : intent.delta === 'in'
-              ? Math.min(3, Math.round((cur + 0.1) * 10) / 10)
-              : Math.max(0.4, Math.round((cur - 0.1) * 10) / 10);
-        wc.setZoomFactor(next);
-        this.updateTab(tab.id, { zoomFactor: next });
-        this.showToast(`Zoom ${Math.round(next * 100)}%`);
+              ? Math.min(2.5, Number((current + 0.1).toFixed(2)))
+              : Math.max(0.5, Number((current - 0.1).toFixed(2)));
+        const view = this.tabManager.getView(targetTab.id);
+        if (view && !view.webContents.isDestroyed()) {
+          view.webContents.setZoomFactor(nextZoom);
+        }
+        const host = extractHostname(targetTab.url);
+        const nextZoomByHost = { ...this.persisted.zoomByHost };
+        if (host && !targetTab.url.startsWith('kinex://')) {
+          if (nextZoom === 1) {
+            delete nextZoomByHost[host];
+          } else {
+            nextZoomByHost[host] = nextZoom;
+          }
+        }
+        this.persisted = {
+          ...this.persisted,
+          zoomByHost: nextZoomByHost,
+          tabs: this.persisted.tabs.map((t) => (t.id === targetTab.id ? { ...t, zoomFactor: nextZoom } : t)),
+        };
+        this.layoutViews();
+        this.persistAndBroadcast();
         return;
       }
 
       case 'toggle-mute': {
-        const tab = this.data.tabs.find((t) => t.id === intent.tabId);
-        if (!tab) return;
-        const nextMuted = !tab.isMuted;
-        const wc = this.tabViews.get(tab.id)?.webContents;
-        if (wc && !wc.isDestroyed()) wc.setAudioMuted(nextMuted);
-        this.updateTab(tab.id, { isMuted: nextMuted });
+        const target = this.persisted.tabs.find((t) => t.id === intent.tabId);
+        if (!target) return;
+        const nextMuted = !target.isMuted;
+        const view = this.tabManager.getView(target.id);
+        if (view && !view.webContents.isDestroyed()) {
+          view.webContents.setAudioMuted(nextMuted);
+        }
+        this.persisted = {
+          ...this.persisted,
+          tabs: this.persisted.tabs.map((t) => (t.id === target.id ? { ...t, isMuted: nextMuted } : t)),
+        };
+        this.persistAndBroadcast();
         return;
       }
 
       case 'toggle-sidebar': {
-        const nextOpen = typeof intent.open === 'boolean' ? intent.open : !this.data.sidebarOpen;
-        this.data = { ...this.data, sidebarOpen: nextOpen };
+        this.persisted = {
+          ...this.persisted,
+          sidebarOpen: intent.open ?? !this.persisted.sidebarOpen,
+        };
         this.layoutViews();
         this.persistAndBroadcast();
         return;
       }
 
       case 'set-sidebar-width': {
-        const width = Math.min(380, Math.max(200, intent.width));
-        this.data = { ...this.data, sidebarWidth: width };
+        this.persisted = { ...this.persisted, sidebarWidth: intent.width };
         this.layoutViews();
         this.persistAndBroadcast();
         return;
       }
 
       case 'set-overlay': {
+        if (intent.overlay.mode !== 'none') this.captureOverlayOrigin();
+        const wasOpen = this.overlay.mode !== 'none';
         this.overlay = intent.overlay;
-        this.syncActiveTabViews();
+        if (this.overlayCloseTimer) clearTimeout(this.overlayCloseTimer);
+        this.overlayCloseTimer = null;
+        this.overlayClosing = false;
+        if (this.overlay.mode !== 'none') {
+          this.ensureOverlayView();
+          if (this.overlay.mode === 'settings') this.refreshDefaultBrowserFlag(false);
+        } else if (wasOpen) {
+          this.overlayClosing = true;
+          this.overlayCloseTimer = setTimeout(() => {
+            this.overlayCloseTimer = null;
+            this.overlayClosing = false;
+            if (!this.disposed) {
+              this.layoutViews();
+              if (this.mainWindow?.isFocused() && !webContents.getFocusedWebContents()) this.restoreOverlayFocus();
+            }
+          }, systemPreferences.getAnimationSettings().prefersReducedMotion || this.speedLimited || this.thermalLimited ? 0 : 140);
+        }
         this.layoutViews();
         this.broadcastState();
-        if (this.overlay.mode !== 'none' && this.overlayView && !this.overlayView.webContents.isDestroyed()) {
-          this.overlayView.webContents.focus();
-        } else {
-          const focused = getFocusedTab(this.data);
-          if (focused) this.tabViews.get(focused.id)?.webContents.focus();
-        }
+        if (this.overlay.mode !== 'none') this.overlayView?.webContents.focus();
+        else this.restoreOverlayFocus();
         return;
       }
 
       case 'set-search-engine': {
-        this.data = { ...this.data, searchEngine: intent.engine };
+        this.persisted = { ...this.persisted, searchEngine: intent.engine };
+        this.refreshVisibleInternalPages();
         this.persistAndBroadcast();
-        return;
-      }
-
-      case 'save-boost': {
-        const exists = this.data.boosts.some((b) => b.id === intent.boost.id);
-        this.data = {
-          ...this.data,
-          boosts: exists
-            ? this.data.boosts.map((b) => (b.id === intent.boost.id ? intent.boost : b))
-            : [intent.boost, ...this.data.boosts],
-        };
-        this.persistAndBroadcast();
-        await this.reapplyBoostsAcrossOpenTabs();
-        this.showToast(`Saved Boost for ${intent.boost.domainPattern}`);
-        return;
-      }
-
-      case 'delete-boost': {
-        this.data = {
-          ...this.data,
-          boosts: this.data.boosts.filter((b) => b.id !== intent.boostId),
-        };
-        this.persistAndBroadcast();
-        await this.reapplyBoostsAcrossOpenTabs();
-        return;
-      }
-
-      case 'toggle-boost-enabled': {
-        this.data = {
-          ...this.data,
-          boosts: this.data.boosts.map((b) => (b.id === intent.boostId ? { ...b, enabled: !b.enabled } : b)),
-        };
-        this.persistAndBroadcast();
-        await this.reapplyBoostsAcrossOpenTabs();
-        return;
-      }
-
-      case 'start-zapper': {
-        const focused = getFocusedTab(this.data);
-        if (!focused || focused.url.startsWith('kinex://') || focused.url.startsWith('nook://')) {
-          this.showToast('Open a website first to Zap elements');
-          return;
-        }
-        const view = this.ensureTabView(focused);
-        this.overlay = { mode: 'none' };
-        this.zapperActiveTabId = focused.id;
-        this.syncActiveTabViews();
-        this.layoutViews();
-        this.broadcastState();
-        view.webContents.focus();
-
-        const selector = await runElementZapper(view.webContents);
-        this.zapperActiveTabId = null;
-        if (selector) {
-          const host = extractHostname(focused.url) || '*';
-          const existing = this.data.boosts.find(
-            (b) => b.domainPattern.toLowerCase() === host.toLowerCase()
-          );
-          const updatedBoost: BoostRule = existing
-            ? {
-                ...existing,
-                enabled: true,
-                zappedSelectors: Array.from(new Set([...existing.zappedSelectors, selector])),
-              }
-            : {
-                id: `boost-${Date.now()}`,
-                name: `${host} Boost`,
-                domainPattern: host,
-                enabled: true,
-                css: '',
-                js: '',
-                zappedSelectors: [selector],
-              };
-          await this.handleIntent({ type: 'save-boost', boost: updatedBoost });
-          this.showToast(`Zapped ${selector}`);
-        } else {
-          this.broadcastState();
-        }
-        return;
-      }
-
-      case 'stop-zapper': {
-        if (this.zapperActiveTabId) {
-          const wc = this.tabViews.get(this.zapperActiveTabId)?.webContents;
-          if (wc && !wc.isDestroyed()) {
-            void wc.executeJavaScript('window.__nookZapperCleanup && window.__nookZapperCleanup(null);');
-          }
-          this.zapperActiveTabId = null;
-          this.broadcastState();
-        }
-        return;
-      }
-
-      case 'toggle-adblock': {
-        this.data = { ...this.data, adBlockEnabled: !this.data.adBlockEnabled };
-        this.persistAndBroadcast();
-        this.showToast(this.data.adBlockEnabled ? 'Shields On' : 'Shields Off');
-        return;
-      }
-
-      case 'copy-current-url': {
-        const targetTab = intent.tabId
-          ? this.data.tabs.find((t) => t.id === intent.tabId)
-          : getFocusedTab(this.data);
-        if (targetTab?.url) {
-          const text = this.data.cleanCopyUrl ? stripTrackingParams(targetTab.url) : targetTab.url;
-          clipboard.writeText(text);
-          this.showToast(text !== targetTab.url ? 'Copied Clean URL' : 'Copied Current URL');
-        }
         return;
       }
 
       case 'set-https-only': {
-        this.data = { ...this.data, httpsOnly: intent.enabled };
+        this.persisted = { ...this.persisted, httpsOnly: intent.enabled };
         this.persistAndBroadcast();
         return;
       }
 
       case 'set-clean-copy-url': {
-        this.data = { ...this.data, cleanCopyUrl: intent.enabled };
+        this.persisted = { ...this.persisted, cleanCopyUrl: intent.enabled };
         this.persistAndBroadcast();
         return;
       }
 
       case 'revoke-site-permission': {
-        this.data = {
-          ...this.data,
-          sitePermissions: this.data.sitePermissions.filter(
-            (p) => !(p.origin === intent.origin && p.permission === intent.permission)
-          ),
-        };
-        this.persistAndBroadcast();
+        this.permissionManager.revoke(intent.origin, intent.permission);
         return;
       }
 
       case 'save-air-traffic-rule': {
-        const exists = this.data.airTrafficRules.some((r) => r.id === intent.rule.id);
-        this.data = {
-          ...this.data,
+        const exists = this.persisted.airTrafficRules.some((r) => r.id === intent.rule.id);
+        this.persisted = {
+          ...this.persisted,
           airTrafficRules: exists
-            ? this.data.airTrafficRules.map((r) => (r.id === intent.rule.id ? intent.rule : r))
-            : [...this.data.airTrafficRules, intent.rule],
+            ? this.persisted.airTrafficRules.map((r) => (r.id === intent.rule.id ? intent.rule : r))
+            : [...this.persisted.airTrafficRules, intent.rule],
         };
         this.persistAndBroadcast();
         return;
       }
 
       case 'delete-air-traffic-rule': {
-        this.data = {
-          ...this.data,
-          airTrafficRules: this.data.airTrafficRules.filter((r) => r.id !== intent.ruleId),
+        this.persisted = {
+          ...this.persisted,
+          airTrafficRules: this.persisted.airTrafficRules.filter((r) => r.id !== intent.ruleId),
         };
         this.persistAndBroadcast();
         return;
       }
 
       case 'clear-browsing-data': {
-        const scopes = new Set(intent.scopes);
-        if (scopes.has('history')) {
-          this.data = { ...this.data, history: [] };
-        }
-        if (scopes.has('archived')) {
-          this.data = { ...this.data, archivedTabs: [] };
-        }
-        if (scopes.has('cookies') || scopes.has('cache')) {
-          const partitions = new Set(this.data.spaces.map((s) => s.profilePartition));
-          for (const part of partitions) {
-            const sess = session.fromPartition(part);
-            if (scopes.has('cache')) await sess.clearCache();
-            if (scopes.has('cookies')) {
-              await sess.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers'] });
-            }
-          }
-        }
+        const partitions = Array.from(
+          new Set([
+            ...this.persisted.profiles.map((p) => p.partition),
+            ...this.persisted.spaces.map((s) => s.profilePartition),
+          ])
+        );
+        await this.sessionManager.clearRegularSessionData(partitions, {
+          cookies: intent.scopes.includes('cookies'),
+          cache: intent.scopes.includes('cache'),
+        });
+        this.persisted = {
+          ...this.persisted,
+          history: intent.scopes.includes('history') ? [] : this.persisted.history,
+          archivedTabs: intent.scopes.includes('archived') ? [] : this.persisted.archivedTabs,
+        };
         this.persistAndBroadcast();
         this.showToast('Cleared selected browsing data');
         return;
       }
 
-      case 'duplicate-tab': {
-        const source = this.data.tabs.find((t) => t.id === intent.tabId);
-        if (!source) return;
-        await this.handleIntent({
-          type: 'open-url',
-          url: source.url,
-          target: 'new-tab',
-          spaceId: source.spaceId,
+      case 'save-boost': {
+        const exists = this.persisted.boosts.some((b) => b.id === intent.boost.id);
+        this.persisted = {
+          ...this.persisted,
+          boosts: exists
+            ? this.persisted.boosts.map((b) => (b.id === intent.boost.id ? intent.boost : b))
+            : [...this.persisted.boosts, intent.boost],
+        };
+        this.tabManager.applyBoostsToActiveViews();
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'delete-boost': {
+        this.persisted = {
+          ...this.persisted,
+          boosts: this.persisted.boosts.filter((b) => b.id !== intent.boostId),
+        };
+        this.tabManager.applyBoostsToActiveViews();
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'toggle-boost-enabled': {
+        this.persisted = {
+          ...this.persisted,
+          boosts: this.persisted.boosts.map((b) =>
+            b.id === intent.boostId ? { ...b, enabled: !b.enabled } : b
+          ),
+        };
+        this.tabManager.applyBoostsToActiveViews();
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'start-zapper': {
+        const focused = getFocusedTab(this.persisted);
+        if (!focused) return;
+        this.overlay = { mode: 'none' };
+        this.layoutViews();
+        this.broadcastState();
+        this.focusActiveTabView();
+        const selector = await this.tabManager.startZapperOnTab(focused.id);
+        if (selector && !this.disposed) {
+          let host = '*';
+          try {
+            host = new URL(focused.url).hostname.replace(/^www\./, '');
+          } catch {
+            host = '*';
+          }
+          const existing = this.persisted.boosts.find((b) => b.domainPattern === host);
+          if (existing) {
+            this.persisted = {
+              ...this.persisted,
+              boosts: this.persisted.boosts.map((b) =>
+                b.id === existing.id
+                  ? { ...b, enabled: true, zappedSelectors: [...b.zappedSelectors, selector] }
+                  : b
+              ),
+            };
+          } else {
+            this.persisted = {
+              ...this.persisted,
+              boosts: [
+                ...this.persisted.boosts,
+                {
+                  id: `boost-${Date.now()}`,
+                  name: `${host} Zaps`,
+                  domainPattern: host,
+                  enabled: true,
+                  css: '',
+                  js: '',
+                  zappedSelectors: [selector],
+                },
+              ],
+            };
+          }
+          this.tabManager.applyBoostsToActiveViews();
+          this.persistAndBroadcast();
+          this.showToast(`Zapped ${selector}`);
+        }
+        return;
+      }
+
+      case 'stop-zapper': {
+        this.tabManager.stopZapperOnActiveTab();
+        return;
+      }
+
+      case 'toggle-adblock': {
+        this.persisted = { ...this.persisted, adBlockEnabled: !this.persisted.adBlockEnabled };
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'copy-current-url': {
+        const tab = intent.tabId
+          ? this.persisted.tabs.find((t) => t.id === intent.tabId)
+          : getFocusedTab(this.persisted);
+        if (!tab) return;
+        const clean = this.persisted.cleanCopyUrl ? stripTrackingParams(tab.url) : tab.url;
+        clipboard.writeText(clean);
+        this.showToast(
+          clean !== tab.url ? 'Copied clean URL (tracking stripped)' : 'Copied URL'
+        );
+        return;
+      }
+
+      case 'open-devtools': {
+        const focused = getFocusedTab(this.persisted);
+        if (!focused) return;
+        const view = this.tabManager.getView(focused.id);
+        if (view && !view.webContents.isDestroyed()) {
+          view.webContents.openDevTools({ mode: 'right' });
+        }
+        return;
+      }
+
+      case 'print-page': {
+        const focused = getFocusedTab(this.persisted);
+        if (!focused) return;
+        const view = this.tabManager.getView(focused.id);
+        if (view && !view.webContents.isDestroyed()) {
+          view.webContents.print({}, (success, failureReason) => {
+            if (!success && failureReason && failureReason !== 'cancelled') {
+              this.showToast(`Print failed: ${failureReason}`);
+            }
+          });
+        }
+        return;
+      }
+
+      case 'save-page-pdf': {
+        const focused = getFocusedTab(this.persisted);
+        const view = focused ? this.tabManager.getView(focused.id) : undefined;
+        if (!focused || !view || view.webContents.isDestroyed() || !this.mainWindow || this.mainWindow.isDestroyed()) {
+          return;
+        }
+        const safeStem = (focused.title || extractHostname(focused.url) || 'page')
+          .replace(/[^a-zA-Z0-9._-]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 48) || 'page';
+        const saveRes = await dialog.showSaveDialog(this.mainWindow, {
+          title: 'Save Page as PDF',
+          defaultPath: path.join(app.getPath('documents'), `${safeStem}.pdf`),
+          filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
         });
+        if (saveRes.canceled || !saveRes.filePath) return;
+        try {
+          const pdfData = await view.webContents.printToPDF({ printBackground: true });
+          await fs.promises.writeFile(saveRes.filePath, pdfData);
+          this.showToast(`Saved PDF: ${path.basename(saveRes.filePath)}`);
+        } catch {
+          this.showToast('Unable to export PDF from this page');
+        }
+        return;
+      }
+
+      case 'toggle-reader-mode': {
+        const targetTab = intent.tabId
+          ? this.persisted.tabs.find((t) => t.id === intent.tabId)
+          : getFocusedTab(this.persisted);
+        if (!targetTab) return;
+        const view = this.tabManager.getView(targetTab.id);
+        if (!view || view.webContents.isDestroyed()) return;
+
+        const cachedDoc = this.readerDocsByTabId.get(targetTab.id);
+        if (cachedDoc) {
+          this.readerDocsByTabId.delete(targetTab.id);
+          this.layoutViews();
+          const originalUrl = cachedDoc.originalUrl;
+          this.persisted = {
+            ...this.persisted,
+            tabs: this.persisted.tabs.map((t) =>
+              t.id === targetTab.id ? { ...t, url: originalUrl, isLoading: true } : t
+            ),
+          };
+          this.tabManager.navigateTab(targetTab.id, originalUrl);
+          this.persistAndBroadcast();
+          return;
+        }
+
+        if (targetTab.url.startsWith('kinex://') || targetTab.url.startsWith('nook://')) {
+          this.showToast('Reader Mode applies to article web pages');
+          return;
+        }
+
+        const extracted = await extractArticleFromWebContents(view.webContents, targetTab.url);
+        if (!extracted.ok) {
+          this.showToast(extracted.reason);
+          return;
+        }
+
+        this.readerDocsByTabId.set(targetTab.id, extracted.doc);
+        this.layoutViews();
+        const readerUrl = `kinex://reader?tabId=${encodeURIComponent(targetTab.id)}`;
+        void view.webContents.loadURL(readerUrl).catch(() => {});
+        this.broadcastState();
+        return;
+      }
+
+      case 'set-reader-options': {
+        const nextFont =
+          typeof intent.options.fontSize === 'number'
+            ? Math.min(28, Math.max(12, Math.round(intent.options.fontSize)))
+            : this.persisted.readerOptions.fontSize;
+        const nextTheme = intent.options.theme ?? this.persisted.readerOptions.theme;
+        this.persisted = {
+          ...this.persisted,
+          readerOptions: { fontSize: nextFont, theme: nextTheme },
+        };
+        for (const tabId of this.readerDocsByTabId.keys()) {
+          const view = this.tabManager.getView(tabId);
+          if (view && !view.webContents.isDestroyed()) {
+            void view.webContents.reloadIgnoringCache();
+          }
+        }
+        this.persistAndBroadcast();
         return;
       }
 
       case 'open-incognito': {
-        await this.openIncognitoWindow(intent.url || 'kinex://newtab');
+        this.auxiliaryWindows.openPrivateWindow(intent.url);
+        return;
+      }
+
+      case 'find-in-page': {
+        const focused = getFocusedTab(this.persisted);
+        const view = focused ? this.tabManager.getView(focused.id) : undefined;
+        if (!focused || !view || view.webContents.isDestroyed()) return;
+        if (!intent.text) {
+          this.findQueryByTabId.delete(focused.id);
+          this.findStatus = null;
+          view.webContents.stopFindInPage('clearSelection');
+          this.scheduleBroadcast();
+        } else {
+          this.findQueryByTabId.set(focused.id, intent.text);
+          view.webContents.findInPage(intent.text, {
+            forward: intent.forward ?? true,
+            findNext: intent.findNext ?? false,
+          });
+        }
+        return;
+      }
+
+      case 'stop-find-in-page': {
+        const focused = getFocusedTab(this.persisted);
+        const view = focused ? this.tabManager.getView(focused.id) : undefined;
+        if (focused) {
+          this.findQueryByTabId.delete(focused.id);
+        }
+        this.findStatus = null;
+        if (view && !view.webContents.isDestroyed()) {
+          view.webContents.stopFindInPage('clearSelection');
+        }
+        await this.handleIntent({ type: 'set-overlay', overlay: { mode: 'none' } });
+        return;
+      }
+
+      case 'promote-little-nook': {
+        this.openUrl(intent.url, 'new-tab');
+        return;
+      }
+
+      case 'import-browser-data': {
+        const res = await runBrowserImport(intent.source, this.persisted.activeSpaceId, this.mainWindow);
+        if ('cancelled' in res) return;
+        if ('error' in res) {
+          this.showToast(res.error);
+          return;
+        }
+        if (res.imported.tabs.length === 0) {
+          this.showToast('No bookmarks found to import');
+          return;
+        }
+        this.persisted = {
+          ...this.persisted,
+          folders: [...this.persisted.folders, ...res.imported.folders],
+          tabs: [...this.persisted.tabs, ...res.imported.tabs],
+        };
+        this.persistAndBroadcast();
+        this.showToast(`Imported ${res.imported.tabs.length} bookmarks from ${res.label}`);
+        return;
+      }
+
+      case 'set-default-browser': {
+        app.setAsDefaultProtocolClient('http');
+        app.setAsDefaultProtocolClient('https');
+        this.cachedIsDefaultBrowser =
+          app.isDefaultProtocolClient('http') && app.isDefaultProtocolClient('https');
+        this.lastDefaultCheckAt = Date.now();
+        this.broadcastState();
+        this.showToast('Requested default browser permission in macOS');
+        return;
+      }
+
+      case 'show-download-in-finder': {
+        if (!this.downloadManager.showInFinder(intent.savePath)) {
+          this.showToast('Download file not available in tracked downloads');
+        }
+        return;
+      }
+
+      case 'pause-download': {
+        if (!this.downloadManager.pauseDownload(intent.downloadId)) {
+          this.showToast('Download cannot be paused');
+        }
+        return;
+      }
+
+      case 'resume-download': {
+        if (!this.downloadManager.resumeDownload(intent.downloadId)) {
+          this.showToast('Server or session does not support resuming this download');
+        }
+        return;
+      }
+
+      case 'cancel-download': {
+        this.downloadManager.cancelDownload(intent.downloadId);
+        return;
+      }
+
+      case 'open-download': {
+        if (!this.downloadManager.openCompletedDownload(intent.downloadId)) {
+          this.showToast('Completed download file could not be opened');
+        }
+        return;
+      }
+
+      case 'clear-completed-downloads': {
+        this.downloadManager.clearCompleted();
         return;
       }
 
       case 'set-update-feed-url': {
-        this.data = { ...this.data, updateFeedUrl: intent.url.trim() };
+        this.persisted = { ...this.persisted, updateFeedUrl: intent.url };
         this.persistAndBroadcast();
-        this.showToast('Saved update feed');
         return;
       }
 
       case 'check-for-updates': {
-        this.manualUpdateCheck = true;
         await this.updater.checkForUpdates(false);
         return;
       }
@@ -1554,292 +1978,157 @@ export class NookWindowManager {
         return;
       }
 
-      case 'open-devtools': {
-        const focused = getFocusedTab(this.data);
-        if (!focused) return;
-        const wc = this.tabViews.get(focused.id)?.webContents;
-        if (!wc || wc.isDestroyed()) return;
-        if (wc.isDevToolsOpened()) wc.closeDevTools();
-        else wc.openDevTools({ mode: 'detach' });
-        return;
-      }
-
-      case 'print-page': {
-        const focused = getFocusedTab(this.data);
-        const wc = focused ? this.tabViews.get(focused.id)?.webContents : null;
-        if (wc && !wc.isDestroyed()) wc.print();
-        return;
-      }
-
-      case 'find-in-page': {
-        const focused = getFocusedTab(this.data);
-        if (!focused) return;
-        const wc = this.tabViews.get(focused.id)?.webContents;
-        if (!wc || wc.isDestroyed()) return;
-        if (!intent.text) {
-          wc.stopFindInPage('clearSelection');
-          return;
+      case 'set-memory-saver-timeout': {
+        this.persisted = { ...this.persisted, memorySaverTimeout: intent.timeout };
+        this.persistAndBroadcast();
+        if (intent.timeout !== 'disabled') {
+          void this.runMemorySaverSweep();
         }
-        wc.findInPage(intent.text, {
-          forward: intent.forward ?? true,
-          findNext: intent.findNext ?? false,
-        });
         return;
       }
 
-      case 'stop-find-in-page': {
-        const focused = getFocusedTab(this.data);
-        if (focused) {
-          this.tabViews.get(focused.id)?.webContents.stopFindInPage('clearSelection');
+      case 'set-memory-saver-exempt-pinned': {
+        this.persisted = { ...this.persisted, memorySaverExemptPinned: intent.exempt };
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'discard-tab': {
+        const discarded = await this.tryDiscardTab(intent.tabId, true);
+        if (!discarded) {
+          this.showToast('Tab cannot be put to sleep while active, playing media, or holding form input');
         }
-        this.overlay = { mode: 'none' };
-        this.syncActiveTabViews();
-        this.layoutViews();
-        this.broadcastState();
         return;
       }
 
-      case 'promote-little-nook': {
-        await this.handleIntent({ type: 'open-url', url: intent.url, target: 'new-tab' });
-        if (this.littleNook && !this.littleNook.win.isDestroyed()) {
-          this.littleNook.win.close();
-        }
-        this.mainWindow?.focus();
-        return;
-      }
-
-      case 'import-browser-data': {
-        await this.importBrowserBookmarks(intent.source);
-        return;
-      }
-
-      case 'set-default-browser': {
-        app.setAsDefaultProtocolClient('http');
-        app.setAsDefaultProtocolClient('https');
-        this.broadcastState();
-        this.showToast('Requested Kinex as default HTTP/HTTPS handler');
-        return;
-      }
-
-      case 'show-download-in-finder': {
-        if (intent.savePath) {
-          shell.showItemInFolder(intent.savePath);
-        }
+      case 'set-new-tab-config': {
+        this.persisted = {
+          ...this.persisted,
+          newTabConfig: { ...this.persisted.newTabConfig, ...intent.config },
+        };
+        this.refreshVisibleInternalPages();
+        this.persistAndBroadcast();
         return;
       }
     }
   }
 
-  private async importBrowserBookmarks(source: 'arc' | 'chrome' | 'file'): Promise<void> {
-    const spaceId = this.data.activeSpaceId;
-    let filePath: string | null = null;
-    if (source === 'arc') {
-      filePath = path.join(os.homedir(), 'Library/Application Support/Arc/StorableSidebar.json');
-    } else if (source === 'chrome') {
-      filePath = path.join(os.homedir(), 'Library/Application Support/Google/Chrome/Default/Bookmarks');
-    } else if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      const res = await dialog.showOpenDialog(this.mainWindow, {
-        title: 'Import Bookmarks (JSON or HTML)',
-        properties: ['openFile'],
-        filters: [{ name: 'Bookmarks', extensions: ['json', 'html', 'htm'] }],
-      });
-      if (!res.canceled && res.filePaths[0]) {
-        filePath = res.filePaths[0];
-      }
-    }
+  private buildNewTabContext(): NewTabRenderContext {
+    const activeSpace =
+      this.persisted.spaces.find((s) => s.id === this.persisted.activeSpaceId) ??
+      this.persisted.spaces[0];
+    const engine = SEARCH_ENGINES[this.persisted.searchEngine] ?? SEARCH_ENGINES.google;
+    const favorites = this.persisted.tabs
+      .filter(
+        (t) =>
+          t.spaceId === activeSpace?.id &&
+          (t.location === 'topApp' || t.location === 'pinned') &&
+          /^https?:\/\//i.test(t.url)
+      )
+      .slice(0, 6)
+      .map((t) => ({
+        title: t.title || extractHostname(t.url) || t.url,
+        url: t.url,
+        host: extractHostname(t.url),
+      }));
+    const frequent = [...this.persisted.history]
+      .filter((h) => /^https?:\/\//i.test(h.url))
+      .sort((a, b) => b.visitCount - a.visitCount || b.visitedAt - a.visitedAt)
+      .slice(0, 6)
+      .map((h) => ({
+        title: h.title || extractHostname(h.url) || h.url,
+        url: h.url,
+        host: extractHostname(h.url),
+      }));
 
-    if (!filePath || !fs.existsSync(filePath)) {
-      this.showToast(
-        source === 'file' ? 'Import cancelled' : `No ${source === 'arc' ? 'Arc' : 'Chrome'} data file found`
-      );
-      return;
-    }
-
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      let imported;
-      if (filePath.endsWith('.html') || filePath.endsWith('.htm')) {
-        imported = parseHtmlBookmarks(content, spaceId);
-      } else if (content.includes('"sidebar"') && content.includes('"containers"')) {
-        imported = parseArcStorableSidebarJson(content, spaceId);
-      } else {
-        imported = parseChromeBookmarksJson(content, spaceId);
-      }
-
-      const existingUrls = new Set(this.data.tabs.map((t) => t.url));
-      const freshTabs = imported.tabs.filter((t) => !existingUrls.has(t.url));
-      this.data = {
-        ...this.data,
-        folders: [...this.data.folders, ...imported.folders],
-        tabs: [...this.data.tabs, ...freshTabs],
-      };
-      this.persistAndBroadcast();
-      this.showToast(`Imported ${freshTabs.length} pinned item(s)`);
-    } catch {
-      this.showToast('Failed to parse selected bookmark file');
-    }
-  }
-
-  private async reapplyBoostsAcrossOpenTabs(): Promise<void> {
-    for (const view of this.tabViews.values()) {
-      if (!view.webContents.isDestroyed()) {
-        await applyBoostsToWebContents(view.webContents, this.data.boosts, this.injectedCssKeys);
-      }
-    }
-  }
-
-  private destroyTabView(tabId: string): void {
-    const view = this.tabViews.get(tabId);
-    if (!view) return;
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      try {
-        this.mainWindow.contentView.removeChildView(view);
-      } catch {
-        // Not attached
-      }
-    }
-    if (!view.webContents.isDestroyed()) {
-      view.webContents.close();
-    }
-    this.tabViews.delete(tabId);
-  }
-
-  async openLittleNook(rawUrl: string): Promise<void> {
-    const url = normalizeNavigationInput(rawUrl, this.data.searchEngine);
-    if (this.littleNook && !this.littleNook.win.isDestroyed()) {
-      this.littleNook.win.show();
-      this.littleNook.win.focus();
-      await this.littleNook.webView.webContents.loadURL(url);
-      return;
-    }
-
-    const preloadPath = this.getPreloadPath();
-    const win = new BrowserWindow({
-      width: 560,
-      height: 700,
-      minWidth: 400,
-      minHeight: 420,
-      title: 'Little Kinex',
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 12, y: 14 },
-      backgroundColor: '#181a2b',
-      alwaysOnTop: false,
-      webPreferences: {
-        preload: preloadPath,
-        contextIsolation: true,
-        nodeIntegration: false,
+    return {
+      isDark: activeSpace?.theme.isDark ?? true,
+      spaceName: activeSpace?.name,
+      accent: activeSpace?.theme.accent,
+      searchEngineName: engine.name,
+      searchEngineTemplate: engine.template,
+      config: this.persisted.newTabConfig,
+      favorites,
+      frequent,
+      getReaderHtml: (readerUrl: string) => {
+        try {
+          const parsed = new URL(readerUrl);
+          const tabId = parsed.searchParams.get('tabId') ?? '';
+          const doc = this.readerDocsByTabId.get(tabId);
+          return doc ? renderReaderHtml(doc, this.persisted.readerOptions) : null;
+        } catch {
+          return null;
+        }
       },
-    });
-
-    const sess = this.getSessionForSpace(this.data.activeSpaceId);
-    const webView = new WebContentsView({
-      webPreferences: {
-        session: sess,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-    webView.setBorderRadius(8);
-    webView.setBackgroundColor('#ffffff');
-
-    const state: LittleNookWindowState = {
-      win,
-      webView,
-      url,
-      title: url,
-      isLoading: true,
-      canGoBack: false,
-      canGoForward: false,
     };
-    this.littleNook = state;
-    this.miniWindows.set(win.webContents.id, state);
-
-    const layoutLittle = () => {
-      if (win.isDestroyed()) return;
-      const [w, h] = win.getContentSize();
-      webView.setBounds({ x: 8, y: 46, width: Math.max(100, w - 16), height: Math.max(100, h - 54) });
-    };
-
-    const syncLittle = () => {
-      if (win.isDestroyed() || webView.webContents.isDestroyed()) return;
-      const wc = webView.webContents;
-      state.url = wc.getURL() || state.url;
-      state.title = wc.getTitle() || state.url;
-      state.isLoading = wc.isLoading();
-      state.canGoBack = wc.navigationHistory.canGoBack();
-      state.canGoForward = wc.navigationHistory.canGoForward();
-      win.webContents.send('nook:little-updated', this.getLittleNookInfo(win.webContents.id));
-    };
-
-    webView.webContents.on('did-start-loading', syncLittle);
-    webView.webContents.on('did-stop-loading', syncLittle);
-    webView.webContents.on('did-navigate', syncLittle);
-    webView.webContents.on('page-title-updated', syncLittle);
-    webView.webContents.on('did-finish-load', () => {
-      void applyBoostsToWebContents(webView.webContents, this.data.boosts, this.injectedCssKeys);
-    });
-
-    win.contentView.addChildView(webView);
-    win.on('resize', layoutLittle);
-    win.on('closed', () => {
-      this.miniWindows.delete(win.webContents.id);
-      if (!webView.webContents.isDestroyed()) webView.webContents.close();
-      this.littleNook = null;
-    });
-
-    await win.loadURL(this.getRendererUrl('little'));
-    layoutLittle();
-    await webView.webContents.loadURL(url);
   }
 
-  async handleLittleNookAction(
-    senderId: number,
-    action: 'back' | 'forward' | 'reload' | 'navigate' | 'promote' | 'close',
-    url?: string
-  ): Promise<void> {
-    const target = this.miniWindows.get(senderId) ?? this.littleNook;
-    if (!target || target.win.isDestroyed()) return;
-    const wc = target.webView.webContents;
-    if (action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
-    if (action === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
-    if (action === 'reload') wc.reload();
-    if (action === 'navigate' && url) await wc.loadURL(normalizeNavigationInput(url, this.data.searchEngine));
-    if (action === 'promote') {
-      await this.handleIntent({ type: 'open-url', url: target.url, target: 'new-tab' });
-      if (!target.win.isDestroyed()) target.win.close();
-      this.mainWindow?.focus();
+  private refreshVisibleInternalPages(): void {
+    const activeIds = getActiveSplit(this.persisted).tabIds;
+    for (const tabId of activeIds) {
+      const tab = this.persisted.tabs.find((t) => t.id === tabId);
+      if (
+        tab &&
+        (tab.url.startsWith('kinex://newtab') ||
+          tab.url.startsWith('kinex://welcome') ||
+          tab.url.startsWith('nook://newtab') ||
+          tab.url.startsWith('nook://welcome'))
+      ) {
+        const view = this.tabManager.getView(tabId);
+        if (view && !view.webContents.isDestroyed()) {
+          void view.webContents.reloadIgnoringCache();
+        }
+      }
     }
-    if (action === 'close') target.win.close();
   }
 
   showTabContextMenu(tabId: string): void {
-    const tab = this.data.tabs.find((t) => t.id === tabId);
+    const tab = this.persisted.tabs.find((t) => t.id === tabId);
     if (!tab || !this.mainWindow || this.mainWindow.isDestroyed()) return;
-    const folders = this.data.folders.filter((f) => f.spaceId === tab.spaceId);
 
-    const template: Electron.MenuItemConstructorOptions[] = [
+    const spaceFolders = this.persisted.folders.filter((f) => f.spaceId === tab.spaceId);
+    const otherSpaces = this.persisted.spaces.filter((s) => s.id !== tab.spaceId);
+    const otherUnpinnedCount = this.persisted.tabs.filter(
+      (t) => t.spaceId === tab.spaceId && t.location === 'unpinned' && t.id !== tabId
+    ).length;
+    const unpinnedInSpace = this.persisted.tabs.filter(
+      (t) => t.spaceId === tab.spaceId && t.location === 'unpinned'
+    );
+    const tabIdxInSpace = unpinnedInSpace.findIndex((t) => t.id === tabId);
+    const hasTabsToRight = tab.location === 'unpinned' && tabIdxInSpace >= 0 && tabIdxInSpace < unpinnedInSpace.length - 1;
+
+    const orderedTabs = this.persisted.tabs.filter((t) => t.spaceId === tab.spaceId && t.location === tab.location);
+    const position = orderedTabs.findIndex((t) => t.id === tabId);
+    const reorder = (direction: -1 | 1) => {
+      const target = orderedTabs[position + direction];
+      if (target) void this.handleIntent({ type: 'reorder-tab', sourceTabId: tabId, targetTabId: target.id });
+    };
+
+    const menu = Menu.buildFromTemplate([
       {
-        label: 'Open in Split View',
-        click: () => void this.handleIntent({ type: 'toggle-split', tabId: tab.id }),
-      },
-      {
-        label: 'Open in Little Kinex',
-        click: () =>
-          void this.handleIntent({ type: 'open-url', url: tab.url, target: 'little-nook' }),
+        label: 'Reload Tab',
+        click: () => this.tabManager.reloadTab(tabId),
       },
       {
         label: 'Duplicate Tab',
-        click: () => void this.handleIntent({ type: 'duplicate-tab', tabId: tab.id }),
+        click: () => void this.handleIntent({ type: 'duplicate-tab', tabId }),
+      },
+      {
+        label: 'Open in Split View',
+        click: () => void this.handleIntent({ type: 'toggle-split', tabId }),
+      },
+      {
+        label: 'Open in Little Kinex',
+        click: () => void this.handleIntent({ type: 'open-url', url: tab.url, target: 'little-kinex' }),
       },
       { type: 'separator' },
       {
-        label: tab.location === 'unpinned' ? 'Pin Tab' : 'Unpin Tab',
+        label: tab.location === 'pinned' ? 'Unpin Tab' : 'Pin Tab',
         click: () =>
           void this.handleIntent({
             type: 'set-tab-location',
-            tabId: tab.id,
-            location: tab.location === 'unpinned' ? 'pinned' : 'unpinned',
+            tabId,
+            location: tab.location === 'pinned' ? 'unpinned' : 'pinned',
           }),
       },
       {
@@ -1847,401 +2136,362 @@ export class NookWindowManager {
         click: () =>
           void this.handleIntent({
             type: 'set-tab-location',
-            tabId: tab.id,
-            location: tab.location === 'topApp' ? 'pinned' : 'topApp',
+            tabId,
+            location: tab.location === 'topApp' ? 'unpinned' : 'topApp',
           }),
       },
-      ...(folders.length > 0
+      ...(otherSpaces.length > 0
+        ? [
+            {
+              label: 'Move to Space',
+              submenu: otherSpaces.map((sp) => ({
+                label: `${sp.icon} ${sp.name}`,
+                click: () => void this.handleIntent({ type: 'move-tab-to-space', tabId, spaceId: sp.id }),
+              })),
+            },
+          ]
+        : []),
+      ...(spaceFolders.length > 0
         ? [
             {
               label: 'Move to Folder',
-              submenu: [
-                ...folders.map((f) => ({
-                  label: f.name,
-                  click: () =>
-                    void this.handleIntent({
-                      type: 'move-tab-to-folder',
-                      tabId: tab.id,
-                      folderId: f.id,
-                    }),
-                })),
-                { type: 'separator' as const },
-                {
-                  label: 'No Folder',
-                  click: () =>
-                    void this.handleIntent({
-                      type: 'move-tab-to-folder',
-                      tabId: tab.id,
-                      folderId: undefined,
-                    }),
-                },
-              ],
+              submenu: spaceFolders.map((f) => ({
+                label: f.name,
+                click: () => void this.handleIntent({ type: 'move-tab-to-folder', tabId, folderId: f.id }),
+              })),
             },
           ]
         : []),
+      ...(tab.folderId ? [{
+        label: 'Remove from Folder',
+        click: () => void this.handleIntent({ type: 'move-tab-to-folder', tabId }),
+      }] : []),
+      { label: 'Move Tab Up', enabled: position > 0, click: () => reorder(-1) },
+      { label: 'Move Tab Down', enabled: position >= 0 && position < orderedTabs.length - 1, click: () => reorder(1) },
       { type: 'separator' },
-      {
-        label: 'Copy URL',
-        click: () => void this.handleIntent({ type: 'copy-current-url', tabId: tab.id }),
-      },
       {
         label: tab.isMuted ? 'Unmute Tab' : 'Mute Tab',
-        click: () => void this.handleIntent({ type: 'toggle-mute', tabId: tab.id }),
+        click: () => void this.handleIntent({ type: 'toggle-mute', tabId }),
       },
-      ...(tab.location !== 'unpinned' && tab.pinnedUrl && tab.url !== tab.pinnedUrl
+      {
+        label: 'Copy Clean URL',
+        click: () => void this.handleIntent({ type: 'copy-current-url', tabId }),
+      },
+      ...(this.tabManager.getView(tabId) && !tab.isDiscarded
         ? [
             {
-              label: 'Reset to Pinned URL',
-              click: () => void this.handleIntent({ type: 'reset-pinned-tab', tabId: tab.id }),
+              label: 'Put Tab to Sleep',
+              click: () => void this.handleIntent({ type: 'discard-tab', tabId }),
             },
           ]
         : []),
       { type: 'separator' },
       {
-        label: tab.location === 'unpinned' ? 'Close Tab' : 'Close & Reset Tab',
-        click: () => void this.handleIntent({ type: 'close-tab', tabId: tab.id }),
+        label: tab.location === 'unpinned' ? 'Close Tab' : 'Reset to Pinned URL',
+        click: () => void this.handleIntent({ type: 'close-tab', tabId }),
       },
-    ];
-
-    Menu.buildFromTemplate(template).popup({ window: this.mainWindow });
+      {
+        label: 'Close Other Tabs',
+        enabled: otherUnpinnedCount > 0,
+        click: () => void this.handleIntent({ type: 'close-other-tabs', tabId }),
+      },
+      {
+        label: 'Close Tabs to the Right',
+        enabled: hasTabsToRight,
+        click: () => void this.handleIntent({ type: 'close-tabs-to-right', tabId }),
+      },
+      {
+        label: 'Reopen Closed Tab',
+        enabled: this.persisted.closedTabs.length > 0,
+        click: () => void this.handleIntent({ type: 'reopen-closed-tab' }),
+      },
+    ]);
+    menu.popup({ window: this.mainWindow });
   }
 
-  async openIncognitoWindow(rawUrl: string): Promise<void> {
-    const url = normalizeNavigationInput(rawUrl, this.data.searchEngine);
-    const preloadPath = this.getPreloadPath();
-    const privPartition = `nook-incognito-${Date.now()}`;
-    const privSess = session.fromPartition(privPartition);
-    registerNookProtocolOnSession(privSess);
-    attachAdBlocker(privSess, () => this.data.adBlockEnabled, () => {});
-
-    const win = new BrowserWindow({
-      width: 1120,
-      height: 760,
-      minWidth: 520,
-      minHeight: 420,
-      title: 'Private Kinex',
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 12, y: 14 },
-      backgroundColor: '#121218',
-      webPreferences: {
-        preload: preloadPath,
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    });
-
-    const webView = new WebContentsView({
-      webPreferences: {
-        session: privSess,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-    webView.setBorderRadius(8);
-    webView.setBackgroundColor('#ffffff');
-    win.contentView.addChildView(webView);
-
-    const privState: LittleNookWindowState = {
-      win,
-      webView,
-      url,
-      title: 'Private Kinex',
-      isLoading: true,
-      canGoBack: false,
-      canGoForward: false,
-    };
-    this.miniWindows.set(win.webContents.id, privState);
-
-    const layout = () => {
-      if (win.isDestroyed()) return;
-      const [w, h] = win.getContentSize();
-      webView.setBounds({ x: 8, y: 46, width: Math.max(100, w - 16), height: Math.max(100, h - 54) });
-    };
-
-    const sync = () => {
-      if (win.isDestroyed() || webView.webContents.isDestroyed()) return;
-      const wc = webView.webContents;
-      privState.url = wc.getURL() || privState.url;
-      privState.title = `Private — ${wc.getTitle() || privState.url}`;
-      privState.isLoading = wc.isLoading();
-      privState.canGoBack = wc.navigationHistory.canGoBack();
-      privState.canGoForward = wc.navigationHistory.canGoForward();
-      win.webContents.send('nook:little-updated', this.getLittleNookInfo(win.webContents.id));
-    };
-
-    webView.webContents.on('did-start-loading', sync);
-    webView.webContents.on('did-stop-loading', sync);
-    webView.webContents.on('did-navigate', sync);
-    webView.webContents.on('page-title-updated', sync);
-    win.on('resize', layout);
-    win.on('closed', () => {
-      this.miniWindows.delete(win.webContents.id);
-      if (!webView.webContents.isDestroyed()) webView.webContents.close();
-      void privSess.clearStorageData();
-    });
-
-    await win.loadURL(this.getRendererUrl('little'));
-    layout();
-    await webView.webContents.loadURL(url);
+  getLittleKinexInfo(senderId: number): LittleKinexInfo {
+    return this.auxiliaryWindows.getInfo(senderId);
   }
 
-  private cycleSpace(delta: number): void {
-    const spaces = this.data.spaces;
-    if (spaces.length <= 1) return;
-    const idx = spaces.findIndex((s) => s.id === this.data.activeSpaceId);
-    const nextIdx = (idx + delta + spaces.length) % spaces.length;
-    void this.handleIntent({ type: 'select-space', spaceId: spaces[nextIdx].id });
+  handleLittleKinexAction(senderId: number, action: LittleKinexAction, url?: string): void {
+    this.auxiliaryWindows.handleAction(senderId, action, url);
   }
 
-  private jumpToSidebarIndex(zeroBasedIndex: number): void {
-    const spaceId = this.data.activeSpaceId;
-    const ordered = [
-      ...this.data.tabs.filter((t) => t.location === 'topApp'),
-      ...this.data.tabs.filter((t) => t.spaceId === spaceId && t.location === 'pinned'),
-      ...this.data.tabs.filter((t) => t.spaceId === spaceId && t.location === 'unpinned'),
-    ];
-    const target = ordered[zeroBasedIndex];
-    if (target) {
-      void this.handleIntent({ type: 'select-tab', tabId: target.id });
-    }
+  // Backward-compatible method aliases during transition
+  getLittleNookInfo(senderId: number): LittleKinexInfo {
+    return this.getLittleKinexInfo(senderId);
+  }
+
+  handleLittleNookAction(senderId: number, action: LittleKinexAction, url?: string): void {
+    this.handleLittleKinexAction(senderId, action, url);
   }
 
   private installApplicationMenu(): void {
-    const isMac = process.platform === 'darwin';
-    const template: Electron.MenuItemConstructorOptions[] = [
-      ...(isMac
-        ? [
-            {
-              label: 'Kinex',
-              submenu: [
-                { role: 'about' as const },
-                { type: 'separator' as const },
-                {
-                  label: 'Check for Updates...',
-                  click: () => {
-                    void this.handleIntent({ type: 'check-for-updates' });
-                    void this.handleIntent({ type: 'set-overlay', overlay: { mode: 'settings', section: 'updates' } });
-                  },
-                },
-                {
-                  label: 'Settings & Import...',
-                  accelerator: 'CmdOrCtrl+,',
-                  click: () =>
-                    void this.handleIntent({ type: 'set-overlay', overlay: { mode: 'settings' } }),
-                },
-                { type: 'separator' as const },
-                { role: 'hide' as const },
-                { role: 'hideOthers' as const },
-                { role: 'unhide' as const },
-                { type: 'separator' as const },
-                { role: 'quit' as const },
-              ],
-            },
-          ]
-        : []),
-      {
-        label: 'File',
-        submenu: [
-          {
-            label: 'New Tab (Command Bar)',
-            accelerator: 'CmdOrCtrl+T',
-            click: () =>
-              void this.handleIntent({
-                type: 'set-overlay',
-                overlay: { mode: 'command-bar', initialQuery: '', targetMode: 'new-tab' },
-              }),
-          },
-          {
-            label: 'Open Location',
-            accelerator: 'CmdOrCtrl+L',
-            click: () => {
-              const focused = getFocusedTab(this.data);
-              void this.handleIntent({
-                type: 'set-overlay',
-                overlay: {
-                  mode: 'command-bar',
-                  initialQuery:
-                    focused?.url && !focused.url.startsWith('kinex://') && !focused.url.startsWith('nook://')
-                      ? focused.url
-                      : '',
-                  targetMode: 'edit-url',
-                },
-              });
-            },
-          },
-          {
-            label: 'Little Kinex',
-            accelerator: 'Alt+CmdOrCtrl+N',
-            click: () => void this.openLittleNook('kinex://newtab'),
-          },
-          {
-            label: 'New Private Window',
-            accelerator: 'CmdOrCtrl+Shift+N',
-            click: () => void this.openIncognitoWindow('kinex://newtab'),
-          },
-          {
-            label: 'Pin / Unpin Current Tab',
-            accelerator: 'CmdOrCtrl+D',
-            click: () => {
-              const focused = getFocusedTab(this.data);
-              if (!focused) return;
-              void this.handleIntent({
-                type: 'set-tab-location',
-                tabId: focused.id,
-                location: focused.location === 'unpinned' ? 'pinned' : 'unpinned',
-              });
-            },
-          },
-          {
-            label: 'Print...',
-            accelerator: 'CmdOrCtrl+P',
-            click: () => void this.handleIntent({ type: 'print-page' }),
-          },
-          { type: 'separator' },
-          {
-            label: 'Close Tab',
-            accelerator: 'CmdOrCtrl+W',
-            click: () => {
-              if (this.overlay.mode !== 'none') {
-                void this.handleIntent({ type: 'set-overlay', overlay: { mode: 'none' } });
-                return;
-              }
-              const focused = getFocusedTab(this.data);
-              if (focused) void this.handleIntent({ type: 'close-tab', tabId: focused.id });
-            },
-          },
-        ],
-      },
-      {
-        label: 'Edit',
-        submenu: [
-          { role: 'undo' },
-          { role: 'redo' },
-          { type: 'separator' },
-          { role: 'cut' },
-          { role: 'copy' },
-          { role: 'paste' },
-          { role: 'selectAll' },
-          { type: 'separator' },
-          {
-            label: 'Copy Current URL',
-            accelerator: 'CmdOrCtrl+Shift+C',
-            click: () => void this.handleIntent({ type: 'copy-current-url' }),
-          },
-          {
-            label: 'Find in Page',
-            accelerator: 'CmdOrCtrl+F',
-            click: () => void this.handleIntent({ type: 'set-overlay', overlay: { mode: 'find' } }),
-          },
-        ],
-      },
-      {
-        label: 'View',
-        submenu: [
-          {
-            label: 'Toggle Sidebar',
-            accelerator: 'CmdOrCtrl+S',
-            click: () => void this.handleIntent({ type: 'toggle-sidebar' }),
-          },
-          {
-            label: 'Toggle Split View',
-            accelerator: 'CmdOrCtrl+Shift+\\',
-            click: () => void this.handleIntent({ type: 'toggle-split' }),
-          },
-          {
-            label: 'Reload Page',
-            accelerator: 'CmdOrCtrl+R',
-            click: () => void this.handleIntent({ type: 'nav-reload' }),
-          },
-          { type: 'separator' },
-          {
-            label: 'Zoom In',
-            accelerator: 'CmdOrCtrl+=',
-            click: () => void this.handleIntent({ type: 'set-zoom', delta: 'in' }),
-          },
-          {
-            label: 'Zoom Out',
-            accelerator: 'CmdOrCtrl+-',
-            click: () => void this.handleIntent({ type: 'set-zoom', delta: 'out' }),
-          },
-          {
-            label: 'Actual Size',
-            accelerator: 'CmdOrCtrl+0',
-            click: () => void this.handleIntent({ type: 'set-zoom', delta: 'reset' }),
-          },
-          { type: 'separator' },
-          {
-            label: 'Boosts Studio',
-            accelerator: 'CmdOrCtrl+Shift+B',
-            click: () => {
-              const focused = getFocusedTab(this.data);
-              const domain = focused ? extractHostname(focused.url) || '*' : '*';
-              void this.handleIntent({ type: 'set-overlay', overlay: { mode: 'boosts', domain } });
-            },
-          },
-          {
-            label: 'Developer Tools',
-            accelerator: 'Alt+CmdOrCtrl+I',
-            click: () => void this.handleIntent({ type: 'open-devtools' }),
-          },
-        ],
-      },
-      {
-        label: 'Navigate',
-        submenu: [
-          {
-            label: 'Back',
-            accelerator: 'CmdOrCtrl+[',
-            click: () => void this.handleIntent({ type: 'nav-back' }),
-          },
-          {
-            label: 'Forward',
-            accelerator: 'CmdOrCtrl+]',
-            click: () => void this.handleIntent({ type: 'nav-forward' }),
-          },
-          { type: 'separator' },
-          {
-            label: 'Previous Space',
-            accelerator: 'Ctrl+CmdOrCtrl+Left',
-            click: () => this.cycleSpace(-1),
-          },
-          {
-            label: 'Next Space',
-            accelerator: 'Ctrl+CmdOrCtrl+Right',
-            click: () => this.cycleSpace(1),
-          },
-          { type: 'separator' },
-          ...Array.from({ length: 9 }, (_, i) => ({
-            label: `Tab ${i + 1}`,
-            accelerator: `CmdOrCtrl+${i + 1}`,
-            click: () => this.jumpToSidebarIndex(i),
-          })),
-        ],
-      },
-      {
-        label: 'Window',
-        submenu: [{ role: 'minimize' }, { role: 'zoom' }],
-      },
-    ];
+    buildAndInstallApplicationMenu({ executeCommand: (id) => void this.executeCommand(id) });
+  }
 
-    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  private attachKeyboard(wc: WebContents): void {
+    wc.on('before-input-event', (event, input) => {
+      const command = matchShortcut(input, process.platform);
+      if (!command) return;
+      event.preventDefault();
+      if (input.isAutoRepeat && !['next-tab', 'previous-tab', 'zoom-in', 'zoom-out'].includes(command)) return;
+      void this.executeCommand(command, wc);
+    });
+  }
+
+  private attachOverlayFocusGuard(wc: WebContents): void {
+    wc.on('focus', () => {
+      if (this.enforcingOverlayFocus || this.disposed) return;
+      if (this.overlay.mode === 'none' && !this.duplicatePrompt) return;
+      if (this.overlayClosing) return;
+      if (!this.mainWindow || this.mainWindow.isDestroyed() || !this.mainWindow.isFocused()) return;
+      const overlayWc = this.overlayView?.webContents;
+      if (!overlayWc || overlayWc.isDestroyed() || overlayWc.id === wc.id || overlayWc.isFocused()) return;
+      this.enforcingOverlayFocus = true;
+      try {
+        overlayWc.focus();
+      } finally {
+        this.enforcingOverlayFocus = false;
+      }
+    });
+  }
+
+  private captureOverlayOrigin(): void {
+    if (this.overlay.mode !== 'none' || this.duplicatePrompt) return;
+    const focused = webContents.getFocusedWebContents();
+    this.overlayOrigin = focused?.id === this.shellView?.webContents.id ? 'shell' : 'content';
+  }
+
+  private restoreOverlayFocus(): void {
+    if (this.overlayOrigin === 'shell' && this.shellView && !this.shellView.webContents.isDestroyed()) {
+      this.shellView.webContents.focus();
+      this.shellView.webContents.send('kinex:focus-requested', 'restore');
+    } else this.focusActiveTabView();
+  }
+
+  private focusBrowserRegion(region: FocusRegion): void {
+    if (region === 'content') {
+      this.focusActiveTabView();
+      return;
+    }
+    if (region === 'sidebar' && !this.persisted.sidebarOpen) {
+      this.persisted = { ...this.persisted, sidebarOpen: true };
+      this.layoutViews();
+      this.persistAndBroadcast();
+    }
+    this.shellRegion = region;
+    const wc = this.shellView?.webContents;
+    if (wc && !wc.isDestroyed()) {
+      wc.focus();
+      wc.send('kinex:focus-requested', region);
+    }
+  }
+
+  async executeCommand(commandId: CommandId, source = webContents.getFocusedWebContents()): Promise<void> {
+    if (this.disposed) return;
+    if (this.auxiliaryWindows.executeCommand(commandId, source ?? undefined)) return;
+    const popup = source && this.tabManager.getPopupWindow(source.id);
+    if (popup && source) {
+      switch (commandId) {
+        case 'close-tab': case 'close-window': popup.close(); break;
+        case 'reload': source.reload(); break;
+        case 'stop-loading': source.stop(); break;
+        case 'back': if (source.navigationHistory.canGoBack()) source.navigationHistory.goBack(); break;
+        case 'forward': if (source.navigationHistory.canGoForward()) source.navigationHistory.goForward(); break;
+        case 'copy-url': clipboard.writeText(source.getURL()); break;
+        case 'print-page': source.print({ printBackground: true }); break;
+        case 'devtools': source.openDevTools({ mode: 'detach' }); break;
+      }
+      return;
+    }
+    const state = this.persisted;
+    const tab = getFocusedTab(state);
+    const split = getActiveSplit(state);
+    const overlay = (value: OverlayState) => this.handleIntent({ type: 'set-overlay', overlay: value });
+    const closeOverlay = async () => {
+      if (this.overlay.mode !== 'none') await overlay({ mode: 'none' });
+    };
+    if (commandId.startsWith('select-tab-')) {
+      const visible = state.tabs.filter((t) => t.spaceId === state.activeSpaceId);
+      const index = Number(commandId.slice(-1));
+      const target = visible[index === 9 ? visible.length - 1 : index - 1];
+      await closeOverlay();
+      if (target) await this.handleIntent({ type: 'select-tab', tabId: target.id });
+      return;
+    }
+    if (commandId.startsWith('select-space-')) {
+      const target = state.spaces[Number(commandId.slice(-1)) - 1];
+      await closeOverlay();
+      if (target) await this.handleIntent({ type: 'select-space', spaceId: target.id });
+      return;
+    }
+    switch (commandId) {
+      case 'new-tab':
+      case 'edit-url':
+        await overlay({ mode: 'command-bar', initialQuery: commandId === 'edit-url' && tab && /^https?:/.test(tab.url) ? tab.url : '', targetMode: commandId === 'edit-url' ? 'edit-url' : 'new-tab' });
+        return;
+      case 'open-settings': await overlay({ mode: 'settings' }); return;
+      case 'open-shortcuts': await overlay({ mode: 'settings', section: 'shortcuts' }); return;
+      case 'clear-history': await overlay({ mode: 'settings', section: 'privacy' }); return;
+      case 'check-updates':
+        await overlay({ mode: 'settings', section: 'updates' });
+        await this.handleIntent({ type: 'check-for-updates' }); return;
+      case 'open-downloads': await overlay({ mode: 'downloads' }); return;
+      case 'open-history': await overlay({ mode: 'history' }); return;
+      case 'open-archive': await overlay({ mode: 'archive' }); return;
+      case 'find-in-page': await overlay({ mode: 'find' }); return;
+      case 'new-space': await overlay({ mode: 'space-editor' }); return;
+      case 'rename-space': await overlay({ mode: 'space-editor', spaceId: state.activeSpaceId }); return;
+      case 'toggle-boosts': await overlay({ mode: 'boosts', domain: extractHostname(tab?.url ?? '') || '*' }); return;
+    }
+    await closeOverlay();
+    switch (commandId) {
+      case 'close-tab': if (tab) await this.handleIntent({ type: 'close-tab', tabId: tab.id }); break;
+      case 'duplicate-current-tab': if (tab) await this.handleIntent({ type: 'duplicate-tab', tabId: tab.id }); break;
+      case 'close-other-tabs': if (tab) await this.handleIntent({ type: 'close-other-tabs', tabId: tab.id }); break;
+      case 'pin-tab': if (tab) await this.handleIntent({ type: 'set-tab-location', tabId: tab.id, location: tab.location === 'pinned' ? 'unpinned' : 'pinned' }); break;
+      case 'favorite-tab': if (tab) await this.handleIntent({ type: 'set-tab-location', tabId: tab.id, location: tab.location === 'topApp' ? 'pinned' : 'topApp' }); break;
+      case 'reopen-closed-tab': await this.handleIntent({ type: 'reopen-closed-tab' }); break;
+      case 'reload': await this.handleIntent({ type: 'nav-reload' }); break;
+      case 'stop-loading': await this.handleIntent({ type: 'nav-stop' }); break;
+      case 'back': await this.handleIntent({ type: 'nav-back' }); break;
+      case 'forward': await this.handleIntent({ type: 'nav-forward' }); break;
+      case 'print-page': await this.handleIntent({ type: 'print-page' }); break;
+      case 'save-page-pdf': await this.handleIntent({ type: 'save-page-pdf' }); break;
+      case 'toggle-reader-mode': await this.handleIntent({ type: 'toggle-reader-mode' }); break;
+      case 'toggle-sidebar': await this.handleIntent({ type: 'toggle-sidebar' }); break;
+      case 'new-split': await this.handleIntent({ type: 'toggle-split' }); break;
+      case 'next-pane': await this.handleIntent({ type: 'focus-pane', paneIndex: (split.focusedIndex + 1) % split.tabIds.length }); break;
+      case 'toggle-adblock': await this.handleIntent({ type: 'toggle-adblock' }); break;
+      case 'copy-url': await this.handleIntent({ type: 'copy-current-url' }); break;
+      case 'zoom-in': await this.handleIntent({ type: 'set-zoom', delta: 'in' }); break;
+      case 'zoom-out': await this.handleIntent({ type: 'set-zoom', delta: 'out' }); break;
+      case 'zoom-reset': await this.handleIntent({ type: 'set-zoom', delta: 'reset' }); break;
+      case 'devtools': await this.handleIntent({ type: 'open-devtools' }); break;
+      case 'open-private-window': await this.handleIntent({ type: 'open-incognito' }); break;
+      case 'little-kinex': await this.handleIntent({ type: 'open-url', url: 'kinex://newtab', target: 'little-kinex' }); break;
+      case 'close-window': BrowserWindow.getFocusedWindow()?.close(); break;
+      case 'toggle-dark-mode': {
+        const space = state.spaces.find((s) => s.id === state.activeSpaceId);
+        if (space) await this.handleIntent({ type: 'update-space', ...space, spaceId: space.id,
+          theme: { ...space.theme, isDark: !space.theme.isDark, tintRgba: space.theme.isDark ? 'rgba(240, 241, 245, 0.94)' : 'rgba(26, 27, 33, 0.94)' } });
+        break;
+      }
+      case 'next-tab':
+      case 'previous-tab': {
+        const tabs = state.tabs.filter((t) => t.spaceId === state.activeSpaceId);
+        const index = tabs.findIndex((t) => t.id === tab?.id);
+        const next = tabs[(index + (commandId === 'next-tab' ? 1 : -1) + tabs.length) % tabs.length];
+        if (next) await this.handleIntent({ type: 'select-tab', tabId: next.id });
+        break;
+      }
+      case 'next-space':
+      case 'previous-space': {
+        const index = state.spaces.findIndex((s) => s.id === state.activeSpaceId);
+        const next = state.spaces[(index + (commandId === 'next-space' ? 1 : -1) + state.spaces.length) % state.spaces.length];
+        if (next) await this.handleIntent({ type: 'select-space', spaceId: next.id });
+        break;
+      }
+      case 'focus-content': this.focusBrowserRegion('content'); break;
+      case 'focus-sidebar': this.focusBrowserRegion('sidebar'); break;
+      case 'focus-toolbar': this.focusBrowserRegion('toolbar'); break;
+      case 'focus-next':
+      case 'focus-previous': {
+        const regions: FocusRegion[] = ['content', 'sidebar', 'toolbar'];
+        const current = source?.id === this.shellView?.webContents.id ? this.shellRegion : 'content';
+        const index = (regions.indexOf(current) + (commandId === 'focus-next' ? 1 : -1) + regions.length) % regions.length;
+        this.focusBrowserRegion(regions[index]); break;
+      }
+    }
+  }
+
+  cleanupWindowResources(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    powerMonitor.removeListener('speed-limit-change', this.onSpeedLimit);
+    powerMonitor.removeListener('thermal-state-change', this.onThermalState);
+    if (this.overlayCloseTimer) clearTimeout(this.overlayCloseTimer);
+    this.overlayCloseTimer = null;
+    this.overlayClosing = false;
+
+    this.persistence.flushPendingSave(this.persisted);
+
+    if (this.toastTimer) {
+      clearTimeout(this.toastTimer);
+      this.toastTimer = null;
+    }
+    if (this.broadcastTimer) {
+      clearTimeout(this.broadcastTimer);
+      this.broadcastTimer = null;
+    }
+    if (this.memorySaverTimer) {
+      clearInterval(this.memorySaverTimer);
+      this.memorySaverTimer = null;
+    }
+    if (this.startupUpdateTimer) {
+      clearTimeout(this.startupUpdateTimer);
+      this.startupUpdateTimer = null;
+    }
+    if (this.periodicUpdateTimer) {
+      clearInterval(this.periodicUpdateTimer);
+      this.periodicUpdateTimer = null;
+    }
+
+    this.tabManager.disposeAll();
+    this.auxiliaryWindows.disposeAll();
+    this.updater.dispose();
+    this.findQueryByTabId.clear();
+    this.readerDocsByTabId.clear();
+    this.findStatus = null;
+    this.duplicatePrompt = null;
+    this.htmlFullscreenTabId = null;
+
+    if (this.shellView) {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        try {
+          this.mainWindow.contentView.removeChildView(this.shellView);
+        } catch {
+          // Ignore already removed view
+        }
+      }
+      if (!this.shellView.webContents.isDestroyed()) {
+        this.ipcRegistry.unregister(this.shellView.webContents.id);
+        this.shellView.webContents.close();
+      }
+    }
+    if (this.overlayView) {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        try {
+          this.mainWindow.contentView.removeChildView(this.overlayView);
+        } catch {
+          // Ignore already removed view
+        }
+      }
+      if (!this.overlayView.webContents.isDestroyed()) {
+        this.ipcRegistry.unregister(this.overlayView.webContents.id);
+        this.overlayView.webContents.close();
+      }
+    }
+
+    this.shellView = null;
+    this.overlayView = null;
+    this.mainWindow = null;
+  }
+
+  dispose(): void {
+    this.cleanupWindowResources();
+    this.downloadManager.dispose();
   }
 }
 
-export function registerNookProtocol(protocol: Electron.Protocol): void {
-  const { renderNookInternalHtml } = require('./internalPages') as typeof import('./internalPages');
-  const handler = (request: { url: string }) => {
-    const html = renderNookInternalHtml(request.url);
-    return new Response(html, {
-      status: 200,
-      headers: { 'content-type': 'text/html; charset=utf-8' },
-    });
-  };
-  protocol.handle('kinex', handler);
-  protocol.handle('nook', handler);
+export function registerKinexProtocol(protocolObj: Electron.Protocol): void {
+  registerDefaultAppProtocols(protocolObj);
 }
 
-export function ensureAppName(): void {
-  app.setName('Kinex');
-}
+/** @deprecated Use KinexWindowManager */
+export const NookWindowManager = KinexWindowManager;
+/** @deprecated Use registerKinexProtocol */
+export const registerNookProtocol = registerKinexProtocol;
+/** @deprecated Use registerKinexProtocolOnSession */
+export const registerNookProtocolOnSession = registerKinexProtocolOnSession;

@@ -3,11 +3,17 @@ import {
   buildCommandBarResults,
   clearTodayTabsForSpace,
   closeOrResetTab,
+  closeOtherTabsForSpace,
+  closeTabsToRightForSpace,
   createDefaultPersistedData,
   extractHostname,
+  findDuplicateOpenTab,
   matchesDomainPattern,
+  moveTabToSpace,
   normalizeNavigationInput,
+  reorderSpaces,
   reorderTabs,
+  restoreClosedTabs,
   setTabLocation,
 } from './domain';
 import {
@@ -130,5 +136,73 @@ describe('NOOK domain model', () => {
 
     const htmlRes = parseHtmlBookmarks('<DT><A HREF="https://example.com">Example</A>', 'space-personal');
     expect(htmlRes.tabs[0].title).toBe('Example');
+  });
+
+  it('supports tab search across spaces, settings, duplicate detection, batch close & group restore', () => {
+    let data = createDefaultPersistedData();
+    data = {
+      ...data,
+      tabs: [
+        ...data.tabs,
+        {
+          id: 'tab-u1',
+          spaceId: 'space-personal',
+          location: 'unpinned',
+          url: 'https://example.org/docs#intro',
+          title: 'Docs Intro',
+          isLoading: false,
+          canGoBack: false,
+          canGoForward: false,
+          isMuted: false,
+          isAudible: false,
+          lastActiveAt: Date.now(),
+        },
+        {
+          id: 'tab-u2',
+          spaceId: 'space-personal',
+          location: 'unpinned',
+          url: 'https://news.example.org/today',
+          title: 'News Today',
+          isLoading: false,
+          canGoBack: false,
+          canGoForward: false,
+          isMuted: false,
+          isAudible: false,
+          lastActiveAt: Date.now() - 10,
+        },
+      ],
+    };
+
+    // Duplicate URL canonicalization ignores hash differences
+    expect(findDuplicateOpenTab(data, 'https://example.org/docs')?.id).toBe('tab-u1');
+
+    // Space search + Settings search in Command Bar
+    const workMatches = buildCommandBarResults('Work', data);
+    expect(workMatches.some((r) => r.tabId === 'tab-work-mdn')).toBe(true);
+    const privacySetting = buildCommandBarResults('Privacy', data);
+    expect(privacySetting.some((r) => r.kind === 'settings' && r.settingsSection === 'privacy')).toBe(true);
+
+    // Close other unpinned tabs in space -> creates closed group -> restore closed group
+    const closedOther = closeOtherTabsForSpace(data, 'tab-u1');
+    expect(closedOther.destroyedTabIds).toContain('tab-u2');
+    expect(closedOther.next.closedTabs.some((c) => c.url === 'https://news.example.org/today')).toBe(true);
+
+    const groupId = closedOther.next.closedTabs[0].groupId;
+    expect(groupId).toBeTruthy();
+    const restoredGroup = restoreClosedTabs(closedOther.next, { groupId });
+    expect(restoredGroup.restoredTabs.some((t) => t.url === 'https://news.example.org/today')).toBe(true);
+
+    // Move tab across Spaces with different profiles
+    const moved = moveTabToSpace(data, 'tab-u1', 'space-work');
+    expect(moved.profileChanged).toBe(true);
+    expect(moved.next.tabs.find((t) => t.id === 'tab-u1')?.spaceId).toBe('space-work');
+
+    // Close tabs to the right preserves anchor and removes strictly trailing tabs
+    const closedRight = closeTabsToRightForSpace(data, 'tab-u1');
+    expect(closedRight.destroyedTabIds).toEqual(['tab-u2']);
+
+    // Reorder spaces
+    const reorderedSpaces = reorderSpaces(data, 'space-work', 'space-personal');
+    expect(reorderedSpaces.spaces[0].id).toBe('space-work');
   });
 });

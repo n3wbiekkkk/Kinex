@@ -1,6 +1,22 @@
+import type { CommandId } from './commands';
+
 export type TabLocation = 'topApp' | 'pinned' | 'unpinned';
 
-export type SearchEngineId = 'google' | 'duckduckgo' | 'bing' | 'perplexity' | 'kagi';
+export type SearchEngineId = 'google' | 'duckduckgo' | 'bing' | 'startpage' | 'kagi';
+
+export type NewTabPreset = 'minimal' | 'focus' | 'personal';
+
+export type NewTabBackground = 'clean' | 'mist' | 'dusk' | 'sage';
+
+export interface NewTabConfig {
+  preset: NewTabPreset;
+  background: NewTabBackground;
+  showClock: boolean;
+  showFavorites: boolean;
+  showFrequent: boolean;
+}
+
+export type MemorySaverTimeout = 'disabled' | '5m' | '15m' | '30m' | '60m';
 
 export type SecurityState = 'secure' | 'insecure' | 'cert-warning' | 'internal';
 
@@ -58,6 +74,8 @@ export interface TabItem {
   isMuted: boolean;
   isAudible: boolean;
   securityState?: SecurityState;
+  isCrashed?: boolean;
+  isDiscarded?: boolean;
   zoomFactor?: number;
   lastActiveAt: number;
 }
@@ -111,6 +129,43 @@ export interface ArchivedTab {
   archivedAt: number;
 }
 
+export interface ClosedTabItem {
+  id: string;
+  spaceId: string;
+  location: TabLocation;
+  folderId?: string;
+  folderName?: string;
+  url: string;
+  pinnedUrl?: string;
+  title: string;
+  favicon?: string;
+  closedAt: number;
+  groupId?: string;
+}
+
+export type ReaderTheme = 'light' | 'sepia' | 'dark';
+
+export interface ReaderOptions {
+  fontSize: number;
+  theme: ReaderTheme;
+}
+
+export interface FindInPageStatus {
+  tabId: string;
+  query: string;
+  activeMatchOrdinal: number;
+  matches: number;
+}
+
+export interface DuplicateTabPrompt {
+  url: string;
+  existingTabId: string;
+  existingTabTitle: string;
+  existingSpaceId: string;
+  target: 'current' | 'new-tab' | 'split';
+  requestedSpaceId?: string;
+}
+
 export interface DownloadItem {
   id: string;
   filename: string;
@@ -120,6 +175,11 @@ export interface DownloadItem {
   totalBytes: number;
   state: 'progressing' | 'completed' | 'cancelled' | 'interrupted';
   startedAt: number;
+  speedBytesPerSec?: number;
+  etaSeconds?: number;
+  canResume?: boolean;
+  isPaused?: boolean;
+  mimeType?: string;
 }
 
 export type UpdateStatus =
@@ -137,12 +197,13 @@ export type OverlayState =
   | { mode: 'boosts'; domain: string }
   | { mode: 'space-editor'; spaceId?: string }
   | { mode: 'archive' }
+  | { mode: 'history' }
   | { mode: 'downloads' }
   | { mode: 'find' }
   | { mode: 'settings'; section?: SettingsSection }
   | { mode: 'site-info' };
 
-export interface PersistedNookData {
+export interface PersistedKinexData {
   spaces: Space[];
   profiles: Profile[];
   folders: FolderItem[];
@@ -152,6 +213,9 @@ export interface PersistedNookData {
   boosts: BoostRule[];
   history: HistoryEntry[];
   archivedTabs: ArchivedTab[];
+  closedTabs: ClosedTabItem[];
+  zoomByHost: Record<string, number>;
+  readerOptions: ReaderOptions;
   sidebarOpen: boolean;
   sidebarWidth: number;
   adBlockEnabled: boolean;
@@ -161,9 +225,13 @@ export interface PersistedNookData {
   airTrafficRules: AirTrafficRule[];
   searchEngine: SearchEngineId;
   updateFeedUrl: string;
+  memorySaverTimeout: MemorySaverTimeout;
+  memorySaverExemptPinned: boolean;
+  newTabConfig: NewTabConfig;
 }
 
-export interface NookStateSnapshot extends PersistedNookData {
+export interface KinexStateSnapshot extends PersistedKinexData {
+  reducedEffects: boolean;
   overlay: OverlayState;
   downloads: DownloadItem[];
   blockedRequestsCount: number;
@@ -172,9 +240,25 @@ export interface NookStateSnapshot extends PersistedNookData {
   isDefaultBrowser: boolean;
   appVersion: string;
   updateStatus: UpdateStatus;
+  findStatus: FindInPageStatus | null;
+  duplicatePrompt: DuplicateTabPrompt | null;
+  readerTabIds: string[];
 }
 
-export type CommandBarItemKind = 'open-tab' | 'pinned-tab' | 'history' | 'domain' | 'search' | 'action';
+/** @deprecated Use PersistedKinexData */
+export type PersistedNookData = PersistedKinexData;
+/** @deprecated Use KinexStateSnapshot */
+export type NookStateSnapshot = KinexStateSnapshot;
+
+export type CommandBarItemKind =
+  | 'open-tab'
+  | 'pinned-tab'
+  | 'favorite'
+  | 'history'
+  | 'domain'
+  | 'search'
+  | 'action'
+  | 'settings';
 
 export interface CommandBarResult {
   id: string;
@@ -185,21 +269,25 @@ export interface CommandBarResult {
   tabId?: string;
   spaceId?: string;
   spaceLabel?: string;
-  actionId?:
-    | 'new-split'
-    | 'toggle-boosts'
-    | 'new-space'
-    | 'little-nook'
-    | 'toggle-adblock'
-    | 'open-settings'
-    | 'check-updates';
+  settingsSection?: SettingsSection;
+  isAlreadyOpen?: boolean;
+  actionId?: CommandId;
+  intent?: KinexIntent;
+  shortcut?: string;
   favicon?: string;
 }
 
-export type NookIntent =
+export type FocusRegion = 'content' | 'sidebar' | 'toolbar';
+export type FocusRequest = FocusRegion | 'restore' | 'address';
+
+export type KinexIntent =
+  | { type: 'run-command'; commandId: CommandId }
+  | { type: 'focus-region'; region: FocusRegion }
   | { type: 'select-space'; spaceId: string }
   | { type: 'create-space'; name: string; icon: string; theme: SpaceTheme; profilePartition?: string }
   | { type: 'update-space'; spaceId: string; name: string; icon: string; theme: SpaceTheme; profilePartition?: string }
+  | { type: 'rename-space'; spaceId: string; name: string }
+  | { type: 'reorder-space'; sourceSpaceId: string; targetSpaceId: string }
   | { type: 'delete-space'; spaceId: string }
   | { type: 'create-profile'; name: string }
   | { type: 'create-folder'; spaceId: string; name: string }
@@ -207,11 +295,24 @@ export type NookIntent =
   | { type: 'rename-folder'; folderId: string; name: string }
   | { type: 'delete-folder'; folderId: string }
   | { type: 'move-tab-to-folder'; tabId: string; folderId?: string }
+  | { type: 'move-tab-to-space'; tabId: string; spaceId: string }
   | { type: 'reorder-tab'; sourceTabId: string; targetTabId: string }
   | { type: 'select-tab'; tabId: string; paneIndex?: number }
   | { type: 'duplicate-tab'; tabId: string }
-  | { type: 'open-url'; url: string; target: 'current' | 'new-tab' | 'split' | 'little-nook'; spaceId?: string }
+  | {
+      type: 'open-url';
+      url: string;
+      target: 'current' | 'new-tab' | 'new-tab-background' | 'split' | 'little-kinex' | 'little-nook';
+      spaceId?: string;
+      duplicatePolicy?: 'prompt' | 'allow';
+    }
+  | { type: 'resolve-duplicate-open'; decision: 'switch-existing' | 'open-anyway' | 'cancel' }
   | { type: 'close-tab'; tabId: string }
+  | { type: 'close-other-tabs'; tabId: string }
+  | { type: 'close-tabs-to-right'; tabId: string }
+  | { type: 'reopen-closed-tab'; closedId?: string }
+  | { type: 'restore-closed-group'; groupId: string }
+  | { type: 'clear-closed-tabs' }
   | { type: 'reset-pinned-tab'; tabId: string }
   | { type: 'set-tab-location'; tabId: string; location: TabLocation }
   | { type: 'clear-today-tabs'; spaceId: string }
@@ -245,6 +346,9 @@ export type NookIntent =
   | { type: 'copy-current-url'; tabId?: string }
   | { type: 'open-devtools' }
   | { type: 'print-page' }
+  | { type: 'save-page-pdf' }
+  | { type: 'toggle-reader-mode'; tabId?: string }
+  | { type: 'set-reader-options'; options: Partial<ReaderOptions> }
   | { type: 'open-incognito'; url?: string }
   | { type: 'find-in-page'; text: string; forward?: boolean; findNext?: boolean }
   | { type: 'stop-find-in-page' }
@@ -252,17 +356,44 @@ export type NookIntent =
   | { type: 'import-browser-data'; source: 'arc' | 'chrome' | 'file' }
   | { type: 'set-default-browser' }
   | { type: 'show-download-in-finder'; savePath: string }
+  | { type: 'pause-download'; downloadId: string }
+  | { type: 'resume-download'; downloadId: string }
+  | { type: 'cancel-download'; downloadId: string }
+  | { type: 'open-download'; downloadId: string }
+  | { type: 'clear-completed-downloads' }
   | { type: 'set-update-feed-url'; url: string }
   | { type: 'check-for-updates' }
   | { type: 'download-update' }
-  | { type: 'install-update' };
+  | { type: 'install-update' }
+  | { type: 'set-memory-saver-timeout'; timeout: MemorySaverTimeout }
+  | { type: 'set-memory-saver-exempt-pinned'; exempt: boolean }
+  | { type: 'discard-tab'; tabId: string }
+  | { type: 'set-new-tab-config'; config: Partial<NewTabConfig> };
 
-export interface NookAPI {
-  getState: () => Promise<NookStateSnapshot>;
-  dispatch: (intent: NookIntent) => Promise<void>;
-  onStateUpdated: (listener: (state: NookStateSnapshot) => void) => () => void;
-  showTabContextMenu: (tabId: string) => Promise<void>;
-  getLittleNookInfo: () => Promise<{ url: string; title: string; isLoading: boolean; canGoBack: boolean; canGoForward: boolean }>;
-  onLittleNookUpdated: (listener: (info: { url: string; title: string; isLoading: boolean; canGoBack: boolean; canGoForward: boolean }) => void) => () => void;
-  littleNookAction: (action: 'back' | 'forward' | 'reload' | 'navigate' | 'promote' | 'close', url?: string) => Promise<void>;
+export type LittleKinexAction = 'back' | 'forward' | 'reload' | 'navigate' | 'promote' | 'close' | 'focus-content';
+
+export interface LittleKinexInfo {
+  url: string;
+  title: string;
+  isLoading: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  isPrivate?: boolean;
+  securityState?: SecurityState;
 }
+
+export interface KinexAPI {
+  getState: () => Promise<KinexStateSnapshot>;
+  dispatch: (intent: KinexIntent) => Promise<void>;
+  onFocusRequested: (listener: (region: FocusRequest) => void) => () => void;
+  onStateUpdated: (listener: (state: KinexStateSnapshot) => void) => () => void;
+  showTabContextMenu: (tabId: string) => Promise<void>;
+  getLittleKinexInfo: () => Promise<LittleKinexInfo>;
+  onLittleKinexUpdated: (listener: (info: LittleKinexInfo) => void) => () => void;
+  littleKinexAction: (action: LittleKinexAction, url?: string) => Promise<void>;
+}
+
+/** @deprecated Use KinexIntent */
+export type NookIntent = KinexIntent;
+/** @deprecated Use KinexAPI */
+export type NookAPI = KinexAPI;

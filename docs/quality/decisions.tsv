@@ -1,0 +1,3 @@
+ts	phase	decision	why	evidence	result
+2026-11-16T15:09:44Z	design	Use shared command metadata and main execution through existing intents	Main owns live focus and private-window context; avoid stale renderer commands	docs/quality/PLAN.md	open
+2026-11-16T15:17:47Z	baseline	Captured production baseline on disposable profiles	Measure actual artifact before visual and keyboard changes	/private/tmp/kinex-quality/baseline.json	VERIFIED

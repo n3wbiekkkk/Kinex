@@ -1,0 +1,53 @@
+name: Kinex Browser CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-and-package-mac:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck Main & Renderer
+        run: npm run typecheck
+
+      - name: Run Unit Tests (Vitest)
+        run: npm test
+
+      - name: Build Production Bundles
+        run: npm run build
+
+      - name: Run Electron Main-Process Integration Tests
+        run: npm run test:integration
+
+      - name: Run Full 15-Workflow Electron E2E Suite
+        run: npm run test:e2e
+
+      - name: Verify Keyboard-Only Workflows
+        run: npm run test:keyboard
+
+      - name: Verify Focus and Window Integration
+        run: npm run test:experience
+
+      - name: Verify macOS App Packaging
+        run: npx electron-builder --mac --publish never
+
+      - name: Inspect Packaging Manifest
+        run: |
+          test -f release/latest-mac.yml
+          cat release/latest-mac.yml

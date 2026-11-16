@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
-import type { NookAPI } from '../shared/types';
+import type { KinexAPI } from '../shared/types';
 
 declare global {
   interface Window {
-    nookAPI: NookAPI;
+    kinexAPI: KinexAPI;
   }
 }

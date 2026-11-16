@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { Trash2, X } from 'lucide-react';
 import { SPACE_THEME_PRESETS } from '../../shared/domain';
-import type { NookIntent, NookStateSnapshot } from '../../shared/types';
+import type { KinexIntent, KinexStateSnapshot } from '../../shared/types';
 
 interface SpaceEditorProps {
-  state: NookStateSnapshot;
+  state: KinexStateSnapshot;
   spaceId?: string;
-  dispatch: (intent: NookIntent) => void;
+  dispatch: (intent: KinexIntent) => void;
 }
 
 const ICONS = ['✦', '⌘', '⚡', '🌿', '🎧', '🧪', '🚀', '📚'];
@@ -47,11 +47,12 @@ export const SpaceEditor: React.FC<SpaceEditorProps> = ({ state, spaceId, dispat
   };
 
   return (
-    <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-card" role="dialog" aria-modal="true" aria-label={existing ? 'Edit Space' : 'New Space'} onClick={(e) => e.stopPropagation()}>
       <div className="modal-header">
         <span style={{ fontWeight: 600 }}>{existing ? 'Edit Space' : 'New Space'}</span>
         <button
           className="icon-btn"
+          aria-label="Close Space Editor"
           onClick={() => dispatch({ type: 'set-overlay', overlay: { mode: 'none' } })}
         >
           <X size={16} />
@@ -59,9 +60,12 @@ export const SpaceEditor: React.FC<SpaceEditorProps> = ({ state, spaceId, dispat
       </div>
       <form className="modal-body" onSubmit={submit}>
         <div>
-          <label className="field-label">Space Name</label>
+          <label className="field-label" htmlFor="space-name">Space Name</label>
           <input
             className="text-input"
+            id="space-name"
+            aria-label="Space Name"
+            data-initial-focus
             placeholder="e.g. Research, Work, Chill"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -76,10 +80,8 @@ export const SpaceEditor: React.FC<SpaceEditorProps> = ({ state, spaceId, dispat
               <button
                 type="button"
                 key={p.id}
-                className="btn-secondary"
-                style={{
-                  border: p.partition === profilePartition ? '1px solid #8b7cf8' : '1px solid transparent',
-                }}
+                aria-pressed={p.partition === profilePartition}
+                className={`btn-secondary ${p.partition === profilePartition ? 'selected' : ''}`}
                 onClick={() => setProfilePartition(p.partition)}
               >
                 {p.name}
@@ -90,6 +92,7 @@ export const SpaceEditor: React.FC<SpaceEditorProps> = ({ state, spaceId, dispat
             <input
               className="text-input"
               placeholder="New isolated profile name..."
+              aria-label="New Profile Name"
               value={newProfileName}
               onChange={(e) => setNewProfileName(e.target.value)}
             />
@@ -115,11 +118,10 @@ export const SpaceEditor: React.FC<SpaceEditorProps> = ({ state, spaceId, dispat
               <button
                 type="button"
                 key={ic}
-                className="btn-secondary"
-                style={{
-                  border: ic === icon ? '1px solid #8b7cf8' : '1px solid transparent',
-                  fontSize: 15,
-                }}
+                aria-label={`Space icon ${ic}`}
+                aria-pressed={ic === icon}
+                className={`btn-secondary ${ic === icon ? 'selected' : ''}`}
+                style={{ fontSize: 15 }}
                 onClick={() => setIcon(ic)}
               >
                 {ic}
@@ -135,6 +137,7 @@ export const SpaceEditor: React.FC<SpaceEditorProps> = ({ state, spaceId, dispat
               <button
                 type="button"
                 key={preset.id}
+                aria-pressed={preset.id === themeId}
                 onClick={() => setThemeId(preset.id)}
                 style={{
                   padding: '10px 8px',
@@ -142,7 +145,7 @@ export const SpaceEditor: React.FC<SpaceEditorProps> = ({ state, spaceId, dispat
                   background: `linear-gradient(135deg, ${preset.gradientFrom}, ${preset.gradientTo})`,
                   color: preset.isDark ? '#fff' : '#161822',
                   border:
-                    preset.id === themeId ? '2px solid #8b7cf8' : '1px solid rgba(255,255,255,0.16)',
+                    preset.id === themeId ? '2px solid var(--accent)' : '1px solid var(--border-hairline)',
                   fontSize: 12,
                   fontWeight: 600,
                 }}

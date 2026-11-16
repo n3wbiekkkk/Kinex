@@ -77,15 +77,15 @@ export async function runElementZapper(wc: WebContents): Promise<string | null> 
   if (wc.isDestroyed()) return null;
   const script = `
     new Promise((resolve) => {
-      if (window.__nookZapperCleanup) {
-        window.__nookZapperCleanup(null);
+      if (window.__kinexZapperCleanup) {
+        window.__kinexZapperCleanup(null);
       }
       const overlay = document.createElement('div');
-      overlay.id = '__nook_zapper_overlay';
+      overlay.id = '__kinex_zapper_overlay';
       overlay.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #8b7cf8;background:rgba(139,124,248,0.18);border-radius:6px;transition:all 60ms ease;display:none;';
       const badge = document.createElement('div');
       badge.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#161722;color:#f4f4fb;padding:8px 14px;border-radius:999px;font:12px/1.3 -apple-system,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);pointer-events:none;';
-      badge.textContent = 'Kinex Zap Mode — Click any element to hide it (Esc to cancel)';
+      badge.textContent = 'Kinex Zap Mode — Tab selects, arrows change level, Enter hides, Esc cancels';
       document.documentElement.appendChild(overlay);
       document.documentElement.appendChild(badge);
 
@@ -99,7 +99,7 @@ export async function runElementZapper(wc: WebContents): Promise<string | null> 
         let depth = 0;
         while (cur && cur.nodeType === 1 && cur !== document.body && depth < 4) {
           let part = cur.tagName.toLowerCase();
-          const classes = Array.from(cur.classList).filter(c => c && !c.startsWith('__nook') && c.length < 36).slice(0, 2);
+          const classes = Array.from(cur.classList).filter(c => c && !c.startsWith('__kinex') && c.length < 36).slice(0, 2);
           if (classes.length > 0) {
             part += '.' + classes.map(c => CSS.escape(c)).join('.');
           } else if (cur.parentElement) {
@@ -120,8 +120,7 @@ export async function runElementZapper(wc: WebContents): Promise<string | null> 
       }
 
       let currentTarget = null;
-      const onMove = (e) => {
-        const el = document.elementFromPoint(e.clientX, e.clientY);
+      const highlight = (el) => {
         if (!el || el === overlay || el === badge) return;
         currentTarget = el;
         const rect = el.getBoundingClientRect();
@@ -131,8 +130,15 @@ export async function runElementZapper(wc: WebContents): Promise<string | null> 
         overlay.style.width = rect.width + 'px';
         overlay.style.height = rect.height + 'px';
         const sel = buildSelector(el);
-        badge.textContent = sel ? 'Zap: ' + sel + ' (Click to hide, Esc to cancel)' : 'Select element to zap';
+        badge.textContent = sel ? 'Zap: ' + sel + ' (Enter to hide, Esc to cancel)' : 'Select element to zap';
       };
+
+      const onMove = (e) => highlight(document.elementFromPoint(e.clientX, e.clientY));
+
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+        acceptNode: (el) => el !== overlay && el !== badge && el.getClientRects().length && buildSelector(el)
+          ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
+      });
 
       const cleanup = (result) => {
         window.removeEventListener('mousemove', onMove, true);
@@ -140,7 +146,7 @@ export async function runElementZapper(wc: WebContents): Promise<string | null> 
         window.removeEventListener('keydown', onKey, true);
         overlay.remove();
         badge.remove();
-        delete window.__nookZapperCleanup;
+        delete window.__kinexZapperCleanup;
         resolve(result);
       };
 
@@ -152,14 +158,25 @@ export async function runElementZapper(wc: WebContents): Promise<string | null> 
       };
 
       const onKey = (e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          cleanup(null);
-        }
+        if (e.isComposing || !['Escape', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'Escape') { cleanup(null); return; }
+        if (e.key === 'Enter') { if (currentTarget) cleanup(buildSelector(currentTarget)); return; }
+        let next;
+        if (e.key === 'Tab') {
+          if (currentTarget) walker.currentNode = currentTarget;
+          next = e.shiftKey ? walker.previousNode() : walker.nextNode();
+          if (!next) { walker.currentNode = document.body; next = walker.nextNode(); }
+        } else if (currentTarget) {
+          next = e.key === 'ArrowUp' ? currentTarget.parentElement
+            : e.key === 'ArrowDown' ? currentTarget.firstElementChild
+              : e.key === 'ArrowLeft' ? currentTarget.previousElementSibling : currentTarget.nextElementSibling;
+        } else next = walker.nextNode();
+        if (next && buildSelector(next)) { next.scrollIntoView({ block: 'nearest', behavior: 'instant' }); highlight(next); }
       };
 
-      window.__nookZapperCleanup = cleanup;
+      window.__kinexZapperCleanup = cleanup;
       window.addEventListener('mousemove', onMove, true);
       window.addEventListener('click', onClick, true);
       window.addEventListener('keydown', onKey, true);

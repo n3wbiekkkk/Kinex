@@ -1,3 +1,4 @@
+import { BROWSER_COMMANDS, formatShortcut } from '../../shared/commands';
 import React, { useState } from 'react';
 import {
   ArrowUpCircle,
@@ -13,35 +14,20 @@ import {
 import { SEARCH_ENGINES } from '../../shared/domain';
 import kinexLogo from '../assets/kinex-logo.png';
 import type {
-  NookIntent,
-  NookStateSnapshot,
+  KinexIntent,
+  KinexStateSnapshot,
+  MemorySaverTimeout,
+  NewTabBackground,
+  NewTabPreset,
   SearchEngineId,
   SettingsSection,
 } from '../../shared/types';
 
 interface SettingsViewProps {
-  state: NookStateSnapshot;
+  state: KinexStateSnapshot;
   initialSection?: SettingsSection;
-  dispatch: (intent: NookIntent) => void;
+  dispatch: (intent: KinexIntent) => void;
 }
-
-const SHORTCUTS: Array<[string, string]> = [
-  ['Open Command Bar (New Tab)', '⌘T'],
-  ['Edit Current URL', '⌘L'],
-  ['Toggle Sidebar', '⌘S'],
-  ['Toggle Split View', '⌘⇧\\'],
-  ['Pin / Unpin Current Tab', '⌘D'],
-  ['Copy Clean URL', '⌘⇧C'],
-  ['Open Little NOOK', '⌥⌘N'],
-  ['New Private Window', '⌘⇧N'],
-  ['Boosts Studio', '⌘⇧B'],
-  ['Find in Page', '⌘F'],
-  ['Zoom In / Out / Reset', '⌘+  ⌘-  ⌘0'],
-  ['Switch Spaces', '⌃⌘← / ⌃⌘→'],
-  ['Jump to Tab 1–9', '⌘1 .. ⌘9'],
-  ['Developer Tools', '⌥⌘I'],
-  ['Settings', '⌘,'],
-];
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   state,
@@ -68,7 +54,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       case 'checking':
         return 'Checking for updates...';
       case 'available':
-        return `Found NOOK v${up.version}, downloading...`;
+        return `Found Kinex v${up.version}, downloading...`;
       case 'downloading':
         return `Downloading v${up.version} (${up.percent}%)`;
       case 'downloaded':
@@ -90,8 +76,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   ];
 
   return (
-    <div className="settings-window" onClick={(e) => e.stopPropagation()}>
-      <nav className="settings-nav">
+      <div className="settings-window" role="dialog" aria-modal="true" aria-label="Kinex Settings" onClick={(e) => e.stopPropagation()}>
+      <nav className="settings-nav" aria-label="Settings Sections">
         <div className="settings-nav-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <img src={kinexLogo} alt="Kinex" width={16} height={16} style={{ borderRadius: 4, background: '#fff', padding: 2 }} />
           <span>Kinex Settings</span>
@@ -99,6 +85,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {navItems.map((item) => (
           <button
             key={item.id}
+            aria-current={section === item.id ? 'page' : undefined}
+            data-initial-focus={section === item.id || undefined}
             className={`settings-nav-item ${section === item.id ? 'active' : ''}`}
             onClick={() => setSection(item.id)}
           >
@@ -113,6 +101,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <span>{navItems.find((i) => i.id === section)?.label}</span>
           <button
             className="icon-btn"
+            aria-label="Close Settings"
             onClick={() => dispatch({ type: 'set-overlay', overlay: { mode: 'none' } })}
           >
             <X size={16} />
@@ -145,13 +134,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   {(Object.keys(SEARCH_ENGINES) as SearchEngineId[]).map((id) => (
                     <button
                       key={id}
-                      className="btn-secondary"
-                      style={{
-                        border:
-                          state.searchEngine === id
-                            ? '1px solid #7c8cff'
-                            : '1px solid transparent',
-                      }}
+                      aria-pressed={state.searchEngine === id}
+                      className={`btn-secondary ${state.searchEngine === id ? 'selected' : ''}`}
                       onClick={() => dispatch({ type: 'set-search-engine', engine: id })}
                     >
                       {SEARCH_ENGINES[id].name}
@@ -170,9 +154,130 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                   <input
                     type="checkbox"
+                    aria-label="Clean Copy URL"
                     checked={state.cleanCopyUrl}
                     onChange={(e) =>
                       dispatch({ type: 'set-clean-copy-url', enabled: e.target.checked })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="settings-group">
+                <div className="settings-row">
+                  <div>
+                    <div className="settings-row-title">Memory Saver</div>
+                    <div className="settings-row-desc">
+                      Free memory from inactive background tabs automatically ({state.tabs.filter((t) => t.isDiscarded).length} sleeping). Never discards audio, downloads, calls, or unsaved forms.
+                    </div>
+                  </div>
+                  <select
+                    className="text-input"
+                    style={{ width: 170 }}
+                    aria-label="Memory Saver"
+                    value={state.memorySaverTimeout}
+                    onChange={(e) =>
+                      dispatch({
+                        type: 'set-memory-saver-timeout',
+                        timeout: e.target.value as MemorySaverTimeout,
+                      })
+                    }
+                  >
+                    <option value="disabled">Disabled</option>
+                    <option value="5m">After 5 minutes</option>
+                    <option value="15m">After 15 minutes</option>
+                    <option value="30m">After 30 minutes</option>
+                    <option value="60m">After 60 minutes</option>
+                  </select>
+                </div>
+                <div className="settings-row">
+                  <div>
+                    <div className="settings-row-title">Keep Pinned &amp; Favorite Tabs Active</div>
+                    <div className="settings-row-desc">
+                      Exempt pinned and favorite tabs from automatic Memory Saver sleep.
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    aria-label="Keep pinned and favorite tabs active"
+                    checked={state.memorySaverExemptPinned}
+                    onChange={(e) =>
+                      dispatch({
+                        type: 'set-memory-saver-exempt-pinned',
+                        exempt: e.target.checked,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="settings-group">
+                <div>
+                  <div className="settings-row-title">New Tab Experience</div>
+                  <div className="settings-row-desc">
+                    Customize the start page layout and visible modules while keeping Space light/dark harmony.
+                  </div>
+                </div>
+                <div className="settings-row">
+                  <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Layout Preset</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {(['minimal', 'focus', 'personal'] as NewTabPreset[]).map((preset) => (
+                      <button
+                        key={preset}
+                        aria-pressed={state.newTabConfig.preset === preset}
+                        className={`btn-secondary ${state.newTabConfig.preset === preset ? 'selected' : ''}`}
+                        onClick={() => dispatch({ type: 'set-new-tab-config', config: { preset } })}
+                      >
+                        {preset.charAt(0).toUpperCase() + preset.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="settings-row">
+                  <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Backdrop Atmosphere</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {(['clean', 'mist', 'dusk', 'sage'] as NewTabBackground[]).map((background) => (
+                      <button
+                        key={background}
+                        aria-pressed={state.newTabConfig.background === background}
+                        className={`btn-secondary ${state.newTabConfig.background === background ? 'selected' : ''}`}
+                        onClick={() => dispatch({ type: 'set-new-tab-config', config: { background } })}
+                      >
+                        {background.charAt(0).toUpperCase() + background.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="settings-row">
+                  <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Show Clock</span>
+                  <input
+                    type="checkbox"
+                    aria-label="Show clock on New Tab"
+                    checked={state.newTabConfig.showClock}
+                    onChange={(e) =>
+                      dispatch({ type: 'set-new-tab-config', config: { showClock: e.target.checked } })
+                    }
+                  />
+                </div>
+                <div className="settings-row">
+                  <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Show Pinned Favorites</span>
+                  <input
+                    type="checkbox"
+                    aria-label="Show pinned favorites on New Tab"
+                    checked={state.newTabConfig.showFavorites}
+                    onChange={(e) =>
+                      dispatch({ type: 'set-new-tab-config', config: { showFavorites: e.target.checked } })
+                    }
+                  />
+                </div>
+                <div className="settings-row">
+                  <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Show Frequently Visited</span>
+                  <input
+                    type="checkbox"
+                    aria-label="Show frequently visited sites on New Tab"
+                    checked={state.newTabConfig.showFrequent}
+                    onChange={(e) =>
+                      dispatch({ type: 'set-new-tab-config', config: { showFrequent: e.target.checked } })
                     }
                   />
                 </div>
@@ -195,6 +300,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <input
                     className="text-input"
                     placeholder="New isolated profile name (e.g. Client, Dev)..."
+                    aria-label="New Profile Name"
                     value={newProfileName}
                     onChange={(e) => setNewProfileName(e.target.value)}
                   />
@@ -225,12 +331,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <input
                     className="text-input"
                     placeholder="Domain pattern (e.g. slack.com or *.linear.app)"
+                    aria-label="Air Traffic Domain Pattern"
                     value={rulePattern}
                     onChange={(e) => setRulePattern(e.target.value)}
                   />
                   <select
                     className="text-input"
                     style={{ width: 160 }}
+                    aria-label="Air Traffic Destination Space"
                     value={ruleSpaceId}
                     onChange={(e) => setRuleSpaceId(e.target.value)}
                   >
@@ -242,6 +350,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </select>
                   <button
                     className="btn-primary"
+                    aria-label="Add Air Traffic Rule"
                     onClick={() => {
                       if (!rulePattern.trim() || !ruleSpaceId) return;
                       dispatch({
@@ -269,6 +378,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </span>
                       <button
                         className="icon-btn"
+                        aria-label={`Delete rule for ${rule.pattern}`}
                         onClick={() => dispatch({ type: 'delete-air-traffic-rule', ruleId: rule.id })}
                       >
                         <Trash2 size={14} />
@@ -292,6 +402,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                   <input
                     type="checkbox"
+                    aria-label="HTTPS-Only Mode"
                     checked={state.httpsOnly}
                     onChange={(e) =>
                       dispatch({ type: 'set-https-only', enabled: e.target.checked })
@@ -307,6 +418,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                   <input
                     type="checkbox"
+                    aria-label="Ad and Tracker Shields"
                     checked={state.adBlockEnabled}
                     onChange={() => dispatch({ type: 'toggle-adblock' })}
                   />
@@ -384,10 +496,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           {section === 'shortcuts' && (
             <div className="settings-group">
-              {SHORTCUTS.map(([label, keys]) => (
-                <div key={label} className="settings-row">
-                  <span style={{ fontSize: 13 }}>{label}</span>
-                  <span className="kbd-badge">{keys}</span>
+              <p className="settings-row-desc">F6 cycles between website content and browser controls. Use arrows to navigate Sidebar tabs, ⌥↑ / ⌥↓ to reorder tabs, Shift+F10 for tab actions, and ⌥← / ⌥→ to reorder Spaces. Tab and Shift+Tab reach every control. Escape closes the current dialog and restores focus.</p>
+              {BROWSER_COMMANDS.filter((command) => command.accelerator).map((command) => (
+                <div key={command.id} className="settings-row">
+                  <span style={{ fontSize: 13 }}>{command.title}</span>
+                  <kbd className="kbd-badge">{formatShortcut(command.accelerator)}</kbd>
                 </div>
               ))}
             </div>
@@ -456,10 +569,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 )}
               </div>
               <div>
-                <label className="field-label">Update Feed (HTTPS URL or local release folder)</label>
+                <label className="field-label" htmlFor="update-feed">Update Feed (HTTPS URL or local release folder)</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input
                     className="text-input"
+                    id="update-feed"
                     value={feedUrl}
                     onChange={(e) => setFeedUrl(e.target.value)}
                   />

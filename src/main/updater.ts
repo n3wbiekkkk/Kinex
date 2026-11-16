@@ -4,6 +4,7 @@ import path from 'node:path';
 import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateStatus } from '../shared/types';
+import { isSafeUpdateFeedUrl } from './security';
 
 export type FeedSource =
   | { kind: 'remote'; url: string }
@@ -12,14 +13,14 @@ export type FeedSource =
 
 export function classifyUpdateFeedSource(rawFeed: string): FeedSource {
   const trimmed = rawFeed.trim();
-  if (!trimmed) return { kind: 'none' };
+  if (!trimmed || !isSafeUpdateFeedUrl(trimmed)) return { kind: 'none' };
   if (/^https?:\/\//i.test(trimmed)) {
     return { kind: 'remote', url: trimmed.replace(/\/+$/, '') };
   }
   return { kind: 'local-dir', dir: path.resolve(trimmed) };
 }
 
-export class NookAutoUpdater {
+export class KinexAutoUpdater {
   private status: UpdateStatus = { state: 'idle' };
   private localServer: http.Server | null = null;
   private initialized = false;
@@ -204,3 +205,6 @@ export class NookAutoUpdater {
     this.stopLocalFeedServer();
   }
 }
+
+/** @deprecated Use KinexAutoUpdater */
+export const NookAutoUpdater = KinexAutoUpdater;

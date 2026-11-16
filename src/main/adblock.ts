@@ -1,6 +1,6 @@
 import type { Session } from 'electron';
 
-const BLOCKED_HOST_SUFFIXES = [
+const BLOCKED_HOST_SUFFIXES = new Set([
   'doubleclick.net',
   'googlesyndication.com',
   'googleadservices.com',
@@ -27,7 +27,7 @@ const BLOCKED_HOST_SUFFIXES = [
   'segment.io',
   'sentry.io',
   'clarity.ms',
-];
+]);
 
 const attachedSessions = new WeakSet<Session>();
 
@@ -37,10 +37,14 @@ export function isBlockedAdOrTrackerUrl(rawUrl: string): boolean {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return false;
     }
-    const host = parsed.hostname.toLowerCase();
-    return BLOCKED_HOST_SUFFIXES.some(
-      (suffix) => host === suffix || host.endsWith(`.${suffix}`)
-    );
+    let host = parsed.hostname.toLowerCase();
+    while (host) {
+      if (BLOCKED_HOST_SUFFIXES.has(host)) return true;
+      const dot = host.indexOf('.');
+      if (dot === -1) break;
+      host = host.slice(dot + 1);
+    }
+    return false;
   } catch {
     return false;
   }

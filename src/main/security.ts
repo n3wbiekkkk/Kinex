@@ -1,5 +1,91 @@
+import path from 'node:path';
 import { matchesDomainPattern } from '../shared/domain';
 import type { AirTrafficRule, SecurityState } from '../shared/types';
+
+export type LoadErrorCategory =
+  | 'aborted'
+  | 'cert-error'
+  | 'dns-error'
+  | 'offline'
+  | 'timeout'
+  | 'https-unavailable'
+  | 'network-error';
+
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['mailto:', 'tel:']);
+
+const HTTPS_UNAVAILABLE_ERROR_CODES = new Set([
+  -100, // ERR_CONNECTION_CLOSED
+  -101, // ERR_CONNECTION_RESET
+  -102, // ERR_CONNECTION_REFUSED
+  -107, // ERR_SSL_PROTOCOL_ERROR
+  -113, // ERR_SSL_VERSION_OR_CIPHER_MISMATCH
+  -114, // ERR_SSL_RENEGOTIATION_REQUESTED
+  -126, // ERR_SSL_BAD_RECORD_MAC_ALERT
+]);
+
+const DNS_ERROR_CODES = new Set([
+  -105, // ERR_NAME_NOT_RESOLVED
+  -137, // ERR_NAME_RESOLUTION_FAILED
+]);
+
+const TIMEOUT_ERROR_CODES = new Set([
+  -7, // ERR_TIMED_OUT
+  -118, // ERR_CONNECTION_TIMED_OUT
+]);
+
+export function classifyLoadError(errorCode: number): LoadErrorCategory {
+  if (errorCode === -3) return 'aborted';
+  if ((errorCode <= -200 && errorCode >= -217) || errorCode === -501) return 'cert-error';
+  if (DNS_ERROR_CODES.has(errorCode)) return 'dns-error';
+  if (errorCode === -106) return 'offline';
+  if (TIMEOUT_ERROR_CODES.has(errorCode)) return 'timeout';
+  if (HTTPS_UNAVAILABLE_ERROR_CODES.has(errorCode)) return 'https-unavailable';
+  return 'network-error';
+}
+
+export function shouldOfferInsecureHttpFallback(
+  errorCode: number,
+  rawUrl: string,
+  httpsOnly: boolean,
+  wasUpgradedFromHttp: boolean
+): boolean {
+  if (!httpsOnly || !wasUpgradedFromHttp) return false;
+  if (classifyLoadError(errorCode) !== 'https-unavailable') return false;
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'https:') return false;
+    return !isLocalHostname(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function isAllowedExternalProtocol(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    return ALLOWED_EXTERNAL_PROTOCOLS.has(parsed.protocol.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+export function isSafeUpdateFeedUrl(rawFeed: string): boolean {
+  const trimmed = rawFeed.trim();
+  if (!trimmed) return true;
+  if (trimmed.includes('\0')) return false;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol === 'https:' && parsed.hostname.length > 0) return true;
+      if (parsed.protocol === 'http:' && isLocalHostname(parsed.hostname)) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }
+  const resolved = path.resolve(trimmed);
+  return path.isAbsolute(resolved);
+}
 
 const TRACKING_PARAMS = new Set([
   'utm_source',

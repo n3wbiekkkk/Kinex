@@ -10,6 +10,11 @@ import {
   upgradeUrlToHttpsIfNeeded,
 } from './security';
 import { classifyUpdateFeedSource } from './updater';
+import { renderKinexInternalHtml } from './internalPages';
+import { renderReaderHtml, sanitizeExtractedArticle } from './readerMode';
+import { getUniqueDownloadSavePath } from './downloadManager';
+import { validateIntent } from './ipcValidation';
+import { computeViewRects } from './viewLayoutManager';
 import type { BoostRule } from '../shared/types';
 
 describe('NOOK adblock, boosts, security, and updater', () => {
@@ -96,5 +101,106 @@ describe('NOOK adblock, boosts, security, and updater', () => {
         { id: 'r1', pattern: 'slack.com', spaceId: 'space-work', enabled: true },
       ])
     ).toBe('space-work');
+  });
+
+  it('renders Light/Dark New Tab presets safely without unescaped HTML', () => {
+    const lightHtml = renderKinexInternalHtml('kinex://newtab', {
+      isDark: false,
+      spaceName: 'Work <Team>',
+      searchEngineName: 'DuckDuckGo',
+      searchEngineTemplate: 'https://duckduckgo.com/?q=%s',
+      config: {
+        preset: 'personal',
+        background: 'sage',
+        showClock: true,
+        showFavorites: true,
+        showFrequent: true,
+      },
+      favorites: [{ title: 'GitHub', url: 'https://github.com', host: 'github.com' }],
+      frequent: [{ title: 'Bad <xss>', url: 'javascript:alert(1)', host: 'evil' }],
+    });
+    expect(lightHtml).toContain('color-scheme" content="light"');
+    expect(lightHtml).toContain('Work &lt;Team&gt;');
+    expect(lightHtml).toContain('Search DuckDuckGo');
+    expect(lightHtml).not.toContain('javascript:alert(1)');
+
+    const privHtml = renderKinexInternalHtml('kinex://private');
+    expect(privHtml).toContain('Private Browsing');
+    expect(privHtml).toContain('Isolated');
+  });
+
+  it('sanitizes Reader Mode content, locks CSP, and validates v0.7.0 intents', () => {
+    const shortRes = sanitizeExtractedArticle(
+      { title: 'Tiny', blocks: [{ tag: 'p', text: 'Too short.' }] },
+      'https://example.org/tiny'
+    );
+    expect(shortRes.ok).toBe(false);
+
+    const validRes = sanitizeExtractedArticle(
+      {
+        title: 'Engineering <script>alert(1)</script>',
+        byline: 'Kinex Author',
+        siteName: 'example.org',
+        blocks: [
+          { tag: 'h2', text: 'Architecture Fundamentals' },
+          {
+            tag: 'p',
+            text: 'Sandboxed views isolate untrusted web content while preserving crisp typography and deterministic resource cleanup across tabs and spaces.',
+          },
+          {
+            tag: 'p',
+            text: 'Reader Mode extracts only safe text paragraphs and locks rendering with script-disabled Content Security Policy headers.',
+          },
+        ],
+      },
+      'https://example.org/article'
+    );
+    expect(validRes.ok).toBe(true);
+    if (validRes.ok) {
+      const html = renderReaderHtml(validRes.doc, { fontSize: 18, theme: 'sepia' });
+      expect(html).toContain("default-src 'none'; style-src 'unsafe-inline';");
+      expect(html).not.toContain('<script>alert(1)</script>');
+      expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    }
+
+    // Download path collision utility
+    const uniquePath = getUniqueDownloadSavePath('/tmp', '../../evil/report.pdf');
+    expect(uniquePath.startsWith('/tmp/')).toBe(true);
+    expect(uniquePath.endsWith('report.pdf') || uniquePath.includes('report (')).toBe(true);
+
+    // v0.7.0 IPC intent validation
+    expect(validateIntent({ type: 'move-tab-to-space', tabId: 'tab-1', spaceId: 'space-work' }).ok).toBe(true);
+    expect(validateIntent({ type: 'reopen-closed-tab' }).ok).toBe(true);
+    expect(validateIntent({ type: 'pause-download', downloadId: 'dl-1' }).ok).toBe(true);
+    expect(validateIntent({ type: 'set-reader-options', options: { fontSize: 20, theme: 'sepia' } }).ok).toBe(true);
+    expect(validateIntent({ type: 'set-reader-options', options: { fontSize: 99 } }).ok).toBe(false);
+    expect(validateIntent({ type: 'resolve-duplicate-open', decision: 'switch-existing' }).ok).toBe(true);
+  });
+
+  it('expands HTML5 fullscreen panes edge-to-edge without sidebar or split insets', () => {
+    const single = computeViewRects({
+      windowWidth: 1440,
+      windowHeight: 900,
+      sidebarOpen: true,
+      sidebarWidth: 260,
+      paneCount: 1,
+      splitRatio: 0.5,
+      toolbarVisible: true,
+      htmlFullscreenPaneIndex: 0,
+    });
+    expect(single.panes).toEqual([{ x: 0, y: 0, width: 1440, height: 900 }]);
+
+    const split = computeViewRects({
+      windowWidth: 1440,
+      windowHeight: 900,
+      sidebarOpen: true,
+      sidebarWidth: 260,
+      paneCount: 2,
+      splitRatio: 0.5,
+      toolbarVisible: true,
+      htmlFullscreenPaneIndex: 1,
+    });
+    expect(split.panes[0]).toEqual({ x: -10000, y: -10000, width: 100, height: 100 });
+    expect(split.panes[1]).toEqual({ x: 0, y: 0, width: 1440, height: 900 });
   });
 });

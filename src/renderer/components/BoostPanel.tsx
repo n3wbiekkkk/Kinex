@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Sparkles, Trash2, X, Zap } from 'lucide-react';
-import type { BoostRule, NookIntent, NookStateSnapshot } from '../../shared/types';
+import type { BoostRule, KinexIntent, KinexStateSnapshot } from '../../shared/types';
 
 interface BoostPanelProps {
-  state: NookStateSnapshot;
+  state: KinexStateSnapshot;
   initialDomain: string;
-  dispatch: (intent: NookIntent) => void;
+  dispatch: (intent: KinexIntent) => void;
 }
 
 export const BoostPanel: React.FC<BoostPanelProps> = ({ state, initialDomain, dispatch }) => {
@@ -65,10 +65,10 @@ export const BoostPanel: React.FC<BoostPanelProps> = ({ state, initialDomain, di
   };
 
   return (
-    <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-card" role="dialog" aria-modal="true" aria-label="Boosts Studio" onClick={(e) => e.stopPropagation()}>
       <div className="modal-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
-          <Sparkles size={16} style={{ color: '#a78bfa' }} />
+          <Sparkles size={16} style={{ color: 'var(--accent)' }} />
           <span>Boosts Studio</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -79,6 +79,7 @@ export const BoostPanel: React.FC<BoostPanelProps> = ({ state, initialDomain, di
           </button>
           <button
             className="icon-btn"
+            aria-label="Close Boosts Studio"
             onClick={() => dispatch({ type: 'set-overlay', overlay: { mode: 'none' } })}
           >
             <X size={16} />
@@ -92,11 +93,8 @@ export const BoostPanel: React.FC<BoostPanelProps> = ({ state, initialDomain, di
             {state.boosts.map((b) => (
               <button
                 key={b.id}
-                className="btn-secondary"
-                style={{
-                  border: b.id === editingId ? '1px solid #8b7cf8' : '1px solid transparent',
-                  opacity: b.enabled ? 1 : 0.55,
-                }}
+                className={`btn-secondary ${b.id === editingId ? 'selected' : ''}`}
+                style={{ opacity: b.enabled ? 1 : 0.55 }}
                 onClick={() => loadBoost(b)}
               >
                 {b.domainPattern}
@@ -111,12 +109,13 @@ export const BoostPanel: React.FC<BoostPanelProps> = ({ state, initialDomain, di
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div>
             <label className="field-label">Name</label>
-            <input className="text-input" value={name} onChange={(e) => setName(e.target.value)} />
+            <input className="text-input" aria-label="Boost Name" data-initial-focus value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div>
             <label className="field-label">Domain Pattern (e.g. github.com or *)</label>
             <input
               className="text-input"
+              aria-label="Boost Domain Pattern"
               value={domainPattern}
               onChange={(e) => setDomainPattern(e.target.value)}
             />
@@ -143,6 +142,7 @@ export const BoostPanel: React.FC<BoostPanelProps> = ({ state, initialDomain, di
           <input
             className="text-input"
             placeholder="e.g. Georgia, JetBrains Mono, Inter"
+            aria-label="Font Override"
             value={fontFamily}
             onChange={(e) => setFontFamily(e.target.value)}
           />
@@ -158,7 +158,8 @@ export const BoostPanel: React.FC<BoostPanelProps> = ({ state, initialDomain, di
                   style={{
                     fontSize: 11,
                     fontFamily: 'var(--font-mono)',
-                    background: 'rgba(255,255,255,0.08)',
+                    background: 'var(--surface-1)',
+                    border: '1px solid var(--border-hairline)',
                     padding: '4px 8px',
                     borderRadius: 6,
                     display: 'inline-flex',
@@ -168,6 +169,7 @@ export const BoostPanel: React.FC<BoostPanelProps> = ({ state, initialDomain, di
                 >
                   {sel}
                   <button
+                    aria-label={`Restore element ${sel}`}
                     onClick={() => setZappedSelectors((prev) => prev.filter((x) => x !== sel))}
                   >
                     <X size={11} />
@@ -183,6 +185,7 @@ export const BoostPanel: React.FC<BoostPanelProps> = ({ state, initialDomain, di
           <textarea
             className="code-area"
             placeholder="body { max-width: 960px; margin: 0 auto; }"
+            aria-label="Custom CSS"
             value={css}
             onChange={(e) => setCss(e.target.value)}
           />
@@ -192,7 +195,8 @@ export const BoostPanel: React.FC<BoostPanelProps> = ({ state, initialDomain, di
           <label className="field-label">Custom JS (runs on page load)</label>
           <textarea
             className="code-area"
-            placeholder="console.log('NOOK Boost active');"
+            placeholder="console.log('Kinex Boost active');"
+            aria-label="Custom JavaScript"
             value={js}
             onChange={(e) => setJs(e.target.value)}
           />
