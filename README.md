@@ -1,6 +1,6 @@
 <div align="center">
   <img src="build/icon.png" alt="Kinex Browser" width="112" height="112" />
-  <h1>Kinex Browser (v0.7.8)</h1>
+  <h1>Kinex Browser (v0.7.9)</h1>
   <p>A fast, memory-efficient, everyday privacy-focused macOS desktop browser built on Chromium and Electron — with zero AI bloat.</p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square" alt="License: GPL v3" /></a>
@@ -11,9 +11,9 @@
 
 ---
 
-## v0.7.8 verification
+## v0.7.9 verification
 
-Electron is pinned to **45.3.3**, with Chromium **156.0.8078.100** and embedded Node **24.22.3**. Version numbering was reset from 7.0.3 to 0.7.3; the 0.x line is pre-production and 1.0.0 is reserved for the production release. The current local preview is unsigned and not notarized. Free 0.x Releases include an unsigned DMG and ZIP for manual installation. Automatic update installation requires matching Developer ID signing even before 1.0.0; no auto-update manifest is published for unsigned previews. It adds profile-scoped permission grants, stricter IPC and TLS boundaries, recoverable state writes, safer downloads, and worker-based cold Shields initialization. Existing unscoped permission grants require fresh consent.
+Electron is pinned to **45.3.3**, with Chromium **156.0.8078.100** and embedded Node **24.22.3**. Version numbering was reset from 7.0.3 to 0.7.3; the 0.x line is pre-production and 1.0.0 is reserved for the production release. The current local preview is unsigned and not notarized. Free 0.x Releases include an ad-hoc sealed DMG and ZIP for manual installation; they have no verified Developer ID and are not notarized. Automatic update installation requires matching Developer ID signing even before 1.0.0; no auto-update manifest is published for unsigned previews. It adds profile-scoped permission grants, stricter IPC and TLS boundaries, recoverable state writes, safer downloads, and worker-based cold Shields initialization. Existing unscoped permission grants require fresh consent.
 
 Read the [release evidence and readiness report](docs/quality/v7.0.3-report.md), [compatibility matrix](docs/quality/compatibility-matrix.md), [security architecture](docs/security-architecture.md), and [test procedures](docs/quality/testing.md). Public landing pages do not establish authenticated app compatibility. Signed distribution and protected playback remain unverified. The report retains an intermittent combined-suite native focus failure.
 
@@ -122,13 +122,13 @@ npm start                  # Build and launch Kinex locally
 ## Packaging and release verification
 
 ```bash
-npm run package:mac        # Builds dist/, dist-electron/, Kinex.app, arm64 zip, latest-mac.yml
+npm run package:mac        # Builds an ad-hoc sealed arm64 preview app, DMG and ZIP
 ```
 
 1. Ensure `npm run test:all` passes cleanly with zero skipped tests.
 2. Keep package and lockfile versions consistent with `npm version <version> --no-git-tag-version`.
-3. Run `npm run package:mac` and inspect `release/latest-mac.yml` + `release/mac-arm64/Kinex.app`.
-4. Note on macOS signing & notarization: Local `electron-builder` builds are unsigned/ad-hoc signed unless Apple Developer ID certificates (`CSC_LINK`, `CSC_KEY_PASSWORD`) and notarization credentials are configured in CI/release environment.
+3. Run `npm run package:mac`, then `node tests/integration/run-dmg.mjs`. The checks verify the bundle signature, hardened runtime, and mounted app startup. Generated auto-update metadata is not published for ad-hoc previews.
+4. `package:mac` explicitly builds an ad-hoc preview with a dedicated entitlement profile. The signed release workflow uses the strict production profile and requires Developer ID/notarization credentials. Read [build and signing](docs/quality/build-and-signing.md) for the distinction; integrity verification does not establish Gatekeeper trust.
 
 ---
 

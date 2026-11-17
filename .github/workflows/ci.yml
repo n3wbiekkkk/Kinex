@@ -76,10 +76,10 @@ jobs:
           node tests/integration/run-experience.mjs --out=artifacts/ci/experience.json
           node tests/integration/run-shields.mjs
 
-      - name: Package unsigned arm64 validation bundle
+      - name: Package ad-hoc signed arm64 validation bundle
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx --no-install electron-builder --mac --arm64 --publish never
+        run: npm run package:mac
 
       - name: Launch packaged application with disposable data
         run: node tests/integration/run-packaged.mjs

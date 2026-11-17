@@ -58,20 +58,24 @@ file node_modules/adblock-rs/js/index.node
 
 Keep the compiler error, platform, architecture, and runtime versions in the report. Do not replace the engine with a mock or globally skip Shields tests. A browser startup failure is contained by the application and displayed as an engine error, but unavailable filtering is still a failed protection gate.
 
-## Build an unsigned validation bundle
+## Build an ad-hoc sealed preview bundle
 
 Use this local validation command when Developer ID credentials are unavailable:
 
 ```sh
-CSC_IDENTITY_AUTO_DISCOVERY=false npx --no-install electron-builder --mac --arm64 --publish never
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run package:mac
 node tests/integration/run-packaged.mjs --out=artifacts/ci/packaged.json
 ```
 
-Run `npm run build` before that command. `npm run package:mac` also builds and passes `--publish never`; the explicit command above fixes the target architecture for release validation.
+`package:mac` builds and packages arm64 with `--publish never`, explicit ad-hoc identity `-`, and the preview entitlement profile. It does not produce Developer ID or notarized artifacts, even if signing credentials exist. Use the direct signed command below for those artifacts.
 
 The expected bundle is `release/mac-arm64/Kinex.app`, with `Kinex-<version>-arm64.dmg`, a ZIP, and generated update metadata in `release`. Run `node tests/integration/run-dmg.mjs` to verify the image and launch the application mounted from it; test profiles remain disposable. The native addon must appear under `Contents/Resources/app.asar.unpacked/node_modules/adblock-rs/js/index.node`. The package also includes `dist`, `dist-electron`, bundled filter resources, the icon, and application metadata.
 
-Unsigned package execution validates local loading and behavior only. The 0.x preview line may be published as free unsigned DMG/ZIP downloads for manual installation, clearly labeled as not notarized. Gatekeeper may block downloaded unsigned applications. This does not establish signed automatic-update compatibility; never disable signature or Gatekeeper checks as a workaround. The recorded `packaged.json` explicitly leaves signing unestablished.
+Ad-hoc package execution validates signature integrity, hardened runtime, and local loading and behavior only. The 0.x preview line may be published as free unsigned DMG/ZIP downloads for manual installation, clearly labeled as not notarized. Gatekeeper may block downloaded unsigned applications. This does not establish signed automatic-update compatibility; never disable signature or Gatekeeper checks as a workaround. The packaged report distinguishes verified signature integrity from unestablished Developer ID, notarization, and Gatekeeper acceptance.
+
+The preview profile `build/entitlements.preview.mac.plist` retains hardened runtime and adds only `com.apple.security.cs.disable-library-validation` to the production resource/JIT entitlements. Electron Framework loading otherwise fails with different Team IDs under an ad-hoc signature, as reproduced locally. This is the documented [electron-builder ad-hoc configuration](https://www.electron.build/v26/docs/features/code-signing/code-signing-mac/#ad-hoc-signing-macidentity--). It does not disable Electron sandboxing, context isolation, web security, or TLS validation. The production entitlement file has no library-validation exception; policy tests enforce that boundary.
+
+The 0.7.8 bundle retained Electron's linker signature and failed strict codesign verification with missing sealed resources. The new packaged check rejects that defect before launching the app, and the mounted-DMG check uses the same gate. A valid ad-hoc signature still lacks a Developer ID and notarization ticket; `spctl` may reject distribution. Local direct execution is not proof that a quarantined download opens in Finder.
 
 ## Configure legitimate signing and notarization
 

@@ -61,7 +61,7 @@ jobs:
             echo 'signed=true' >> "$GITHUB_OUTPUT"
           elif [[ "$VERSION" == 0.* ]]; then
             echo 'signed=false' >> "$GITHUB_OUTPUT"
-            echo '::notice::Publishing a free unsigned preview for manual download. Signed auto-installation is unavailable.'
+            echo '::notice::Publishing a free ad-hoc preview for manual download. Developer ID auto-installation is unavailable.'
           else
             echo '::error::Production releases require Developer ID signing and notarization.'
             exit 1
@@ -116,12 +116,12 @@ jobs:
           spctl --assess --type execute --verbose release/mac-arm64/Kinex.app
           node tests/integration/run-packaged.mjs
 
-      - name: Package unsigned macOS preview for manual download
+      - name: Package ad-hoc sealed macOS preview for manual download
         if: steps.signing.outputs.signed == 'false'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
-          npx --no-install electron-builder --mac --arm64 --publish never
+          npm run package:mac
           node tests/integration/run-packaged.mjs
 
       - name: Verify DMG and launch its bundled application
@@ -144,7 +144,7 @@ jobs:
             ASSETS+=(release/latest-mac.yml release/Kinex-*-mac.zip.blockmap)
             NOTES='Signed and notarized macOS release.'
           else
-            NOTES='Unsigned 0.x preview for manual download and installation. This build is not notarized; macOS Gatekeeper may block it. Automatic update installation is not supported for this build. No auto-update manifest is published.'
+            NOTES='Ad-hoc sealed 0.x preview for manual download and installation. The bundle passes strict signature-integrity checks and retains hardened runtime, but has no verified Developer ID and is not notarized; macOS Gatekeeper may block it. Automatic update installation is not supported for this build. No auto-update manifest is published.'
           fi
           if IS_DRAFT="$(gh release view "$TAG" --json isDraft --jq .isDraft)"; then
             if [ "$IS_DRAFT" = false ]; then

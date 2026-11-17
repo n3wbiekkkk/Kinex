@@ -1,6 +1,6 @@
 # Releases and update compatibility
 
-Kinex 0.7.8 is a pre-production preview. The owner prefers free distribution without Apple Developer membership. Version 1.0.0 remains reserved for production.
+Kinex 0.7.9 is a pre-production preview. The owner prefers free distribution without Apple Developer membership. Version 1.0.0 remains reserved for production.
 
 ## Free preview Releases
 
@@ -58,3 +58,12 @@ The 0.7.8 regression now observes native enter/leave events before issuing the o
 
 
 Local 0.7.8 validation passed all ten experience groups with native enter/leave assertions, 110 unit/regression tests, production compilation, and DMG verification with real mounted-app startup and Shields initialization. The same arm64 DMG/ZIP targets are retained. Remote CI and publication are separate pending qualifications.
+
+
+### 0.7.9 downloaded-app signature defect
+
+The user's downloaded 0.7.8 DMG was mounted at `/Volumes/Kinex 0.7.8-arm64`. Both that application and the local package failed `codesign --verify --deep --strict` with `code has no resources but signature indicates they must be present`. syspolicy_check classified it as a fatal Codesign Error. The existing startup smoke test had not checked bundle integrity. No installed application or real browsing data was modified during diagnosis.
+
+The new packaged integrity gate reproduced that failure before the packaging fix. Explicit ad-hoc signing sealed the bundle, but the first strict-profile probe then failed loading Electron Framework because ad-hoc code has no matching Apple Team ID. A dedicated preview entitlement profile adds the documented library-validation exception while retaining hardened runtime. The production profile remains unchanged. The corrected 0.7.9 image passes strict deep codesign verification, has identifier com.kinex.browser and the runtime flag, and launches the real mounted app with 145405 Shields rules and sandboxed navigation. Typecheck, lint, 112 tests, actionlint, and entitlement plist validation passed locally.
+
+syspolicy_check no longer reports the damaged resource seal, but still reports an ad-hoc publisher and missing notarization ticket; spctl still rejects distribution. Thus default Gatekeeper acceptance is not claimed. No quarantine flags were removed and no system security policy was changed. Use the corrected archive rather than overriding an invalid signature in 0.7.8. A user who elects to trust an intact, unnotarized app can follow Apple's per-app approval procedure; that approval remains a user decision, not an automatic release or test action.

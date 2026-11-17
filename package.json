@@ -1,6 +1,6 @@
 {
   "name": "kinex-browser",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "Kinex Browser — a fast, private macOS Chromium workspace browser",
   "license": "GPL-3.0-only",
   "repository": {
@@ -21,7 +21,7 @@
     "test:all": "npm run typecheck && npm test && npm run test:integration && npm run test:e2e && npm run test:keyboard && npm run test:experience && npm run test:shields && npm run test:security && npm run test:shields-startup",
     "bench": "npm run build && node tests/perf/run-benchmarks.mjs",
     "bench:memory-saver": "npm run build && node tests/perf/run-memory-saver-bench.mjs",
-    "package:mac": "npm run build && electron-builder --mac --publish never",
+    "package:mac": "npm run build && electron-builder --mac --arm64 --publish never --config.mac.identity=- --config.mac.notarize=false --config.mac.entitlements=build/entitlements.preview.mac.plist --config.mac.entitlementsInherit=build/entitlements.preview.mac.plist",
     "release:local": "node scripts/release-local.mjs",
     "test:keyboard": "npm run build && node tests/e2e/run-keyboard-only.mjs",
     "test:experience": "npm run build && node tests/integration/run-experience.mjs",

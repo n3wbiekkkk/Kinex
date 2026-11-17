@@ -109,8 +109,8 @@ Record the scenario and resulting origin. A redirect to a login or marketing pag
 
 ## CI and release boundaries
 
-CI uses a pinned macOS runner, Node 24, locked dependencies, Rust/Xcode checks, separate pure/native tests, real Electron tests, unsigned arm64 packaging, and packaged startup. Its GitHub token has read permission. Artifacts upload even after a failed gate. A workflow configuration review is not an executed GitHub Actions result.
+CI uses a pinned macOS runner, Node 24, locked dependencies, Rust/Xcode checks, separate pure/native tests, real Electron tests, ad-hoc sealed arm64 packaging, strict deep signature verification, a real hardened-runtime check, and packaged startup. Its GitHub token has read permission. Artifacts upload even after a failed gate. A workflow configuration review is not an executed GitHub Actions result.
 
 After successful main-push CI, the release workflow verifies the exact commit again and publishes a DMG and ZIP. Explicit version tags remain supported. Without Apple credentials, 0.x previews publish as unsigned manual downloads; production and signed automatic-installation artifacts require signing and notarization. No push, tag publication, release, or deployment is needed for local checks.
 
-After packaging, run `node tests/integration/run-dmg.mjs`. It verifies the versioned arm64 image with hdiutil, mounts it read-only without Finder browsing, and invokes the existing packaged smoke test against its actual Kinex.app using disposable data. It then unmounts the image. Evidence is written to `artifacts/ci/dmg.json`; signature acceptance of a downloaded/quarantined app is not established by this local test.
+After packaging, run `node tests/integration/run-dmg.mjs`. It verifies the versioned arm64 image with hdiutil, mounts it read-only without Finder browsing, and invokes the existing packaged smoke test (including strict deep codesign verification and hardened-runtime assertions) against its actual Kinex.app using disposable data. It then unmounts the image. Evidence is written to `artifacts/ci/dmg.json`; signature acceptance of a downloaded/quarantined app is not established by this local test.

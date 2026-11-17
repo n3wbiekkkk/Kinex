@@ -2,6 +2,15 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.9] - 2026-11-17
+
+Pre-production packaging fix. The downloaded 0.7.8 app retained an invalid Electron linker signature and failed strict resource-seal validation. Startup smoke tests alone had missed this defect.
+
+- Explicitly ad-hoc sign free preview bundles and nested code with the correct application identifier. Keep hardened runtime and use the dedicated preview entitlement required to load Electron Framework without a Developer ID.
+- Keep production entitlements and Developer ID release signing separate and strict. Add configuration regression coverage for this boundary.
+- Require strict deep bundle signature verification and the actual hardened-runtime flag before packaged and mounted-DMG startup tests.
+- Local corrected DMG startup and Shields loading pass. Developer ID, notarization, automatic signed installation, and normal Gatekeeper acceptance remain unavailable/unverified; a valid resource seal does not make a publisher trusted.
+
 ## [0.7.8] - 2026-11-17
 
 Pre-production preview with DMG/ZIP downloads. Fix the fullscreen integration driver's macOS transition ordering: DOM fullscreen can precede native fullscreen completion. Wait for native enter/leave events, assert native and DOM states, and keep the existing timeout/bounds checks. The 0.7.7 private-close regression passed CI; its later fullscreen-exit failure remains recorded in the update evidence.

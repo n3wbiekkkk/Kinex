@@ -81,6 +81,13 @@ Download names remain inside the configured Downloads directory. Existing files,
 
 Remote update feeds require HTTPS. Plain HTTP feeds are limited to loopback addresses, and credential-bearing feed URLs are rejected. A configured local feed is served on loopback and exposes only `latest-mac.yml`, ZIP files, and their blockmaps. The server rejects malformed escapes, traversal, symlink targets, unsupported methods, and unrelated files. File opening uses `O_NOFOLLOW`, and responses stream asynchronously from the opened handle.
 
-The updater coalesces checks, catches download errors, closes local servers, and permits explicit installation only after its downloaded state. Electron's update installation and signing mechanisms remain enabled. The release workflow requires real signing and notarization configuration.
+The updater coalesces checks, catches download errors, closes local servers, and permits explicit installation only after its downloaded state. Electron's update installation and signing mechanisms remain enabled. Production releases and automatic-installation metadata require real signing and notarization configuration. Free 0.x previews are ad-hoc sealed manual downloads, with strict deep signature verification and a hardened-runtime flag check before packaged startup.
 
 The local evidence does not establish successful Developer ID verification, notarization, Gatekeeper distribution, or installation of an authenticated signed update. No update was published or installed during this implementation. Authenticated provider flows, MFA, and protected DRM playback require separate verification and must not be inferred from a public landing-page result.
+
+
+## Ad-hoc preview packaging boundary
+
+The default production entitlements retain library validation. The explicit local/CI preview command applies `build/entitlements.preview.mac.plist`, which adds the library-validation exception required for an ad-hoc Electron app to load Electron Framework and native modules. Hardened runtime remains enabled and is checked in the built executable, and website sandbox/Node/IPC boundaries are unchanged. This exception is limited to manual previews; the Developer ID release command does not select it. Regression tests assert that the two profiles remain separate.
+
+Strict deep codesign verification catches missing resource seals and nested signature corruption before the app or mounted DMG is tested. It verifies integrity, not publisher identity or notarization. Gatekeeper can still reject an otherwise intact ad-hoc preview, and this implementation does not remove quarantine or change system security policy.

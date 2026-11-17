@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -8,11 +8,16 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const bundle = path.resolve(process.argv.find((arg) => arg.startsWith('--app='))?.slice(6) || path.join(root, 'release/mac-arm64/Kinex.app'));
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'kinex-packaged-'));
 const binary = path.join(bundle, 'Contents/MacOS/Kinex');
 const addon = path.join(bundle, 'Contents/Resources/app.asar.unpacked/node_modules/adblock-rs/js/index.node');
 assert.ok(fs.existsSync(binary), 'Packaged executable must exist');
 assert.ok(fs.existsSync(addon), 'Native Shields addon must be unpacked');
+execFileSync('codesign', ['--verify', '--deep', '--strict', bundle], { stdio: 'inherit' });
+const signature = spawnSync('codesign', ['--display', '--verbose=4', bundle], { encoding: 'utf8' });
+assert.ifError(signature.error);
+assert.equal(signature.status, 0, signature.stderr);
+assert.match(signature.stderr, /^Identifier=com\.kinex\.browser$/m);
+assert.match(signature.stderr, /^CodeDirectory .*flags=.*\bruntime\b/m, 'Packaged app must retain hardened runtime');
 assert.match(execFileSync('file', [binary], { encoding: 'utf8' }), /arm64/);
 assert.match(execFileSync('file', [addon], { encoding: 'utf8' }), /arm64/);
 const plist = JSON.parse(execFileSync('plutil', ['-convert', 'json', '-o', '-', path.join(bundle, 'Contents/Info.plist')], { encoding: 'utf8' }));
@@ -22,6 +27,7 @@ assert.equal(plist.CFBundleIdentifier, 'com.kinex.browser');
 assert.equal(plist.LSMinimumSystemVersion, '13.0');
 assert.ok(plist.NSCameraUsageDescription && plist.NSMicrophoneUsageDescription);
 
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'kinex-packaged-'));
 const portServer = net.createServer();
 await new Promise((resolve) => portServer.listen(0, '127.0.0.1', resolve));
 const port = portServer.address().port;
@@ -88,7 +94,7 @@ try {
   await waitFor(() => Promise.resolve(fs.existsSync(path.join(scratch, 'kinex-state.json'))), 'packaged shutdown persistence');
   const state = JSON.parse(fs.readFileSync(path.join(scratch, 'kinex-state.json'), 'utf8'));
   assert.ok(state.tabs.some((tab) => tab.url === url));
-  const report = { ok: true, version: plist.CFBundleShortVersionString, arch: 'arm64', minimumMacOS: plist.LSMinimumSystemVersion, nativeRules: shields.totalRuleCount, checks: ['bundle metadata', 'arm64 executable/addon', 'packaged native initialization', 'sandboxed navigation', 'shutdown persistence'], signing: 'Not established by this smoke test' };
+  const report = { ok: true, version: plist.CFBundleShortVersionString, arch: 'arm64', minimumMacOS: plist.LSMinimumSystemVersion, nativeRules: shields.totalRuleCount, checks: ['bundle signature integrity', 'bundle metadata', 'arm64 executable/addon', 'packaged native initialization', 'sandboxed navigation', 'shutdown persistence'], signing: 'Signature integrity verified; Developer ID, notarization, and Gatekeeper acceptance are not established by this smoke test' };
   const out = path.resolve(process.argv.find((arg) => arg.startsWith('--out='))?.slice(6) || 'artifacts/ci/packaged.json');
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(report, null, 2) + '\n');

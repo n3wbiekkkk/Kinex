@@ -71,7 +71,7 @@ it('uploads a new version as a draft before exposing it through Latest', () => {
   const trace = readFileSync(join(root, 'trace'), 'utf8');
   expect(trace).toMatch(/release create v0.7.4 .*--draft --target [a-f0-9]{40}/);
   expect(trace.trim().split('\n').at(-1)).toBe('release edit v0.7.4 --draft=false --prerelease=false --latest');
-  expect(trace).toContain('Unsigned 0.x preview for manual download');
+  expect(trace).toContain('Ad-hoc sealed 0.x preview for manual download');
   expect(trace).toContain('release/Kinex-*.dmg');
   expect(trace).not.toContain('latest-mac.yml');
   expect(trace).not.toContain('.blockmap');
