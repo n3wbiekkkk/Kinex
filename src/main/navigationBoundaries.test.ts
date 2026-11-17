@@ -10,16 +10,23 @@ import { isAllowedExternalProtocol, isSafeUpdateFeedUrl, isSameOriginBlobUrl } f
 function contents(session: Session = {} as Session) {
   let currentUrl = 'https://example.com/';
   let openHandler: any;
+  let loadingMainFrame = false;
   const wc = Object.assign(new EventEmitter(), {
     id: Math.random(), session,
     isDestroyed: () => false,
     getURL: () => currentUrl,
     getTitle: () => 'Example',
-    isLoading: () => false,
+    isLoading: () => loadingMainFrame,
+    isLoadingMainFrame: () => loadingMainFrame,
     loadURL: vi.fn(async (url: string) => { currentUrl = url; }),
     setWindowOpenHandler: (handler: any) => { openHandler = handler; },
   }) as unknown as WebContents;
-  return { wc, setUrl: (url: string) => { currentUrl = url; }, open: (url: string) => openHandler({ url, features: '', disposition: 'foreground-tab' }) };
+  return {
+    wc,
+    setUrl: (url: string) => { currentUrl = url; },
+    setLoadingMainFrame: (value: boolean) => { loadingMainFrame = value; },
+    open: (url: string) => openHandler({ url, features: '', disposition: 'foreground-tab' }),
+  };
 }
 
 function manager() {
@@ -121,5 +128,41 @@ describe('navigation trust boundaries', () => {
     resolve({ response: 1 });
     await Promise.resolve();
     expect(callback).toHaveBeenCalledWith(false);
+  });
+
+  it('ignores subframe-only load starts so a settled page keeps a stable loaded state', () => {
+    const nav = manager();
+    const page = contents();
+    const onLoadingChanged = vi.fn();
+    nav.attachWebContentsGuards(page.wc, { isPrivate: false, onLoadingChanged });
+
+    // Main-frame load: reported as loading.
+    page.setLoadingMainFrame(true);
+    page.wc.emit('did-start-loading');
+    expect(onLoadingChanged).toHaveBeenLastCalledWith(true);
+
+    // Main frame settles: reported as idle.
+    page.setLoadingMainFrame(false);
+    page.wc.emit('did-stop-loading');
+    expect(onLoadingChanged).toHaveBeenLastCalledWith(false);
+    expect(onLoadingChanged).toHaveBeenCalledTimes(2);
+
+    // A page that keeps injecting iframes emits did-start-loading while only a
+    // subframe loads. That must not resurrect the loading state.
+    page.wc.emit('did-start-loading');
+    page.wc.emit('did-start-loading');
+    expect(onLoadingChanged).not.toHaveBeenLastCalledWith(true);
+    expect(onLoadingChanged).toHaveBeenCalledTimes(2);
+
+    // The subframe finishing may re-assert idle, but never loading.
+    page.wc.emit('did-stop-loading');
+    expect(onLoadingChanged).not.toHaveBeenLastCalledWith(true);
+    expect(onLoadingChanged.mock.calls.filter(([value]) => value === true)).toHaveLength(1);
+
+    // A later real main-frame navigation still reports loading.
+    page.setLoadingMainFrame(true);
+    page.wc.emit('did-start-loading');
+    expect(onLoadingChanged).toHaveBeenLastCalledWith(true);
+    expect(onLoadingChanged.mock.calls.filter(([value]) => value === true)).toHaveLength(2);
   });
 });

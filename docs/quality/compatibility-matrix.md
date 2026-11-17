@@ -2,7 +2,7 @@
 
 Test date: 2026-11-17. macOS 27.2.1, Darwin 27.2.0, Apple M5 arm64, 16 GB RAM. Electron 45.3.3, Chromium 156.0.8078.100, embedded Node 24.22.3. Fresh disposable profile, default Standard Shields.
 
-Evidence: [final public probe](../../artifacts/v7.0.3/website-probe-final.json), [earlier probe](../../artifacts/v7.0.3/website-probe.json), and [local security integration](../../artifacts/v7.0.3/security-integration.txt). The final probe owns the table below. A public-page pass is limited to that scenario and does not certify an authenticated application.
+Evidence: [final public probe](../../artifacts/v7.0.3/website-probe-final.json), [earlier probe](../../artifacts/v7.0.3/website-probe.json), [Figma fix probe](../../artifacts/v7.0.3/website-probe-figma-fix.json), [Figma fix probe rerun](../../artifacts/v7.0.3/website-probe-figma-fix-2.json), and [local security integration](../../artifacts/v7.0.3/security-integration.txt). The Figma fix probe owns the Figma row; the final probe owns the rest. A public-page pass is limited to that scenario and does not certify an authenticated application.
 
 Statuses: PASS, FAIL, PARTIAL, BLOCKED, NOT TESTED. BLOCKED means the account, provider, signing, or hardware prerequisite was unavailable. A missing scroll range is PARTIAL, not a scrolling pass.
 
@@ -18,7 +18,7 @@ Statuses: PASS, FAIL, PARTIAL, BLOCKED, NOT TESTED. BLOCKED means the account, p
 | Discord | Open `https://discord.com/app`; correlate redirected target; wheel-scroll and Tab-focus checks | PARTIAL | BLOCKED | Login page and Tab focus; short document had no scroll range. Raw row `Discord`. |
 | Twitch | Open `https://www.twitch.tv/`; correlate redirected target; wheel-scroll and Tab-focus checks | PASS | BLOCKED | Public landing page. No authenticated chat or live media workflow. Raw row `Twitch`. |
 | Google Meet | Open `https://meet.google.com/`; correlate redirected target; wheel-scroll and Tab-focus checks | PARTIAL | BLOCKED | Workspace marketing page, not a meeting. Raw row `Google Meet`. |
-| Figma | Open `https://www.figma.com/`; correlate redirected target; wheel-scroll and Tab-focus checks | FAIL | BLOCKED | Final probe found the document ready but application load state unsettled. Earlier public run passed. Authenticated editor not exercised. Raw row `Figma`. |
+| Figma | Open `https://www.figma.com/`; correlate redirected target; wheel-scroll and Tab-focus checks | PASS | BLOCKED | Public homepage rendered, scrolled, and Tab-focused with a stable loaded state. The earlier FAIL was a browser loading-state defect, now fixed: subframe loads were reported as tab loading. Authenticated editor not exercised. Raw row `Figma`. |
 | Netflix | Open `https://www.netflix.com/`; correlate redirected target; wheel-scroll and Tab-focus checks | PARTIAL | BLOCKED | Public marketing page. Widevine capability probe rejected; protected playback is not established. Raw row `Netflix`. |
 
 ## Scenario coverage
@@ -40,9 +40,13 @@ Statuses: PASS, FAIL, PARTIAL, BLOCKED, NOT TESTED. BLOCKED means the account, p
 
 ## Reproduce automated checks
 
-Run `npm run build`, then `node tests/perf/run-live-probe.mjs --out=artifacts/compatibility.json`. The runner retains requested/final URLs, runtime, native target identity, checks, and limitations. It does not enter credentials. Google anti-bot outcomes and Figma load-state timing can vary with network and site behavior; retain each run rather than replacing a failure with an unrelated pass.
+Run `npm run build`, then `node tests/perf/run-live-probe.mjs --out=artifacts/compatibility.json`. The runner retains requested/final URLs, runtime, native target identity, checks, and limitations. It does not enter credentials. Google anti-bot outcomes and per-site network timing can vary; retain each run rather than replacing a failure with an unrelated pass.
 
-For the recorded Figma failure, open the public homepage through the probe, let its scroll and Tab checks run, and compare `page.ready` with the final application tab loading state. The document was ready and scroll passed, while `loaded` was false. This is an unresolved final-settle result, not proof that the editor is broken.
+For the recorded Figma failure, open the public homepage through the probe, let its scroll and Tab checks run, and compare `page.ready` with the final application tab loading state. The document was ready and scroll passed, while `loaded` was false. This was a browser loading-state defect, not a Figma or editor failure.
+
+Root cause: Electron emits `did-start-loading` for a subframe-only load as well as for a main-frame load. `NavigationManager` reported every `did-start-loading` as tab loading, so a page that keeps injecting iframes after its document settles (Figma's homepage) flipped the tab back to loading after the probe had already seen it idle. The probe's `loaded` check then read `isLoading: true` and recorded FAIL. The fix reports loading only when `webContents.isLoadingMainFrame()` is true; `did-stop-loading` already clears it only once the main frame is idle.
+
+Regression coverage: `src/main/navigationBoundaries.test.ts` asserts a subframe-only `did-start-loading` never re-enters loading, and `tests/integration/electron-integration.cjs` drives a local `/late-subframes` fixture that settles and then injects four iframes, sampling the tab state for two seconds. Reverting the fix makes that integration check fail with the tab flipping to loading.
 
 ## Verify remaining workflows manually
 

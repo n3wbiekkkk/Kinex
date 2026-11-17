@@ -99,6 +99,32 @@ function startTestHttpServer() {
         res.on('close', () => clearInterval(timer));
         return;
       }
+      if (u.pathname === '/late-subframes') {
+        // Mirrors the Figma homepage shape: the document settles, then the page
+        // injects iframes afterwards. Each subframe load emits did-start-loading.
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(
+          `<!doctype html><html><head><title>Late Subframes</title></head><body><h1>Late Subframes</h1>
+<div style="height:2400px">scroll filler</div>
+<script>
+  setTimeout(() => {
+    for (let i = 0; i < 4; i++) {
+      const frame = document.createElement('iframe');
+      frame.src = '/late-subframe-child?' + i;
+      document.body.appendChild(frame);
+    }
+  }, 350);
+</script></body></html>`
+        );
+        return;
+      }
+      if (u.pathname === '/late-subframe-child') {
+        setTimeout(() => {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<!doctype html><html><body><p>child</p></body></html>');
+        }, 500);
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(
         `<!doctype html><html><head><title>Page ${u.pathname}</title></head><body><h1>Kinex Test ${u.pathname}</h1><a id="next" href="/page2">Next</a></body></html>`
@@ -470,7 +496,40 @@ async function run() {
     await waitMs(300);
     assert.equal(mgr.getSnapshot().readerTabIds.includes(artTab.id), false, 'Second toggle exits Reader Mode and restores original URL');
 
-    // 15. Download progress, pause, resume, completion & clear-completed (and private isolation)
+    // 15. A page that injects iframes after settling must keep a stable loaded state.
+    // Electron emits did-start-loading for subframe-only loads; reporting that as tab
+    // loading made the indicator flip back on after the main frame settled (the Figma
+    // homepage readiness failure). The tab must settle once and stay settled.
+    await mgr.handleIntent({ type: 'select-space', spaceId: 'space-personal' });
+    await mgr.handleIntent({ type: 'open-url', url: `${baseUrl}/late-subframes`, target: 'new-tab', spaceId: 'space-personal' });
+    const settledSnap = await waitForTabUrl(
+      mgr,
+      (s) => s.tabs.some((t) => t.url === `${baseUrl}/late-subframes` && !t.isLoading)
+    );
+    const lateTab = settledSnap.tabs.find((t) => t.url === `${baseUrl}/late-subframes`);
+    assert.ok(lateTab, 'Late-subframe fixture tab must exist');
+
+    // Sample across the window where the injected iframes load.
+    const loadingSamples = [];
+    for (let i = 0; i < 40; i++) {
+      const cur = mgr.getSnapshot().tabs.find((t) => t.id === lateTab.id);
+      loadingSamples.push(Boolean(cur && cur.isLoading));
+      await waitMs(50);
+    }
+    assert.equal(
+      loadingSamples.some(Boolean),
+      false,
+      `Tab must not re-enter loading for subframe-only loads (samples: ${JSON.stringify(loadingSamples)})`
+    );
+    const lateTabFinal = mgr.getSnapshot().tabs.find((t) => t.id === lateTab.id);
+    assert.equal(lateTabFinal.url, `${baseUrl}/late-subframes`, 'Tab must remain at the settled document URL');
+    const lateView = mgr.tabManager.getView(lateTab.id);
+    const childFrameCount = await lateView.webContents.executeJavaScript(
+      `document.querySelectorAll('iframe').length`
+    );
+    assert.ok(childFrameCount >= 4, `Fixture must actually have loaded subframes (saw ${childFrameCount})`);
+
+    // 16. Download progress, pause, resume, completion & clear-completed (and private isolation)
     await mgr.handleIntent({ type: 'open-url', url: `${baseUrl}/download-stream`, target: 'new-tab', spaceId: 'space-personal' });
     let activeDl;
     for (let i = 0; i < 100; i++) {
