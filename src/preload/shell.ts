@@ -25,6 +25,7 @@ const api: KinexAPI = {
   },
   showTabContextMenu: (tabId) => ipcRenderer.invoke('kinex:tab-context-menu', tabId),
   pickExtensionFolder: () => ipcRenderer.invoke('kinex:pick-extension-folder'),
+  pickExtensionCrx: () => ipcRenderer.invoke('kinex:pick-extension-crx'),
   getLittleKinexInfo: () => ipcRenderer.invoke('kinex:little-info'),
   onLittleKinexUpdated: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, info: LittleKinexInfo) => {

@@ -54,6 +54,15 @@ export function registerKinexIpcHandlers(
     return mgr.pickExtensionFolder();
   });
 
+  ipc.handle('kinex:pick-extension-crx', (event) => {
+    const mgr = getManager();
+    if (!mgr) throw new Error('Browser controller unavailable');
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame || !mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, ['shell', 'overlay'])) {
+      throw new Error('Untrusted IPC sender for kinex:pick-extension-crx');
+    }
+    return mgr.pickExtensionCrx();
+  });
+
   ipc.handle('kinex:little-info', (event) => {
     const mgr = getManager();
     if (!mgr) throw new Error('Browser controller unavailable');

@@ -98,6 +98,7 @@ describe('persisted extension sanitization', () => {
       id,
       name: 'Valid',
       version: '1.0.0',
+      source: 'folder',
       directory: id,
       partition: 'persist:nook-default',
       spaceId: 'space-personal',

@@ -1,6 +1,6 @@
 <div align="center">
   <img src="build/icon.png" alt="Kinex Browser" width="112" height="112" />
-  <h1>Kinex Browser (v0.7.18)</h1>
+  <h1>Kinex Browser (v0.7.19)</h1>
   <p>A fast, memory-efficient, everyday privacy-focused macOS desktop browser built on Chromium and Electron — with zero AI bloat.</p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square" alt="License: GPL v3" /></a>
@@ -11,7 +11,7 @@
 
 ---
 
-## v0.7.18 verification
+## v0.7.19 verification
 
 Electron is pinned to **45.3.3**, with Chromium **156.0.8078.100** and embedded Node **24.22.3**. Version numbering was reset from 7.0.3 to 0.7.3; the 0.x line is pre-production and 1.0.0 is reserved for the production release. The current local preview is unsigned and not notarized. Free 0.x Releases include an ad-hoc sealed DMG and ZIP for manual installation; they have no verified Developer ID and are not notarized. Automatic update installation requires matching Developer ID signing even before 1.0.0; no auto-update manifest is published for unsigned previews. It adds profile-scoped permission grants, stricter IPC and TLS boundaries, recoverable state writes, safer downloads, and worker-based cold Shields initialization. Existing unscoped permission grants require fresh consent.
 
@@ -27,7 +27,7 @@ For older 0.7.x installations, see [update compatibility and signing prerequisit
 - **Complete Tab, Space & Navigation Workflow**: Instant cross-Space Tab Search in Command Bar, Recently Closed Tabs & Group Restoration (`⌘⇧T`), Duplicate Tab Detection, profile-isolated Move to Space, Space-scoped Favorites & Folders, drag-and-drop Space reordering, Find in Page match counts (`⌘F`), per-site Zoom memory, Print & Save as PDF (`⌘P` / `⌘⇧P`), script-disabled **Reader Mode** (`⌥⌘R`), live Download Pause/Resume/Speed/ETA, and macOS Default Browser (`http`/`https`) integration.
 - **Customizable New Tab Experience (`kinex://newtab`)**: Switch between **Minimal**, **Focus**, and **Personal** presets, adjust subtle backdrop atmospheres (`Clean`, `Mist`, `Dusk`, `Sage`), toggle Clock / Pinned Favorites / Frequently Visited modules in Settings, and keep Light/Dark Space harmony automatically.
 - **Workspace Sidebar & Spaces**: Organize browsing into Spaces backed by isolated Chromium cookie/storage Profiles, custom themes over native macOS frosted glass (`under-window` vibrancy), and an inset web viewport. Each regular window owns one Space; `⌘N` opens a new window with its own Space, and restoring a cold start recreates every non-private window with its Space and Split View.
-- **Extensions**: Install unpacked Manifest V3 extensions from a local folder into the active Space's Profile, review permissions before enabling, and use action icons/popups from the toolbar and Sidebar. Extensions stay inside their Profile partition and are never loaded into private windows.
+- **Extensions**: Install unpacked Manifest V3 extensions from a local folder, a signed CRX3 package, or a Chrome Web Store item URL into the active Space's Profile. Kinex verifies CRX3 signatures and package IDs, reviews permissions before enabling, and exposes action icons/popups in the toolbar and Sidebar. Extensions stay inside their Profile partition and are never loaded into private windows.
 - **Favorites, Pinned Folders & Today Tabs**: Keep core apps in Favorites, organize Pinned tabs in collapsible Folders (closing resets back to the pinned URL), and archive ephemeral Today tabs with one click.
 - **Command Bar (`⌘T` / `⌘L`)**: Instant search across open tabs, pinned items, history, traditional search engines (Google, DuckDuckGo, Bing, Startpage, Kagi), and browser actions.
 - **Split View (`⌘⇧\`) & Little Kinex (`⌥⌘N`)**: View two tabs side-by-side with an adjustable ratio slider, or open quick links in a floating Little Kinex window and promote them into any Space.
@@ -109,7 +109,7 @@ npm run typecheck          # Typecheck Electron main/preload + React renderer
 npm test                   # Unit tests (domain, migration, IPC validation, security policies)
 npm run test:integration   # Real Electron main-process, session isolation & Memory Saver tests
 npm run test:windows       # Real Electron multi-window cold start, Space binding & IPC routing tests
-npm run test:extensions    # Real Electron MV3 extension lifecycle, content script, popup & isolation tests
+npm run test:extensions    # Real Electron MV3 extension lifecycle, CRX3, content script, popup & isolation tests
 npm run test:e2e           # Full 15-workflow CDP E2E suite against a local HTTP test server
 npm run test:shields       # Kinex Shields network, cosmetic, scriptlet & privacy integration suite
 npm run test:leak          # 7-scenario stress & memory leak test suite

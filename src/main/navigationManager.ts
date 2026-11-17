@@ -17,6 +17,7 @@ export interface NavigationGuardOptions {
   onLoadingChanged?: (isLoading: boolean) => void;
   onCertErrorChanged?: (hasCertError: boolean) => void;
   onWillNavigateRoute?: (url: string) => boolean;
+  onWebStoreNavigation?: (url: string) => boolean;
   onOpenInTab?: (url: string, disposition: 'foreground' | 'background') => void;
   onDidFinishNavigation?: (url: string, title: string) => void;
   onDidCreatePopupWindow?: (popup: BrowserWindow) => void;
@@ -132,6 +133,10 @@ export class NavigationManager {
     const fallbackHosts = this.getFallbackSet(wc);
 
     const enforceNavOrRedirect = (event: Electron.Event, targetUrl: string, isMainFrame: boolean) => {
+      if (isMainFrame && options.onWebStoreNavigation?.(targetUrl)) {
+        event.preventDefault();
+        return false;
+      }
       if (!isSafeNavigationUrl(targetUrl) && !isSameOriginBlobUrl(targetUrl, wc.getURL())) {
         event.preventDefault();
         if (isAllowedExternalProtocol(targetUrl)) {

@@ -148,7 +148,31 @@ async function run() {
     await until(() => mgr.getSnapshot().extensions.length === 0, 'extension uninstalled');
     assert.equal(fs.existsSync(path.join(userData, 'Extensions', restored.id)), false, 'extension files removed');
 
-    fs.writeSync(1, `EXTENSIONS_PASS ${JSON.stringify({ id: restored.id, contentScript: true, isolation: true, popup: true, coldStart: true })}\n`);
+    // Local .crx install: signed CRX3 wrapper around the same MV3 fixture.
+    const { makeZip, makeCrx3 } = require('./crx-fixture.cjs');
+    const crxEntries = fs.readdirSync(fixture).map((name) => ({
+      name,
+      content: fs.readFileSync(path.join(fixture, name)),
+    }));
+    const { buffer: crxBuffer, crxId } = makeCrx3(makeZip(crxEntries));
+    const crxPath = path.join(userData, 'fixture.crx');
+    fs.writeFileSync(crxPath, crxBuffer);
+    await mgr.handleIntent({ type: 'install-extension-crx', sourcePath: crxPath });
+    await until(() => mgr.getSnapshot().extensions.some((item) => item.source === 'crx'), 'CRX extension staged');
+    const crxRecord = mgr.getSnapshot().extensions.find((item) => item.source === 'crx');
+    assert.equal(crxRecord.crxId, crxId);
+    assert.equal(crxRecord.enabled, false);
+    assert.throws(() => mgr.extensionManager.setEnabled(crxRecord.id, true), /Review and accept/);
+    await mgr.handleIntent({ type: 'set-extension-enabled', extensionId: crxRecord.id, enabled: true, consent: true });
+    await until(() => mgr.getSnapshot().extensions.find((item) => item.id === crxRecord.id)?.loaded, 'CRX extension enabled');
+
+    const corruptCrx = path.join(userData, 'corrupt.crx');
+    fs.writeFileSync(corruptCrx, Buffer.concat([crxBuffer.subarray(0, crxBuffer.length - 8), Buffer.from('00000000')]));
+    await mgr.handleIntent({ type: 'install-extension-crx', sourcePath: corruptCrx });
+    await wait(200);
+    assert.equal(mgr.getSnapshot().extensions.length, 1, 'corrupt CRX is rejected without staging');
+
+    fs.writeSync(1, `EXTENSIONS_PASS ${JSON.stringify({ id: restored.id, crxId, contentScript: true, isolation: true, popup: true, coldStart: true, crx: true })}\n`);
   } finally {
     if (!disposed) mgr.dispose();
     server.close();

@@ -30,6 +30,7 @@ import {
   MAX_INSTALLED_EXTENSIONS,
   RUNTIME_ID_RE,
   isSafeRelativePath,
+  parseWebStoreUrl,
   sanitizeBoundedStringArray,
 } from './extensionSupport';
 import { classifySecurityState, isLocalHostname, isSafeNavigationUrl, isSafeUpdateFeedUrl } from './security';
@@ -420,6 +421,9 @@ export class KinexPersistence {
           const runtimeId = extension.runtimeId;
           const actionPopup = extension.actionPopup;
           const actionIcon = extension.actionIcon;
+          const crxId = extension.crxId;
+          const webStoreUrl = extension.webStoreUrl;
+          const source = extension.source === undefined ? 'folder' : extension.source;
           if (
             !EXTENSION_ID_RE.test(id) ||
             extension.directory !== id ||
@@ -433,7 +437,10 @@ export class KinexPersistence {
             !permissions || !hostPermissions ||
             (runtimeId !== undefined && (typeof runtimeId !== 'string' || !RUNTIME_ID_RE.test(runtimeId))) ||
             (actionPopup !== undefined && !isSafeRelativePath(actionPopup)) ||
-            (actionIcon !== undefined && !isSafeRelativePath(actionIcon))
+            (actionIcon !== undefined && !isSafeRelativePath(actionIcon)) ||
+            !['folder', 'crx', 'webstore'].includes(String(source)) ||
+            (crxId !== undefined && (typeof crxId !== 'string' || !RUNTIME_ID_RE.test(crxId))) ||
+            (webStoreUrl !== undefined && !parseWebStoreUrl(webStoreUrl))
           ) {
             damaged = true;
             return [];
@@ -443,6 +450,9 @@ export class KinexPersistence {
             name: extension.name,
             version: extension.version,
             ...(typeof extension.description === 'string' ? { description: extension.description } : {}),
+            source: source as 'folder' | 'crx' | 'webstore',
+            ...(typeof crxId === 'string' ? { crxId } : {}),
+            ...(typeof webStoreUrl === 'string' ? { webStoreUrl } : {}),
             directory: id,
             ...(typeof runtimeId === 'string' ? { runtimeId } : {}),
             partition: extension.partition,

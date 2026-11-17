@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Session } from 'electron';
-import type { ExtensionViewModel, InstalledExtension } from '../shared/types';
+import type { ExtensionSource, ExtensionViewModel, InstalledExtension } from '../shared/types';
 import {
   EXTENSION_ID_RE,
   MAX_EXTENSION_BYTES,
@@ -13,14 +13,20 @@ import {
   allDeclaredExtensionFiles,
   isInsideRoot,
   parseExtensionManifest,
+  parseWebStoreUrl,
   resolveInsideRoot,
+  type ExtensionManifestSummary,
 } from './extensionSupport';
+import { extractCrxZip, MAX_CRX_BYTES, parseCrx3, verifyCrx3Signature, type ParsedCrx3 } from './crx';
+import { downloadWebStoreCrx } from './webStore';
 
 export interface ExtensionManagerHost {
   getExtensions: () => InstalledExtension[];
   commitExtensions: (extensions: InstalledExtension[]) => void;
   getSessionForPartition: (partition: string) => Session;
   showToast: (message: string) => void;
+  /** Injectable for deterministic tests; production uses the HTTPS Web Store downloader. */
+  downloadWebStoreCrx?: (extensionId: string) => Promise<ParsedCrx3>;
 }
 
 const MAX_ICON_BYTES = 64 * 1024;
@@ -181,57 +187,133 @@ export class ExtensionManager {
     }
   }
 
+  private createTarget(): { id: string; target: string } {
+    if (this.host.getExtensions().length >= MAX_INSTALLED_EXTENSIONS) {
+      throw new Error('Extension limit reached');
+    }
+    const id = `ext-${randomUUID()}`;
+    const target = path.join(this.root, id);
+    fs.mkdirSync(target, { recursive: true, mode: 0o700 });
+    return { id, target };
+  }
+
+  private readStagedManifest(target: string): ExtensionManifestSummary {
+    const manifestPath = resolveInsideRoot(target, 'manifest.json');
+    if (!manifestPath) throw new Error('Extension manifest is missing');
+    const stats = fs.statSync(manifestPath);
+    if (!stats.isFile() || stats.size > MAX_MANIFEST_BYTES) {
+      throw new Error('Extension manifest is missing or too large');
+    }
+    const manifest = parseExtensionManifest(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
+    if (!manifest) throw new Error('Only Manifest V3 extensions with supported fields can be installed');
+    return manifest;
+  }
+
+  private finalizeInstall(
+    id: string,
+    target: string,
+    manifest: ExtensionManifestSummary,
+    partition: string,
+    spaceId: string,
+    source: ExtensionSource,
+    extra: { crxId?: string; webStoreUrl?: string } = {}
+  ): InstalledExtension {
+    const record: InstalledExtension = {
+      id,
+      name: manifest.name,
+      version: manifest.version,
+      ...(manifest.description ? { description: manifest.description } : {}),
+      source,
+      ...(extra.crxId ? { crxId: extra.crxId } : {}),
+      ...(extra.webStoreUrl ? { webStoreUrl: extra.webStoreUrl } : {}),
+      directory: id,
+      partition,
+      spaceId,
+      enabled: false,
+      consented: false,
+      permissions: manifest.permissions,
+      hostPermissions: manifest.hostPermissions,
+      ...(manifest.actionPopup ? { actionPopup: manifest.actionPopup } : {}),
+      ...(manifest.actionIcon ? { actionIcon: manifest.actionIcon } : {}),
+      installedAt: Date.now(),
+    };
+    const icon = this.readIcon(record, target);
+    if (icon) this.icons.set(id, icon);
+    this.commit([...this.host.getExtensions(), record]);
+    this.host.showToast(`${record.name} added. Review its permissions to enable it.`);
+    return record;
+  }
+
+  private discardTarget(id: string, target: string): void {
+    fs.rmSync(target, { recursive: true, force: true });
+    this.icons.delete(id);
+  }
+
   async install(sourcePath: string, spaceId: string, partition: string): Promise<InstalledExtension> {
     if (!path.isAbsolute(sourcePath) || !partition.startsWith('persist:')) {
       throw new Error('Invalid extension install request');
-    }
-    const extensions = this.host.getExtensions();
-    if (extensions.length >= MAX_INSTALLED_EXTENSIONS) {
-      throw new Error('Extension limit reached');
     }
     const source = fs.realpathSync(sourcePath);
     const realRoot = fs.realpathSync(this.root);
     if (!fs.statSync(source).isDirectory() || isInsideRoot(realRoot, source)) {
       throw new Error('Choose an unpacked extension folder outside Kinex storage');
     }
-    const manifestPath = path.join(source, 'manifest.json');
-    const manifestStats = fs.statSync(manifestPath);
-    if (!manifestStats.isFile() || manifestStats.size > MAX_MANIFEST_BYTES) {
-      throw new Error('Extension manifest is missing or too large');
-    }
-    const manifest = parseExtensionManifest(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
-    if (!manifest) throw new Error('Only Manifest V3 extensions with supported fields can be installed');
-
-    const id = `ext-${randomUUID()}`;
-    const target = path.join(this.root, id);
-    fs.mkdirSync(target, { recursive: true, mode: 0o700 });
+    const manifest = this.readStagedManifest(source);
+    const { id, target } = this.createTarget();
     try {
       this.copyExtensionFiles(source, target, allDeclaredExtensionFiles(manifest));
-      const record: InstalledExtension = {
-        id,
-        name: manifest.name,
-        version: manifest.version,
-        ...(manifest.description ? { description: manifest.description } : {}),
-        directory: id,
-        partition,
-        spaceId,
-        enabled: false,
-        consented: false,
-        permissions: manifest.permissions,
-        hostPermissions: manifest.hostPermissions,
-        ...(manifest.actionPopup ? { actionPopup: manifest.actionPopup } : {}),
-        ...(manifest.actionIcon ? { actionIcon: manifest.actionIcon } : {}),
-        installedAt: Date.now(),
-      };
-      const icon = this.readIcon(record, target);
-      if (icon) this.icons.set(id, icon);
-      this.commit([...extensions, record]);
-      this.host.showToast(`${record.name} added. Review its permissions to enable it.`);
-      return record;
+      return this.finalizeInstall(id, target, manifest, partition, spaceId, 'folder');
     } catch (error) {
-      fs.rmSync(target, { recursive: true, force: true });
-      this.icons.delete(id);
+      this.discardTarget(id, target);
       throw error instanceof Error ? error : new Error('Extension could not be installed');
+    }
+  }
+
+  async installFromCrx(sourcePath: string, spaceId: string, partition: string): Promise<InstalledExtension> {
+    if (!path.isAbsolute(sourcePath) || path.extname(sourcePath).toLowerCase() !== '.crx' || !partition.startsWith('persist:')) {
+      throw new Error('Invalid CRX install request');
+    }
+    const stats = fs.statSync(sourcePath);
+    if (!stats.isFile() || stats.size > MAX_CRX_BYTES) throw new Error('CRX package is too large');
+    const parsed = parseCrx3(fs.readFileSync(sourcePath));
+    if (!verifyCrx3Signature(parsed)) throw new Error('CRX3 signature verification failed');
+    return this.installParsedCrx(parsed, spaceId, partition, 'crx');
+  }
+
+  async installFromWebStore(url: string, spaceId: string, partition: string): Promise<InstalledExtension> {
+    if (!partition.startsWith('persist:')) throw new Error('Invalid extension install request');
+    const item = parseWebStoreUrl(url);
+    if (!item) throw new Error('Invalid Chrome Web Store URL or extension id');
+    const parsed = this.host.downloadWebStoreCrx
+      ? await this.host.downloadWebStoreCrx(item.extensionId)
+      : await downloadWebStoreCrx(item.extensionId);
+    if (parsed.crxId !== item.extensionId) throw new Error('Downloaded extension id does not match the Web Store item');
+    if (!verifyCrx3Signature(parsed)) throw new Error('CRX3 signature verification failed');
+    return this.installParsedCrx(parsed, spaceId, partition, 'webstore', item.itemUrl);
+  }
+
+  private installParsedCrx(
+    parsed: ParsedCrx3,
+    spaceId: string,
+    partition: string,
+    source: 'crx' | 'webstore',
+    webStoreUrl?: string
+  ): InstalledExtension {
+    const { id, target } = this.createTarget();
+    try {
+      extractCrxZip(parsed.zip, target);
+      const manifest = this.readStagedManifest(target);
+      for (const file of allDeclaredExtensionFiles(manifest)) {
+        const resolved = resolveInsideRoot(target, file);
+        if (!resolved || !fs.statSync(resolved).isFile()) throw new Error(`CRX package is missing ${file}`);
+      }
+      return this.finalizeInstall(id, target, manifest, partition, spaceId, source, {
+        crxId: parsed.crxId,
+        ...(webStoreUrl ? { webStoreUrl } : {}),
+      });
+    } catch (error) {
+      this.discardTarget(id, target);
+      throw error instanceof Error ? error : new Error('CRX package could not be installed');
     }
   }
 

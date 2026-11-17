@@ -44,6 +44,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [customRuleDomain, setCustomRuleDomain] = useState('');
   const [customRuleSelector, setCustomRuleSelector] = useState('');
   const [extensionConsent, setExtensionConsent] = useState<Record<string, boolean>>({});
+  const [webStoreInput, setWebStoreInput] = useState('');
   const [clearScopes, setClearScopes] = useState<Record<'history' | 'cookies' | 'cache' | 'archived', boolean>>({
     history: true,
     cache: true,
@@ -761,17 +762,60 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       Unpacked extensions run in the active Space's Browser Profile. Private windows never load extensions, and extensions cannot access Kinex's privileged controls.
                     </div>
                   </div>
-                  <button
-                    className="btn-primary"
-                    onClick={() => {
-                      void (async () => {
-                        const sourcePath = await window.kinexAPI.pickExtensionFolder();
-                        if (sourcePath) dispatch({ type: 'install-extension', sourcePath });
-                      })();
-                    }}
-                  >
-                    Install from Folder…
-                  </button>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => {
+                        void (async () => {
+                          const sourcePath = await window.kinexAPI.pickExtensionFolder();
+                          if (sourcePath) dispatch({ type: 'install-extension', sourcePath });
+                        })();
+                      }}
+                    >
+                      Install from Folder…
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      aria-label="Install from .crx"
+                      onClick={() => {
+                        void (async () => {
+                          const sourcePath = await window.kinexAPI.pickExtensionCrx();
+                          if (sourcePath) dispatch({ type: 'install-extension-crx', sourcePath });
+                        })();
+                      }}
+                    >
+                      Install from .crx…
+                    </button>
+                  </div>
+                </div>
+                <div className="settings-row">
+                  <div>
+                    <div className="settings-row-title">Chrome Web Store</div>
+                    <div className="settings-row-desc">
+                      Paste an item URL or extension ID. Kinex downloads the verified CRX3 package and asks for permission before enabling it.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <input
+                      className="text-input"
+                      style={{ width: 240 }}
+                      aria-label="Chrome Web Store item URL or extension ID"
+                      placeholder="chromewebstore.google.com/detail/…/id"
+                      value={webStoreInput}
+                      onChange={(event) => setWebStoreInput(event.target.value)}
+                    />
+                    <button
+                      className="btn-primary"
+                      aria-label="Install from Chrome Web Store"
+                      disabled={webStoreInput.trim().length === 0}
+                      onClick={() => {
+                        dispatch({ type: 'install-extension-webstore', url: webStoreInput.trim() });
+                        setWebStoreInput('');
+                      }}
+                    >
+                      Install
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -797,6 +841,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <span className="settings-row-title">{extension.name}</span>
                             <span className="command-kind-tag">v{extension.version}</span>
                             <span className="command-kind-tag">{space?.name ?? extension.spaceId}</span>
+                            {extension.source && extension.source !== 'folder' && (
+                              <span className="command-kind-tag">{extension.source === 'crx' ? 'CRX3' : 'Web Store'}</span>
+                            )}
                             <span className="command-kind-tag">
                               {extension.loaded ? 'Active' : extension.error ? 'Load failed' : 'Not loaded'}
                             </span>

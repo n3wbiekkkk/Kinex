@@ -2,6 +2,14 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.19] - 2026-11-17
+
+Pre-production preview. Add verified CRX3 and Chrome Web Store installation for MV3 extensions.
+
+- Parse CRX3 packages in the main process, verify their RSA/ECDSA signature and derived extension id, and extract the embedded ZIP with strict path-traversal, symlink, encryption, compression and size checks before staging into managed `userData/Extensions`.
+- Add `Install from .crx…` and a Chrome Web Store URL/ID field in Settings. Web Store installs download CRX3 over HTTPS from an allowlisted Google host, verify signature and item-id match, and still require explicit permission review before enabling. Web Store item navigations are intercepted into the same review flow.
+- Keep `allowFileAccess: false`, the existing `TrustedIpcRegistry` roles and the unprivileged popup boundary. Add unit coverage for CRX3 parsing/tampering, ZIP-slip defense, Web Store URL validation and provenance gating, plus a real-Electron signed CRX install check.
+
 ## [0.7.18] - 2026-11-17
 
 Pre-production preview. Record 0.7.17 extension publication evidence.

@@ -273,11 +273,17 @@ export type OverlayState =
   | { mode: 'shields' }
   | { mode: 'site-info' };
 
+export type ExtensionSource = 'folder' | 'crx' | 'webstore';
+
 export interface InstalledExtension {
   id: string;
   name: string;
   version: string;
   description?: string;
+  source?: ExtensionSource;
+  /** CRX3 extension id in the a-p alphabet, when installed from a CRX or the Web Store. */
+  crxId?: string;
+  webStoreUrl?: string;
   /** Relative directory name under the managed Extensions folder. */
   directory: string;
   /** Chromium-assigned id, populated once the extension has been loaded. */
@@ -484,6 +490,8 @@ export type KinexIntent =
   | { type: 'discard-tab'; tabId: string }
   | { type: 'set-new-tab-config'; config: Partial<NewTabConfig> }
   | { type: 'install-extension'; sourcePath: string }
+  | { type: 'install-extension-crx'; sourcePath: string }
+  | { type: 'install-extension-webstore'; url: string }
   | { type: 'uninstall-extension'; extensionId: string }
   | { type: 'set-extension-enabled'; extensionId: string; enabled: boolean; consent?: boolean }
   | { type: 'open-extension-popup'; extensionId: string; anchor?: { x: number; y: number; width: number; height: number } }
@@ -508,6 +516,7 @@ export interface KinexAPI {
   onStateUpdated: (listener: (state: KinexStateSnapshot) => void) => () => void;
   showTabContextMenu: (tabId: string) => Promise<void>;
   pickExtensionFolder: () => Promise<string | null>;
+  pickExtensionCrx: () => Promise<string | null>;
   getLittleKinexInfo: () => Promise<LittleKinexInfo>;
   onLittleKinexUpdated: (listener: (info: LittleKinexInfo) => void) => () => void;
   littleKinexAction: (action: LittleKinexAction, url?: string) => Promise<void>;

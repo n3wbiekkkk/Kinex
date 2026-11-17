@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { isCommandId } from '../shared/commands';
-import { EXTENSION_ID_RE } from './extensionSupport';
+import { EXTENSION_ID_RE, parseWebStoreUrl } from './extensionSupport';
 import type {
   AirTrafficRule,
   BoostRule,
@@ -672,6 +672,19 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
       return isNonEmptyString(raw.sourcePath, MAX_URL_LEN) && path.isAbsolute(raw.sourcePath)
         ? { ok: true, value: { type: 'install-extension', sourcePath: raw.sourcePath } }
         : { ok: false, error: 'Invalid extension folder path' };
+
+    case 'install-extension-crx':
+      return isNonEmptyString(raw.sourcePath, MAX_URL_LEN) && path.isAbsolute(raw.sourcePath) &&
+        path.extname(raw.sourcePath).toLowerCase() === '.crx'
+        ? { ok: true, value: { type: 'install-extension-crx', sourcePath: raw.sourcePath } }
+        : { ok: false, error: 'Invalid CRX file path' };
+
+    case 'install-extension-webstore': {
+      const item = parseWebStoreUrl(raw.url);
+      return item
+        ? { ok: true, value: { type: 'install-extension-webstore', url: item.itemUrl } }
+        : { ok: false, error: 'Invalid Chrome Web Store URL or extension id' };
+    }
 
     case 'uninstall-extension':
       return typeof raw.extensionId === 'string' && EXTENSION_ID_RE.test(raw.extensionId)

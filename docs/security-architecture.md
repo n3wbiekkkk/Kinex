@@ -41,11 +41,11 @@ Private browsing is local session isolation. It does not hide network activity f
 
 ### Unpacked extensions
 
-Extensions are installed only from a locally chosen unpacked folder. Their files are copied into a managed directory under `userData`, manifests are validated before Electron sees them, symlinks are rejected, and all persisted paths are relative to that directory. Installation is scoped to one Profile partition; extension content scripts and `chrome.storage.local` data cannot appear in another partition, and in-memory private sessions never load extensions.
+Extensions are installed from a locally chosen unpacked folder, a local CRX3 file, or a Chrome Web Store item URL/ID. Their files are copied or extracted into a managed directory under `userData`, manifests are validated before Electron sees them, symlinks are rejected, and all persisted paths are relative to that directory. CRX3 packages require a valid RSA/ECDSA signature over the ZIP payload and a header id derived from the signing key; the ZIP extractor rejects traversal, absolute paths, symlinks, encrypted and unsupported-compression entries, duplicates and oversized content. Web Store downloads use HTTPS only, an allowlisted Google download host, redirect and size limits, and must match the requested item id. Installation is scoped to one Profile partition; extension content scripts and `chrome.storage.local` data cannot appear in another partition, and in-memory private sessions never load extensions.
 
 First enable requires an explicit permission review. `allowFileAccess` stays disabled. Extension action popups use a dedicated `WebContentsView` with no browser preload, no `kinex:*` IPC role, a hard `chrome-extension://<id>/` origin lock, and an origin bounce-back on any off-origin navigation. The privileged shell, overlay and Little Kinex views keep their own sessions and trusted-role checks; extension pages cannot reach them.
 
-Electron's extension support is a limited subset aimed at DevTools. `chrome.action` badges/commands, `.crx` packages and Web Store installation are not supported in this increment.
+Electron's extension support is a limited subset aimed at DevTools. `chrome.action` badges/commands are not supported in this increment. Live Chrome Web Store availability, provider-side package integrity and signed auto-installation of the browser itself remain unverified.
 
 ## Permissions and macOS consent
 

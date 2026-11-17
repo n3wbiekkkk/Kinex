@@ -26,6 +26,7 @@ export interface TabManagerHost {
   onNavigationFinished: (tabId: string, url: string, title: string) => void;
   onOpenPopupInTab: (sourceTabId: string, url: string, disposition: 'foreground' | 'background') => void;
   onSpaceMismatchCheck: (tabId: string, url: string) => boolean;
+  onWebStoreNavigation?: (url: string) => boolean;
   onFoundInPage: (tabId: string, result: { activeMatchOrdinal: number; matches: number; finalUpdate: boolean }) => void;
   onPageContextAction: (action: PageContextAction) => void;
   onHtmlFullscreenChanged?: (tabId: string, isFullscreen: boolean) => void;
@@ -135,6 +136,7 @@ export class TabManager {
       partitionKey: this.host.getPartitionForTab(tab),
       tabId,
       onWillNavigateRoute: (targetUrl) => this.host.onSpaceMismatchCheck(tabId, targetUrl),
+      onWebStoreNavigation: (targetUrl) => this.host.onWebStoreNavigation?.(targetUrl) ?? false,
       onTitleUpdated: (title) => {
         if (this.disposed) return;
         const currentUrl = wc.isDestroyed() ? '' : wc.getURL();

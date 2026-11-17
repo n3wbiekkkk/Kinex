@@ -2,6 +2,31 @@ import path from 'node:path';
 
 export const EXTENSION_ID_RE = /^ext-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const RUNTIME_ID_RE = /^[a-p]{32}$/;
+const WEB_STORE_HOSTS = new Set(['chromewebstore.google.com', 'chrome.google.com']);
+
+export interface WebStoreItemInput {
+  extensionId: string;
+  itemUrl: string;
+}
+
+export function parseWebStoreUrl(rawUrl: unknown): WebStoreItemInput | null {
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0 || rawUrl.length > 2048) return null;
+  const candidate = rawUrl.trim();
+  if (RUNTIME_ID_RE.test(candidate)) {
+    return { extensionId: candidate, itemUrl: `https://chromewebstore.google.com/detail/${candidate}` };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' || !WEB_STORE_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  const idIndex = segments.findIndex((segment) => RUNTIME_ID_RE.test(segment));
+  if (idIndex === -1) return null;
+  return { extensionId: segments[idIndex], itemUrl: parsed.origin + parsed.pathname };
+}
 export const MAX_INSTALLED_EXTENSIONS = 32;
 export const MAX_EXTENSION_FILES = 500;
 export const MAX_EXTENSION_BYTES = 25 * 1024 * 1024;

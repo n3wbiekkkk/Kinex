@@ -65,7 +65,8 @@ import { KinexAutoUpdater } from './updater';
 import { ViewLayoutManager } from './viewLayoutManager';
 import { WindowSessionRegistry } from './windowRegistry';
 import { ExtensionManager } from './extensionManager';
-import { RUNTIME_ID_RE } from './extensionSupport';
+import { RUNTIME_ID_RE, parseWebStoreUrl } from './extensionSupport';
+import { downloadWebStoreCrx } from './webStore';
 
 export function ensureAppName(): void {
   if (app.getName() !== 'Kinex') {
@@ -242,6 +243,7 @@ export class KinexWindowManager {
       },
       getSessionForPartition: (partition) => this.sessionManager.getRegularSession(partition),
       showToast: (message) => this.showToast(message),
+      downloadWebStoreCrx,
     });
 
     this.sessionManager = new SessionManager(
@@ -355,6 +357,13 @@ export class KinexWindowManager {
           );
         },
         onSpaceMismatchCheck: (tabId, url) => this.handleAirTrafficRouting(tabId, url),
+        onWebStoreNavigation: (url) => {
+          const item = parseWebStoreUrl(url);
+          if (!item || !url.startsWith('https://')) return false;
+          void this.handleIntent({ type: 'install-extension-webstore', url: item.itemUrl });
+          void this.handleIntent({ type: 'set-overlay', overlay: { mode: 'settings', section: 'extensions' } });
+          return true;
+        },
         onHtmlFullscreenChanged: (tabId, isFullscreen) => {
           if (this.disposed) return;
           const tab = this.persisted.tabs.find((item) => item.id === tabId);
@@ -2715,6 +2724,37 @@ export class KinexWindowManager {
         return;
       }
 
+      case 'install-extension-crx': {
+        const context = this.getActiveContext();
+        if (!context) return;
+        try {
+          await this.extensionManager.installFromCrx(
+            intent.sourcePath,
+            context.state.spaceId,
+            this.getPartitionForSpace(context.state.spaceId)
+          );
+        } catch (error) {
+          this.showToast(error instanceof Error ? error.message : 'CRX package could not be installed');
+        }
+        return;
+      }
+
+      case 'install-extension-webstore': {
+        const context = this.getActiveContext();
+        if (!context) return;
+        this.showToast('Downloading extension from Chrome Web Store…');
+        try {
+          await this.extensionManager.installFromWebStore(
+            intent.url,
+            context.state.spaceId,
+            this.getPartitionForSpace(context.state.spaceId)
+          );
+        } catch (error) {
+          this.showToast(error instanceof Error ? error.message : 'Web Store installation failed');
+        }
+        return;
+      }
+
       case 'uninstall-extension': {
         if (this.extensionPopupId === intent.extensionId) this.closeExtensionPopup(false);
         this.extensionManager.uninstall(intent.extensionId);
@@ -2867,6 +2907,20 @@ export class KinexWindowManager {
     const options: Electron.OpenDialogOptions = {
       properties: ['openDirectory'],
       title: 'Choose an unpacked Manifest V3 extension',
+      ...(parent && !parent.isDestroyed() ? { parent } : {}),
+    };
+    const result = parent && !parent.isDestroyed()
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+  }
+
+  async pickExtensionCrx(): Promise<string | null> {
+    const parent = BrowserWindow.getFocusedWindow() ?? this.mainWindow;
+    const options: Electron.OpenDialogOptions = {
+      properties: ['openFile'],
+      title: 'Choose a CRX3 extension package',
+      filters: [{ name: 'Chrome Extension', extensions: ['crx'] }],
       ...(parent && !parent.isDestroyed() ? { parent } : {}),
     };
     const result = parent && !parent.isDestroyed()
