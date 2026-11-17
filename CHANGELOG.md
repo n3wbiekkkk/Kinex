@@ -2,6 +2,10 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.5] - 2026-11-17
+
+Pre-production preview. Add executable release-workflow regression checks for version/tag validation, annotated tag reuse, stale main commits, draft publication ordering, and missing signing credentials. Typecheck, lint, build, 105 unit/regression tests, and actionlint pass locally. Signed updates remain blocked by unavailable credentials.
+
 ## [0.7.4] - 2026-11-17
 
 Pre-production preview. Automatic signed publication is configured, but remains blocked by unavailable signing/notarization credentials.

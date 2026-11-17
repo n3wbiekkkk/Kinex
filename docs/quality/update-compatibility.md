@@ -1,6 +1,6 @@
 # Update compatibility for the 0.7.x preview line
 
-Kinex 0.7.4 is a pre-production preview. Version 1.0.0 remains reserved for the first production release. The package and lockfile declare 0.7.4, and packaged validation reads the expected version from package.json.
+Kinex 0.7.5 is a pre-production preview. Version 1.0.0 remains reserved for the first production release. The package and lockfile declare 0.7.5, and packaged validation reads the expected version from package.json.
 
 ## Older 0.7.x clients
 
@@ -14,7 +14,7 @@ A guard prevents the new 0.x client from treating the obsolete misnumbered 7.0.1
 
 ## Signing blocks installation
 
-The local 0.7.0 archive contains a signed executable. The inspected 0.7.3 local package has an ad-hoc signature; no signed 0.7.4 package has been qualified. No matching Developer ID identity was found in the local keychain, and the repository and release environment list no signing secrets.
+The local 0.7.0 archive contains a signed executable. The inspected 0.7.3 local package has an ad-hoc signature; no signed 0.7.5 package has been qualified. No matching Developer ID identity was found in the local keychain, and the repository and release environment list no signing secrets.
 
 Electron's macOS updater requires a signed application. A correct version comparison and downloadable ZIP do not establish a successful installation. The old signed installation needs an update signed with the compatible publisher identity. Signing checks have not been disabled.
 
@@ -33,3 +33,9 @@ No release was published by this change. The inspected live Latest release was v
 Implemented checks cover version selection, obsolete-release rejection, OS-check composition, disabled downgrades, and packaged startup. Signed update installation remains BLOCKED by credentials.
 
 References: [Electron autoUpdater](https://www.electronjs.org/docs/latest/api/auto-updater) and [Electron code signing](https://www.electronjs.org/docs/latest/tutorial/code-signing).
+
+## Automatic publication regression evidence (2026-11-17)
+
+Local typecheck, compiler lint, production build, and 105 tests across 20 files passed. This includes eight release regressions: three real npm version/lockfile cases, main-push version selection and explicit-tag mismatch, annotated tag reuse rejection using real Git refs, stale-commit publication suppression, draft-before-Latest publication ordering, and missing-signing-credential rejection. The external GitHub publication command is replaced only in these offline workflow tests; these tests do not establish a real release or installation.
+
+Actionlint 1.7.12 passed both workflow files. The complete macOS browser suite, newly versioned package, and live publication still require their CI runs. Signing and installed-update qualification remain blocked as described above.
