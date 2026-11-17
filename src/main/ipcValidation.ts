@@ -1,4 +1,6 @@
+import path from 'node:path';
 import { isCommandId } from '../shared/commands';
+import { EXTENSION_ID_RE } from './extensionSupport';
 import type {
   AirTrafficRule,
   BoostRule,
@@ -78,6 +80,21 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+interface AnchorRectInput {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function isAnchorRect(value: unknown): value is AnchorRectInput | undefined {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  return ['x', 'y', 'width', 'height'].every(
+    (key) => isFiniteNumber(value[key]) && Math.abs(value[key] as number) <= 20000
+  );
+}
+
 function isSpaceTheme(value: unknown): value is SpaceTheme {
   if (!isRecord(value)) return false;
   return (
@@ -144,7 +161,7 @@ function isOverlayState(value: unknown): value is OverlayState {
     case 'settings':
       return (
         value.section === undefined ||
-        ['general', 'spaces', 'privacy', 'shields', 'shortcuts', 'import', 'updates'].includes(String(value.section))
+        ['general', 'spaces', 'privacy', 'shields', 'shortcuts', 'extensions', 'import', 'updates'].includes(String(value.section))
       );
     default:
       return false;
@@ -650,6 +667,53 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
       return isNonEmptyString(raw.tabId, 128)
         ? { ok: true, value: { type: 'discard-tab', tabId: raw.tabId } }
         : { ok: false, error: 'Invalid tabId' };
+
+    case 'install-extension':
+      return isNonEmptyString(raw.sourcePath, MAX_URL_LEN) && path.isAbsolute(raw.sourcePath)
+        ? { ok: true, value: { type: 'install-extension', sourcePath: raw.sourcePath } }
+        : { ok: false, error: 'Invalid extension folder path' };
+
+    case 'uninstall-extension':
+      return typeof raw.extensionId === 'string' && EXTENSION_ID_RE.test(raw.extensionId)
+        ? { ok: true, value: { type: 'uninstall-extension', extensionId: raw.extensionId } }
+        : { ok: false, error: 'Invalid extension id' };
+
+    case 'open-extension-popup':
+      return typeof raw.extensionId === 'string' && EXTENSION_ID_RE.test(raw.extensionId) && isAnchorRect(raw.anchor)
+        ? {
+            ok: true,
+            value: {
+              type: 'open-extension-popup',
+              extensionId: raw.extensionId,
+              ...(raw.anchor ? {
+                anchor: {
+                  x: Math.trunc(raw.anchor.x),
+                  y: Math.trunc(raw.anchor.y),
+                  width: Math.trunc(raw.anchor.width),
+                  height: Math.trunc(raw.anchor.height),
+                },
+              } : {}),
+            },
+          }
+        : { ok: false, error: 'Invalid extension popup request' };
+
+    case 'set-extension-enabled':
+      return typeof raw.extensionId === 'string' && EXTENSION_ID_RE.test(raw.extensionId) &&
+        typeof raw.enabled === 'boolean' &&
+        (raw.consent === undefined || typeof raw.consent === 'boolean')
+        ? {
+            ok: true,
+            value: {
+              type: 'set-extension-enabled',
+              extensionId: raw.extensionId,
+              enabled: raw.enabled,
+              ...(typeof raw.consent === 'boolean' ? { consent: raw.consent } : {}),
+            },
+          }
+        : { ok: false, error: 'Invalid extension enabled payload' };
+
+    case 'close-extension-popup':
+      return { ok: true, value: { type: 'close-extension-popup' } };
 
     case 'set-new-tab-config': {
       if (!isRecord(raw.config)) return { ok: false, error: 'Invalid newTabConfig' };

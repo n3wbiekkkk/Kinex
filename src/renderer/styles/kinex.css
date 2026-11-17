@@ -1593,6 +1593,40 @@ select.text-input {
   color: var(--accent);
 }
 
+.extension-action-btn {
+  position: relative;
+}
+
+.extension-action-icon {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.extension-strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.extension-permission-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.extension-consent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 @media (max-width: 1000px) {
   .settings-nav {
     width: 186px;

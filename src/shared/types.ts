@@ -26,6 +26,7 @@ export type SettingsSection =
   | 'privacy'
   | 'shields'
   | 'shortcuts'
+  | 'extensions'
   | 'import'
   | 'updates';
 
@@ -272,7 +273,35 @@ export type OverlayState =
   | { mode: 'shields' }
   | { mode: 'site-info' };
 
+export interface InstalledExtension {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  /** Relative directory name under the managed Extensions folder. */
+  directory: string;
+  /** Chromium-assigned id, populated once the extension has been loaded. */
+  runtimeId?: string;
+  /** Profile partition this extension is installed into. */
+  partition: string;
+  spaceId: string;
+  enabled: boolean;
+  consented: boolean;
+  permissions: string[];
+  hostPermissions: string[];
+  actionPopup?: string;
+  actionIcon?: string;
+  installedAt: number;
+}
+
+export interface ExtensionViewModel extends InstalledExtension {
+  iconDataUrl?: string;
+  loaded: boolean;
+  error?: string;
+}
+
 export interface PersistedKinexData {
+  extensions: InstalledExtension[];
   spaces: Space[];
   profiles: Profile[];
   folders: FolderItem[];
@@ -302,6 +331,7 @@ export interface PersistedKinexData {
 }
 
 export interface KinexStateSnapshot extends PersistedKinexData {
+  extensions: ExtensionViewModel[];
   reducedEffects: boolean;
   overlayGeneration: number;
   overlay: OverlayState;
@@ -452,7 +482,12 @@ export type KinexIntent =
   | { type: 'set-memory-saver-timeout'; timeout: MemorySaverTimeout }
   | { type: 'set-memory-saver-exempt-pinned'; exempt: boolean }
   | { type: 'discard-tab'; tabId: string }
-  | { type: 'set-new-tab-config'; config: Partial<NewTabConfig> };
+  | { type: 'set-new-tab-config'; config: Partial<NewTabConfig> }
+  | { type: 'install-extension'; sourcePath: string }
+  | { type: 'uninstall-extension'; extensionId: string }
+  | { type: 'set-extension-enabled'; extensionId: string; enabled: boolean; consent?: boolean }
+  | { type: 'open-extension-popup'; extensionId: string; anchor?: { x: number; y: number; width: number; height: number } }
+  | { type: 'close-extension-popup' };
 
 export type LittleKinexAction = 'back' | 'forward' | 'reload' | 'navigate' | 'promote' | 'close' | 'focus-content';
 
@@ -472,6 +507,7 @@ export interface KinexAPI {
   onFocusRequested: (listener: (region: FocusRequest) => void) => () => void;
   onStateUpdated: (listener: (state: KinexStateSnapshot) => void) => () => void;
   showTabContextMenu: (tabId: string) => Promise<void>;
+  pickExtensionFolder: () => Promise<string | null>;
   getLittleKinexInfo: () => Promise<LittleKinexInfo>;
   onLittleKinexUpdated: (listener: (info: LittleKinexInfo) => void) => () => void;
   littleKinexAction: (action: LittleKinexAction, url?: string) => Promise<void>;

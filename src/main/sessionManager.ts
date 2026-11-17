@@ -47,7 +47,8 @@ export class SessionManager {
     private readonly permissionManager: PermissionManager,
     private readonly downloadManager: DownloadManager,
     private readonly shieldsCoordinator?: Pick<KinexShieldsCoordinator, 'attachSession'>,
-    private readonly getNewTabContext?: () => NewTabRenderContext
+    private readonly getNewTabContext?: () => NewTabRenderContext,
+    private readonly onRegularSessionReady?: (partition: string, sess: Session) => void
   ) {}
 
   getRegularSession(partition: string): Session {
@@ -58,6 +59,7 @@ export class SessionManager {
     this.permissionManager.attachToSession(sess, { isPrivate: false, partition: safePartition });
     sess.setDisplayMediaRequestHandler((_request, callback) => callback({}), { useSystemPicker: true });
     this.downloadManager.attachRegularSession(sess);
+    this.onRegularSessionReady?.(safePartition, sess);
     return sess;
   }
 

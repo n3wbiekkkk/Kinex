@@ -39,6 +39,14 @@ Each private window receives a unique nonpersistent partition with cache disable
 
 Private browsing is local session isolation. It does not hide network activity from websites or network operators.
 
+### Unpacked extensions
+
+Extensions are installed only from a locally chosen unpacked folder. Their files are copied into a managed directory under `userData`, manifests are validated before Electron sees them, symlinks are rejected, and all persisted paths are relative to that directory. Installation is scoped to one Profile partition; extension content scripts and `chrome.storage.local` data cannot appear in another partition, and in-memory private sessions never load extensions.
+
+First enable requires an explicit permission review. `allowFileAccess` stays disabled. Extension action popups use a dedicated `WebContentsView` with no browser preload, no `kinex:*` IPC role, a hard `chrome-extension://<id>/` origin lock, and an origin bounce-back on any off-origin navigation. The privileged shell, overlay and Little Kinex views keep their own sessions and trusted-role checks; extension pages cannot reach them.
+
+Electron's extension support is a limited subset aimed at DevTools. `chrome.action` badges/commands, `.crx` packages and Web Store installation are not supported in this increment.
+
 ## Permissions and macOS consent
 
 `PermissionManager` keys saved decisions by `partition`, canonical `origin`, and `permission`. Camera and microphone decisions use separate `media:video` and `media:audio` keys. A microphone grant cannot authorize a subsequent camera request.

@@ -18,6 +18,7 @@ const definitions = [
   ['save-page-pdf', 'Save Page as PDF', 'Tools', 'CmdOrCtrl+Shift+P', 'Export the focused page to a PDF file'],
   ['toggle-reader-mode', 'Open / Close Reader Mode', 'Tools', 'Alt+CmdOrCtrl+R', 'Read an article without page scripts'],
   ['open-settings', 'Open Settings', 'Kinex', 'CmdOrCtrl+,', 'Manage preferences and browser data'],
+  ['manage-extensions', 'Manage Extensions', 'Kinex', '', 'Install and review Manifest V3 extensions'],
   ['open-shortcuts', 'Keyboard Shortcuts', 'Kinex', '', 'View the complete shortcut reference'],
   ['open-downloads', 'Open Downloads', 'Tools', 'CmdOrCtrl+J', 'Pause, resume and open downloaded files'],
   ['open-history', 'Open History', 'Tools', 'CmdOrCtrl+Y', 'Find and reopen visited pages'],

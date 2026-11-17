@@ -13,7 +13,7 @@ export function buildAndInstallApplicationMenu(host: AppMenuHost): void {
   const group = (category: string) => BROWSER_COMMANDS.filter((c) => c.category === category).map((c) => command(c.id));
   const template: MenuItemConstructorOptions[] = [
     { label: 'Kinex', submenu: [
-      { role: 'about', label: 'About Kinex' }, command('check-updates'), command('open-settings'),
+      { role: 'about', label: 'About Kinex' }, command('check-updates'), command('open-settings'), command('manage-extensions'),
       { type: 'separator' }, { role: 'services' }, { type: 'separator' },
       { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' },
     ] },

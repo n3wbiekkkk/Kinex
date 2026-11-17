@@ -82,6 +82,8 @@ export class ViewLayoutManager {
     toolbarVisible?: boolean;
     hasOverlay: boolean;
     htmlFullscreenTabId?: string | null;
+    extensionPopupView?: WebContentsView | null;
+    extensionPopupBounds?: ViewBoundsRect | null;
   }): void {
     const { mainWindow, shellView, overlayView, allTabViews, activeTabIds } = params;
     if (!mainWindow || mainWindow.isDestroyed() || !shellView) return;
@@ -137,10 +139,22 @@ export class ViewLayoutManager {
       }
     }
 
+    const popupVisible = Boolean(params.extensionPopupView && params.extensionPopupBounds);
+    if (params.extensionPopupView) {
+      if (params.extensionPopupBounds) {
+        params.extensionPopupView.setVisible(true);
+        params.extensionPopupView.setBounds(params.extensionPopupBounds);
+      } else {
+        params.extensionPopupView.setVisible(false);
+        params.extensionPopupView.setBounds({ x: -10000, y: -10000, width: 100, height: 100 });
+      }
+    }
+
     const desired = visiblePaneIds
       .map((id) => allTabViews.get(id))
       .filter((view): view is WebContentsView => Boolean(view));
     if (overlayView && params.hasOverlay) desired.push(overlayView);
+    if (popupVisible && params.extensionPopupView) desired.push(params.extensionPopupView);
     const current = mainWindow.contentView.children.filter((view) => desired.includes(view as WebContentsView));
     if (desired.some((view, index) => current[index] !== view)) {
       for (const view of desired) {

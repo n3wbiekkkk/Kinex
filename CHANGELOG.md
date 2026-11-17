@@ -2,6 +2,15 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.17] - 2026-11-17
+
+Pre-production preview. Add unpacked Manifest V3 extension support with per-Profile isolation.
+
+- Load unpacked MV3 extensions through Electron 45's `session.extensions` into the active Space's persistent Profile. Extensions are copied into a managed, validated folder, sanitized from persisted state, reloaded on cold start, and never loaded into private (in-memory) sessions.
+- Require explicit permission review before first enable; support enable/disable/uninstall from a new Settings → Extensions section. `allowFileAccess` stays disabled, symlinks and escaping manifest paths are rejected, and `.crx`/Web Store installation remains out of scope.
+- Render extension action icons in the toolbar and Sidebar using manifest icons and open `chrome-extension://` popups in a dedicated, unprivileged `WebContentsView`. Popups have no browser preload, are excluded from `TrustedIpcRegistry`, are locked to their extension origin, and close on overlay, Space, window and extension changes without disturbing native focus.
+- Add `npm run test:extensions`: a real-Electron fixture MV3 extension verifies install, consent gating, content script injection, `chrome.storage.local`, per-Profile isolation, popup APIs/origin locking, cold-start reload, disable and uninstall. Add unit coverage for manifest validation, intent validation, persist sanitization, private-session exclusion and IPC distrust.
+
 ## [0.7.16] - 2026-11-17
 
 Pre-production preview. Record multi-window evidence and remaining publication limits.

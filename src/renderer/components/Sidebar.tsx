@@ -21,6 +21,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  Puzzle,
   RotateCcw,
   RotateCw,
   Settings,
@@ -315,6 +316,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
   const focusedHost = focusedTab
     ? extractHostname(focusedTab.url) || focusedTab.url
     : 'Search or enter URL';
+  const activeExtensions = state.extensions.filter(
+    (extension) => extension.enabled && extension.spaceId === activeSpace.id && Boolean(extension.actionPopup)
+  );
 
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -762,6 +766,35 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
               <Plus size={13} />
             </button>
           </div>
+
+          {activeExtensions.length > 0 && (
+            <div className="extension-strip" aria-label="Extension actions">
+              {activeExtensions.map((extension) => (
+                <button
+                  key={extension.id}
+                  className="icon-btn extension-action-btn"
+                  data-extension-id={extension.id}
+                  title={extension.name}
+                  aria-label={`Open ${extension.name} popup`}
+                  disabled={!extension.loaded}
+                  onClick={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    dispatch({
+                      type: 'open-extension-popup',
+                      extensionId: extension.id,
+                      anchor: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    });
+                  }}
+                >
+                  {extension.iconDataUrl ? (
+                    <img className="extension-action-icon" src={extension.iconDataUrl} alt="" />
+                  ) : (
+                    <Puzzle size={13} />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="footer-tools">
             <div style={{ display: 'flex', gap: 2 }}>

@@ -6,6 +6,7 @@ import {
   Keyboard,
   Layers,
   Plus,
+  Puzzle,
   Settings,
   Shield,
   ShieldCheck,
@@ -42,6 +43,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [ruleSpaceId, setRuleSpaceId] = useState(state.spaces[0]?.id ?? '');
   const [customRuleDomain, setCustomRuleDomain] = useState('');
   const [customRuleSelector, setCustomRuleSelector] = useState('');
+  const [extensionConsent, setExtensionConsent] = useState<Record<string, boolean>>({});
   const [clearScopes, setClearScopes] = useState<Record<'history' | 'cookies' | 'cache' | 'archived', boolean>>({
     history: true,
     cache: true,
@@ -75,6 +77,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { id: 'privacy', label: 'Privacy & Security', icon: <ShieldCheck size={15} /> },
     { id: 'shields', label: 'Shields & Filters', icon: <Shield size={15} /> },
     { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard size={15} /> },
+    { id: 'extensions', label: 'Extensions', icon: <Puzzle size={15} /> },
     { id: 'import', label: 'Import & Data', icon: <Download size={15} /> },
     { id: 'updates', label: 'Updates & About', icon: <ArrowUpCircle size={15} /> },
   ];
@@ -746,6 +749,116 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               ))}
             </div>
+          )}
+
+          {section === 'extensions' && (
+            <>
+              <div className="settings-group">
+                <div className="settings-row">
+                  <div>
+                    <div className="settings-row-title">Manifest V3 Extensions</div>
+                    <div className="settings-row-desc">
+                      Unpacked extensions run in the active Space's Browser Profile. Private windows never load extensions, and extensions cannot access Kinex's privileged controls.
+                    </div>
+                  </div>
+                  <button
+                    className="btn-primary"
+                    onClick={() => {
+                      void (async () => {
+                        const sourcePath = await window.kinexAPI.pickExtensionFolder();
+                        if (sourcePath) dispatch({ type: 'install-extension', sourcePath });
+                      })();
+                    }}
+                  >
+                    Install from Folder…
+                  </button>
+                </div>
+              </div>
+
+              {state.extensions.length === 0 ? (
+                <div className="settings-group">
+                  <div className="settings-row-desc">No extensions installed in this profile yet.</div>
+                </div>
+              ) : (
+                <div className="settings-group">
+                  {state.extensions.map((extension) => {
+                    const space = state.spaces.find((item) => item.id === extension.spaceId);
+                    const permissions = [
+                      ...extension.permissions,
+                      ...extension.hostPermissions.map((pattern) => `site: ${pattern}`),
+                    ];
+                    return (
+                      <div key={extension.id} className="settings-row" data-extension-id={extension.id}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            {extension.iconDataUrl && (
+                              <img className="extension-action-icon" src={extension.iconDataUrl} alt="" />
+                            )}
+                            <span className="settings-row-title">{extension.name}</span>
+                            <span className="command-kind-tag">v{extension.version}</span>
+                            <span className="command-kind-tag">{space?.name ?? extension.spaceId}</span>
+                            <span className="command-kind-tag">
+                              {extension.loaded ? 'Active' : extension.error ? 'Load failed' : 'Not loaded'}
+                            </span>
+                          </div>
+                          {extension.description && (
+                            <div className="settings-row-desc">{extension.description}</div>
+                          )}
+                          {extension.error && (
+                            <div className="settings-row-desc" style={{ color: 'var(--warning)' }}>{extension.error}</div>
+                          )}
+                          <div className="extension-permission-list">
+                            {permissions.length === 0 ? (
+                              <span className="command-kind-tag">No declared permissions</span>
+                            ) : permissions.map((permission) => (
+                              <span key={permission} className="kbd-badge">{permission}</span>
+                            ))}
+                          </div>
+                          {!extension.consented && (
+                            <label className="extension-consent">
+                              <input
+                                type="checkbox"
+                                aria-label={`I reviewed permissions for ${extension.name}`}
+                                checked={Boolean(extensionConsent[extension.id])}
+                                onChange={(event) => setExtensionConsent((prev) => ({ ...prev, [extension.id]: event.target.checked }))}
+                              />
+                              I have reviewed these permissions
+                            </label>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          {!extension.consented ? (
+                            <button
+                              className="btn-primary"
+                              disabled={!extensionConsent[extension.id]}
+                              aria-label={`Review and enable ${extension.name}`}
+                              onClick={() => dispatch({ type: 'set-extension-enabled', extensionId: extension.id, enabled: true, consent: true })}
+                            >
+                              Review &amp; Enable
+                            </button>
+                          ) : (
+                            <button
+                              className="btn-secondary"
+                              aria-label={`${extension.enabled ? 'Disable' : 'Enable'} ${extension.name}`}
+                              onClick={() => dispatch({ type: 'set-extension-enabled', extensionId: extension.id, enabled: !extension.enabled })}
+                            >
+                              {extension.enabled ? 'Disable' : 'Enable'}
+                            </button>
+                          )}
+                          <button
+                            className="btn-danger"
+                            aria-label={`Remove ${extension.name}`}
+                            onClick={() => dispatch({ type: 'uninstall-extension', extensionId: extension.id })}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
 
           {section === 'import' && (

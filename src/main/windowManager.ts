@@ -64,6 +64,8 @@ import { TabManager } from './tabManager';
 import { KinexAutoUpdater } from './updater';
 import { ViewLayoutManager } from './viewLayoutManager';
 import { WindowSessionRegistry } from './windowRegistry';
+import { ExtensionManager } from './extensionManager';
+import { RUNTIME_ID_RE } from './extensionSupport';
 
 export function ensureAppName(): void {
   if (app.getName() !== 'Kinex') {
@@ -132,6 +134,10 @@ export class KinexWindowManager {
   private mainWindow: BrowserWindow | null = null;
   private shellView: WebContentsView | null = null;
   private overlayView: WebContentsView | null = null;
+  private extensionPopupView: WebContentsView | null = null;
+  private extensionPopupId: string | null = null;
+  private extensionPopupWindowId: string | null = null;
+  private extensionPopupBounds: { x: number; y: number; width: number; height: number } | null = null;
 
   private toastTimer: NodeJS.Timeout | null = null;
   private broadcastTimer: NodeJS.Timeout | null = null;
@@ -146,6 +152,7 @@ export class KinexWindowManager {
   private readonly shieldsCosmetics: ShieldsCosmeticInjector;
   private readonly shieldsCoordinator: KinexShieldsCoordinator;
   private readonly sessionManager: SessionManager;
+  private readonly extensionManager: ExtensionManager;
   private readonly navigationManager: NavigationManager;
   private readonly tabManager: TabManager;
   private readonly layoutManager = new ViewLayoutManager();
@@ -227,11 +234,22 @@ export class KinexWindowManager {
       },
     });
 
+    this.extensionManager = new ExtensionManager(userDataDir, {
+      getExtensions: () => this.persisted.extensions,
+      commitExtensions: (extensions) => {
+        this.persisted = { ...this.persisted, extensions };
+        this.persistAndBroadcast();
+      },
+      getSessionForPartition: (partition) => this.sessionManager.getRegularSession(partition),
+      showToast: (message) => this.showToast(message),
+    });
+
     this.sessionManager = new SessionManager(
       this.permissionManager,
       this.downloadManager,
       this.shieldsCoordinator,
-      () => this.buildNewTabContext()
+      () => this.buildNewTabContext(),
+      (partition, sess) => this.extensionManager.attachSession(partition, sess)
     );
 
     this.navigationManager = new NavigationManager({
@@ -698,7 +716,10 @@ export class KinexWindowManager {
     win.on('move', () => this.syncWindowGeometry(id));
     win.on('maximize', () => this.syncWindowGeometry(id));
     win.on('unmaximize', () => this.syncWindowGeometry(id));
-    win.on('close', () => this.syncWindowGeometry(id));
+    win.on('close', () => {
+      this.syncWindowGeometry(id);
+      if (this.extensionPopupWindowId === id) this.closeExtensionPopup(false);
+    });
     win.on('enter-full-screen', () => this.layoutContext(context));
     win.on('leave-full-screen', () => {
       context.htmlFullscreenTabId = null;
@@ -897,6 +918,7 @@ export class KinexWindowManager {
     const isActive = context?.state.id === this.currentWindowId;
     return {
       ...this.persisted,
+      extensions: this.extensionManager.getViewModels(),
       activeSpaceId: context?.state.spaceId ?? this.persisted.activeSpaceId,
       reducedEffects: this.speedLimited || this.thermalLimited,
       overlayGeneration: this.overlayGeneration,
@@ -1191,6 +1213,8 @@ export class KinexWindowManager {
       toolbarVisible: Boolean(focused && (this.readerDocsByTabId.has(focused.id) || (focused.zoomFactor ?? 1) !== 1)),
       hasOverlay: overlayState.mode !== 'none' || Boolean(prompt) || closing,
       htmlFullscreenTabId,
+      extensionPopupView: this.extensionPopupView,
+      extensionPopupBounds: this.extensionPopupWindowId === context.state.id ? this.extensionPopupBounds : null,
     });
   }
 
@@ -1382,6 +1406,7 @@ export class KinexWindowManager {
 
       case 'select-space': {
         if (!this.persisted.spaces.some((s) => s.id === intent.spaceId)) return;
+        this.closeExtensionPopup(false);
         const now = Date.now();
         const nextSplitIds = new Set(getActiveSplit(this.persisted, intent.spaceId).tabIds);
         const owningWindow = [...this.contexts.values()].find((context) => context.state.spaceId === intent.spaceId);
@@ -2017,6 +2042,7 @@ export class KinexWindowManager {
 
       case 'set-overlay': {
         if (intent.overlay.mode !== 'none') {
+          this.closeExtensionPopup(false);
           this.captureOverlayOrigin();
           this.overlayGeneration += 1;
         }
@@ -2673,6 +2699,47 @@ export class KinexWindowManager {
         this.persistAndBroadcast();
         return;
       }
+
+      case 'install-extension': {
+        const context = this.getActiveContext();
+        if (!context) return;
+        try {
+          await this.extensionManager.install(
+            intent.sourcePath,
+            context.state.spaceId,
+            this.getPartitionForSpace(context.state.spaceId)
+          );
+        } catch (error) {
+          this.showToast(error instanceof Error ? error.message : 'Extension could not be installed');
+        }
+        return;
+      }
+
+      case 'uninstall-extension': {
+        if (this.extensionPopupId === intent.extensionId) this.closeExtensionPopup(false);
+        this.extensionManager.uninstall(intent.extensionId);
+        return;
+      }
+
+      case 'set-extension-enabled': {
+        try {
+          this.extensionManager.setEnabled(intent.extensionId, intent.enabled, intent.consent);
+          if (!intent.enabled && this.extensionPopupId === intent.extensionId) this.closeExtensionPopup(false);
+        } catch (error) {
+          this.showToast(error instanceof Error ? error.message : 'Extension could not be updated');
+        }
+        return;
+      }
+
+      case 'open-extension-popup': {
+        await this.openExtensionPopup(intent.extensionId, intent.anchor);
+        return;
+      }
+
+      case 'close-extension-popup': {
+        this.closeExtensionPopup();
+        return;
+      }
     }
   }
 
@@ -2792,6 +2859,129 @@ export class KinexWindowManager {
           void view.webContents.reloadIgnoringCache();
         }
       }
+    }
+  }
+
+  async pickExtensionFolder(): Promise<string | null> {
+    const parent = BrowserWindow.getFocusedWindow() ?? this.mainWindow;
+    const options: Electron.OpenDialogOptions = {
+      properties: ['openDirectory'],
+      title: 'Choose an unpacked Manifest V3 extension',
+      ...(parent && !parent.isDestroyed() ? { parent } : {}),
+    };
+    const result = parent && !parent.isDestroyed()
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+  }
+
+  private computeExtensionPopupBounds(
+    win: BrowserWindow,
+    anchor?: { x: number; y: number; width: number; height: number }
+  ): { x: number; y: number; width: number; height: number } {
+    const { width: windowWidth, height: windowHeight } = win.getContentBounds();
+    const popupWidth = Math.min(380, Math.max(280, windowWidth - 32));
+    const popupHeight = Math.min(520, Math.max(220, windowHeight - 80));
+    const x = anchor ? anchor.x + anchor.width - popupWidth : windowWidth - popupWidth - 24;
+    const y = anchor ? anchor.y + anchor.height + 6 : 44;
+    return {
+      x: Math.max(8, Math.min(windowWidth - popupWidth - 8, Math.trunc(x))),
+      y: Math.max(8, Math.min(windowHeight - popupHeight - 8, Math.trunc(y))),
+      width: popupWidth,
+      height: popupHeight,
+    };
+  }
+
+  async openExtensionPopup(
+    extensionId: string,
+    anchor?: { x: number; y: number; width: number; height: number }
+  ): Promise<void> {
+    if (this.disposed) return;
+    const context = this.getActiveContext();
+    if (!context || context.win.isDestroyed()) return;
+    const extension = this.extensionManager.getExtension(extensionId);
+    if (!extension || !extension.enabled || !extension.actionPopup) return;
+    const loaded = await this.extensionManager.ensureLoaded(extensionId);
+    if (!loaded || this.disposed) return;
+    const runtimeId = this.extensionManager.getExtension(extensionId)?.runtimeId;
+    if (!runtimeId || !RUNTIME_ID_RE.test(runtimeId)) return;
+
+    this.closeExtensionPopup(false);
+    const base = `chrome-extension://${runtimeId}/`;
+    const url = `${base}${extension.actionPopup.replace(/^\/+/, '')}`;
+    const view = new WebContentsView({
+      webPreferences: {
+        session: this.sessionManager.getRegularSession(extension.partition),
+        contextIsolation: true,
+        nodeIntegration: false,
+        nodeIntegrationInWorker: false,
+        nodeIntegrationInSubFrames: false,
+        webviewTag: false,
+        sandbox: true,
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        navigateOnDragDrop: false,
+      },
+    });
+    view.setBackgroundColor('#00000000');
+    this.extensionPopupView = view;
+    this.extensionPopupId = extensionId;
+    this.extensionPopupWindowId = context.state.id;
+    this.extensionPopupBounds = this.computeExtensionPopupBounds(context.win, anchor);
+    context.win.contentView.addChildView(view);
+
+    view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    const restrict = (event: { preventDefault: () => void }, target: string) => {
+      if (!target.startsWith(base)) event.preventDefault();
+    };
+    view.webContents.on('will-navigate', restrict);
+    view.webContents.on('will-redirect', restrict);
+    view.webContents.on('will-frame-navigate', (details) => {
+      if (details.isMainFrame) restrict(details, details.url);
+    });
+    view.webContents.on('did-navigate', (_event, currentUrl) => {
+      if (this.extensionPopupView !== view || currentUrl.startsWith(base) || view.webContents.isDestroyed()) return;
+      setTimeout(() => {
+        if (this.extensionPopupView !== view || view.webContents.isDestroyed()) return;
+        void view.webContents.loadURL(url).catch(() => {});
+      }, 0).unref?.();
+    });
+    view.webContents.on('before-input-event', (_event, input) => {
+      if (input.type === 'keyDown' && input.key === 'Escape') this.closeExtensionPopup();
+    });
+    view.webContents.once('destroyed', () => {
+      if (this.extensionPopupView === view) this.closeExtensionPopup(false);
+    });
+
+    this.layoutViews();
+    try {
+      await view.webContents.loadURL(url);
+      if (this.extensionPopupView === view && !view.webContents.isDestroyed()) view.webContents.focus();
+    } catch {
+      this.closeExtensionPopup();
+    }
+  }
+
+  closeExtensionPopup(restoreFocus = true): void {
+    const view = this.extensionPopupView;
+    if (!view) return;
+    const windowId = this.extensionPopupWindowId;
+    this.extensionPopupView = null;
+    this.extensionPopupId = null;
+    this.extensionPopupWindowId = null;
+    this.extensionPopupBounds = null;
+    const owner = windowId ? this.contexts.get(windowId)?.win : null;
+    if (owner && !owner.isDestroyed()) {
+      try {
+        owner.contentView.removeChildView(view);
+      } catch {
+        // Already removed.
+      }
+    }
+    if (!view.webContents.isDestroyed()) view.webContents.close();
+    if (!this.disposed) {
+      this.layoutViews();
+      if (restoreFocus) this.requestNativeFocus(() => this.getFocusedTabWebContents(), 6);
     }
   }
 
@@ -3057,6 +3247,7 @@ export class KinexWindowManager {
         await overlay({ mode: 'command-bar', initialQuery: commandId === 'edit-url' && tab && /^https?:/.test(tab.url) ? tab.url : '', targetMode: commandId === 'edit-url' ? 'edit-url' : 'new-tab' });
         return;
       case 'open-settings': await overlay({ mode: 'settings' }); return;
+      case 'manage-extensions': await overlay({ mode: 'settings', section: 'extensions' }); return;
       case 'open-shortcuts': await overlay({ mode: 'settings', section: 'shortcuts' }); return;
       case 'clear-history': await overlay({ mode: 'settings', section: 'privacy' }); return;
       case 'check-updates':
@@ -3135,6 +3326,7 @@ export class KinexWindowManager {
 
   cleanupWindowResources(): void {
     if (this.disposed) return;
+    this.closeExtensionPopup(false);
     this.disposed = true;
     this.cancelPendingFocus();
     this.focusOnWindowActivation = false;

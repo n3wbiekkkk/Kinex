@@ -403,6 +403,7 @@ export function createDefaultPersistedData(): PersistedNookData {
       { id: 'prof-work', name: 'Work', partition: 'persist:nook-work' },
     ],
     folders: [],
+    extensions: [],
     activeSpaceId: personalSpace.id,
     tabs,
     splitsBySpace: {

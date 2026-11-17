@@ -9,6 +9,7 @@ import {
   PanelLeft,
   PictureInPicture2,
   Printer,
+  Puzzle,
   RotateCw,
   Shield,
   ShieldAlert,
@@ -39,6 +40,9 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
     extractHostname(focusedTab?.url ?? '')
   );
   const focusedBlockedCount = focusedTab ? state.shieldsRuntime.tabStats[focusedTab.id]?.total ?? 0 : 0;
+  const activeExtensions = state.extensions.filter(
+    (extension) => extension.enabled && extension.spaceId === state.activeSpaceId && Boolean(extension.actionPopup)
+  );
 
   return (
     <div className={`top-controls ${state.sidebarOpen ? '' : 'sidebar-closed'}`} role="toolbar" aria-label="Browser Toolbar" onKeyDown={(event) => {
@@ -322,6 +326,31 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
       >
         <Sparkles size={14} />
       </button>
+
+      {activeExtensions.map((extension) => (
+        <button
+          key={extension.id}
+          className="icon-btn extension-action-btn"
+          data-extension-id={extension.id}
+          title={`${extension.name}${extension.error ? ` — ${extension.error}` : ''}`}
+          aria-label={`Open ${extension.name} popup`}
+          disabled={!extension.loaded}
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            dispatch({
+              type: 'open-extension-popup',
+              extensionId: extension.id,
+              anchor: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+            });
+          }}
+        >
+          {extension.iconDataUrl ? (
+            <img className="extension-action-icon" src={extension.iconDataUrl} alt="" />
+          ) : (
+            <Puzzle size={14} />
+          )}
+        </button>
+      ))}
     </div>
   );
 };

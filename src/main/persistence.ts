@@ -23,7 +23,15 @@ import type {
   SplitLayout,
   PersistedWindowState,
   SitePermissionDecision,
+  InstalledExtension,
 } from '../shared/types';
+import {
+  EXTENSION_ID_RE,
+  MAX_INSTALLED_EXTENSIONS,
+  RUNTIME_ID_RE,
+  isSafeRelativePath,
+  sanitizeBoundedStringArray,
+} from './extensionSupport';
 import { classifySecurityState, isLocalHostname, isSafeNavigationUrl, isSafeUpdateFeedUrl } from './security';
 
 const VALID_MEMORY_SAVER = new Set<MemorySaverTimeout>(['disabled', '5m', '15m', '30m', '60m']);
@@ -403,8 +411,55 @@ export class KinexPersistence {
         if (typeof rule.pattern !== 'string' || typeof rule.spaceId !== 'string' || !spaceIds.has(rule.spaceId)) { damaged = true; return []; }
         return [{ id: String(rule.id), pattern: rule.pattern, spaceId: rule.spaceId, enabled: rule.enabled === true }];
       });
+      const extensions: InstalledExtension[] = namedRecords(parsed.extensions)
+        .slice(0, MAX_INSTALLED_EXTENSIONS)
+        .flatMap((extension) => {
+          const id = String(extension.id);
+          const permissions = sanitizeBoundedStringArray(extension.permissions, 64, 128);
+          const hostPermissions = sanitizeBoundedStringArray(extension.hostPermissions, 64, 256);
+          const runtimeId = extension.runtimeId;
+          const actionPopup = extension.actionPopup;
+          const actionIcon = extension.actionIcon;
+          if (
+            !EXTENSION_ID_RE.test(id) ||
+            extension.directory !== id ||
+            typeof extension.partition !== 'string' || !extension.partition.startsWith('persist:') || !usedPartitions.has(extension.partition) ||
+            typeof extension.spaceId !== 'string' || !spaceIds.has(extension.spaceId) ||
+            typeof extension.name !== 'string' || extension.name.length === 0 || extension.name.length > 128 ||
+            typeof extension.version !== 'string' || extension.version.length === 0 || extension.version.length > 32 ||
+            (extension.description !== undefined && (typeof extension.description !== 'string' || extension.description.length > 512)) ||
+            typeof extension.enabled !== 'boolean' || typeof extension.consented !== 'boolean' ||
+            typeof extension.installedAt !== 'number' || !Number.isFinite(extension.installedAt) ||
+            !permissions || !hostPermissions ||
+            (runtimeId !== undefined && (typeof runtimeId !== 'string' || !RUNTIME_ID_RE.test(runtimeId))) ||
+            (actionPopup !== undefined && !isSafeRelativePath(actionPopup)) ||
+            (actionIcon !== undefined && !isSafeRelativePath(actionIcon))
+          ) {
+            damaged = true;
+            return [];
+          }
+          return [{
+            id,
+            name: extension.name,
+            version: extension.version,
+            ...(typeof extension.description === 'string' ? { description: extension.description } : {}),
+            directory: id,
+            ...(typeof runtimeId === 'string' ? { runtimeId } : {}),
+            partition: extension.partition,
+            spaceId: extension.spaceId,
+            enabled: extension.enabled,
+            consented: extension.consented,
+            permissions,
+            hostPermissions,
+            ...(isSafeRelativePath(actionPopup) ? { actionPopup } : {}),
+            ...(isSafeRelativePath(actionIcon) ? { actionIcon } : {}),
+            installedAt: extension.installedAt,
+          }];
+        });
+      if (namedRecords(parsed.extensions).length !== extensions.length || namedRecords(parsed.extensions).length > MAX_INSTALLED_EXTENSIONS) damaged = true;
       const result: PersistedKinexData = {
         ...defaults,
+        extensions,
         activeSpaceId,
         spaces: normalizedSpaces,
         profiles,

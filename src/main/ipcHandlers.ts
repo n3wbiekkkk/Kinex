@@ -45,6 +45,15 @@ export function registerKinexIpcHandlers(
     mgr.showTabContextMenu(parsed.value);
   });
 
+  ipc.handle('kinex:pick-extension-folder', (event) => {
+    const mgr = getManager();
+    if (!mgr) throw new Error('Browser controller unavailable');
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame || !mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, ['shell', 'overlay'])) {
+      throw new Error('Untrusted IPC sender for kinex:pick-extension-folder');
+    }
+    return mgr.pickExtensionFolder();
+  });
+
   ipc.handle('kinex:little-info', (event) => {
     const mgr = getManager();
     if (!mgr) throw new Error('Browser controller unavailable');
