@@ -1,0 +1,42 @@
+{
+  "results": [
+    {
+      "tabs": 25,
+      "beforeMemorySaver": {
+        "totalRssMB": 3070.4,
+        "rendererCount": 28,
+        "processCount": 31,
+        "totalCpu": 7.8
+      },
+      "afterMemorySaver": {
+        "totalRssMB": 841,
+        "rendererCount": 4,
+        "processCount": 7,
+        "totalCpu": 1.9
+      },
+      "sleepingTabs": 24,
+      "rssSavedMB": 2229.4,
+      "rssReductionPct": 72.6,
+      "wakeRestoreMs": 76.1
+    },
+    {
+      "tabs": 50,
+      "beforeMemorySaver": {
+        "totalRssMB": 5455.2,
+        "rendererCount": 53,
+        "processCount": 56,
+        "totalCpu": 7.4
+      },
+      "afterMemorySaver": {
+        "totalRssMB": 896.7,
+        "rendererCount": 4,
+        "processCount": 7,
+        "totalCpu": 2.1
+      },
+      "sleepingTabs": 49,
+      "rssSavedMB": 4558.5,
+      "rssReductionPct": 83.6,
+      "wakeRestoreMs": 76.9
+    }
+  ]
+}

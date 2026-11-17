@@ -1,3 +1,9 @@
+# Keyboard verification history
+
+For the current v7.0.3 run, [25 assertions passed](../../artifacts/v7.0.3/keyboard/keyboard-results.json) with real key events and no mouse events. This does not erase the separate intermittent Settings focus failure recorded in [the combined-suite failure log](../../artifacts/v7.0.3/all-tests-focus-failure.txt). The [release report](v7.0.3-report.md) reconciles current results.
+
+The report below describes the earlier quality run and remains historical evidence.
+
 # Keyboard-only acceptance
 
 The rerunnable gate is `node tests/e2e/run-keyboard-only.mjs --out=artifacts/quality/keyboard` after `npm run build`.

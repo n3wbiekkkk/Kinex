@@ -1,0 +1,3 @@
+
+> kinex-browser@7.0.3 lint
+> tsc -p tsconfig.node.json --noEmit --noUnusedLocals --noUnusedParameters && tsc -p tsconfig.web.json --noEmit --noUnusedLocals --noUnusedParameters

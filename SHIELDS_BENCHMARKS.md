@@ -1,5 +1,6 @@
 # Kinex Shields Engine & Compatibility Benchmarks
 
+Current v7.0.3 measurements and limitations are in [the release report](docs/quality/v7.0.3-report.md) and [performance results](docs/quality/performance-v7.0.3.md). Numbers below are historical and are not current release gates.
 > **No-AI Policy**: Kinex Shields uses deterministic native Rust filter evaluation (`adblock-rs`), Public Suffix List host parsing (`tldts`), and local isolated-world DOM matching. Zero AI models, heuristics services, or remote telemetry APIs are used.
 
 ---

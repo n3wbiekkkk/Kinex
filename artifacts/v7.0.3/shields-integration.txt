@@ -1,0 +1,30 @@
+[92706:1117/104241.558154:ERROR:net/socket/ssl_client_socket_impl.cc:949] handshake failed; returned -1, SSL error code 1, net_error -107
+[92706:1117/104241.559039:ERROR:net/socket/ssl_client_socket_impl.cc:949] handshake failed; returned -1, SSL error code 1, net_error -107
+SHIELDS_INTEGRATION_PASS {
+  ok: true,
+  checksPassed: 8,
+  checks: [
+    'Shields engine initializes with >100,000 real bundled filter rules',
+    'Navigation strips tracking query parameters cleanly',
+    'Network coordinator blocks third-party ad scripts, analytics, XHR, and pixels with per-tab counters',
+    'Cosmetic filtering hides static and dynamic ad containers without exposing Electron/Node APIs',
+    'Per-site Disabled mode lifts network/cosmetic blocking cleanly on reload',
+    'Custom Element Picker rules apply and revert immediately without page reload',
+    'Private window enforces Shields and redacts blocked hostnames',
+    'Kinex Shields panel and Settings Shields section support keyboard focus, stats, and Escape dismissal'
+  ]
+}
+Shields Integration PASSED: {
+  ok: true,
+  checksPassed: 8,
+  checks: [
+    'Shields engine initializes with >100,000 real bundled filter rules',
+    'Navigation strips tracking query parameters cleanly',
+    'Network coordinator blocks third-party ad scripts, analytics, XHR, and pixels with per-tab counters',
+    'Cosmetic filtering hides static and dynamic ad containers without exposing Electron/Node APIs',
+    'Per-site Disabled mode lifts network/cosmetic blocking cleanly on reload',
+    'Custom Element Picker rules apply and revert immediately without page reload',
+    'Private window enforces Shields and redacts blocked hostnames',
+    'Kinex Shields panel and Settings Shields section support keyboard focus, stats, and Escape dismissal'
+  ]
+}

@@ -1,0 +1,203 @@
+{
+  "timestamp": "2026-11-17T03:23:26.279Z",
+  "hardware": {
+    "arch": "arm64",
+    "cpus": "Apple M5",
+    "coreCount": 10,
+    "totalMemGB": 16,
+    "osVersion": "Darwin 27.2.0"
+  },
+  "startup": {
+    "runs": 5,
+    "coldShellHydratedMs": {
+      "mean": 402.6,
+      "median": 400,
+      "p95": 425.4,
+      "min": 386.7,
+      "max": 425.4
+    },
+    "coldFirstUsableMs": {
+      "mean": 405.5,
+      "median": 404.3,
+      "p95": 427.6,
+      "min": 388.6,
+      "max": 427.6
+    },
+    "warmShellHydratedMs": {
+      "mean": 353.2,
+      "median": 358.7,
+      "p95": 360.6,
+      "min": 329.6,
+      "max": 360.6
+    },
+    "warmFirstUsableMs": {
+      "mean": 356.7,
+      "median": 362.3,
+      "p95": 363.9,
+      "min": 332,
+      "max": 363.9
+    }
+  },
+  "scaling": [
+    {
+      "tabs": 1,
+      "navLatencyMs": {
+        "mean": 72.5,
+        "median": 72.5,
+        "p95": 72.5,
+        "min": 72.5,
+        "max": 72.5
+      },
+      "switchLatencyMs": {
+        "mean": 0,
+        "median": 0,
+        "p95": 0,
+        "min": 0,
+        "max": 0
+      },
+      "memory": {
+        "peakTotalRssMB": 707.8,
+        "settledTotalRssMB": 707.8,
+        "mainRssMB": 235.4,
+        "gpuRssMB": 106.5,
+        "utilityRssMB": 55.1,
+        "rendererCount": 3,
+        "rendererRssTotalMB": 310.8,
+        "meanRendererRssMB": 103.6,
+        "processCount": 6
+      },
+      "cpu": {
+        "activeCpuPercent": 12.6,
+        "idleCpuPercent": 1.6
+      }
+    },
+    {
+      "tabs": 5,
+      "navLatencyMs": {
+        "mean": 70.3,
+        "median": 70.1,
+        "p95": 72.4,
+        "min": 67.5,
+        "max": 72.4
+      },
+      "switchLatencyMs": {
+        "mean": 4,
+        "median": 3.6,
+        "p95": 6.7,
+        "min": 1.7,
+        "max": 6.7
+      },
+      "memory": {
+        "peakTotalRssMB": 1093,
+        "settledTotalRssMB": 1093,
+        "mainRssMB": 242,
+        "gpuRssMB": 117,
+        "utilityRssMB": 55.7,
+        "rendererCount": 7,
+        "rendererRssTotalMB": 678.3,
+        "meanRendererRssMB": 96.9,
+        "processCount": 10
+      },
+      "cpu": {
+        "activeCpuPercent": 18.2,
+        "idleCpuPercent": 1.5
+      }
+    },
+    {
+      "tabs": 10,
+      "navLatencyMs": {
+        "mean": 71.7,
+        "median": 72.2,
+        "p95": 74.2,
+        "min": 68.1,
+        "max": 74.2
+      },
+      "switchLatencyMs": {
+        "mean": 4,
+        "median": 3.7,
+        "p95": 6,
+        "min": 2.5,
+        "max": 6
+      },
+      "memory": {
+        "peakTotalRssMB": 1569.7,
+        "settledTotalRssMB": 1569.7,
+        "mainRssMB": 246.4,
+        "gpuRssMB": 126.6,
+        "utilityRssMB": 56.5,
+        "rendererCount": 12,
+        "rendererRssTotalMB": 1140.2,
+        "meanRendererRssMB": 95,
+        "processCount": 15
+      },
+      "cpu": {
+        "activeCpuPercent": 16.7,
+        "idleCpuPercent": 3.3
+      }
+    },
+    {
+      "tabs": 25,
+      "navLatencyMs": {
+        "mean": 72,
+        "median": 71.9,
+        "p95": 74.4,
+        "min": 70.1,
+        "max": 75.5
+      },
+      "switchLatencyMs": {
+        "mean": 4.5,
+        "median": 4.2,
+        "p95": 7.6,
+        "min": 3.2,
+        "max": 7.6
+      },
+      "memory": {
+        "peakTotalRssMB": 2952.9,
+        "settledTotalRssMB": 2951.8,
+        "mainRssMB": 232.5,
+        "gpuRssMB": 147.9,
+        "utilityRssMB": 58.4,
+        "rendererCount": 27,
+        "rendererRssTotalMB": 2513,
+        "meanRendererRssMB": 93.1,
+        "processCount": 30
+      },
+      "cpu": {
+        "activeCpuPercent": 18.5,
+        "idleCpuPercent": 2.8
+      }
+    },
+    {
+      "tabs": 50,
+      "navLatencyMs": {
+        "mean": 73,
+        "median": 72.6,
+        "p95": 76.1,
+        "min": 68.2,
+        "max": 95
+      },
+      "switchLatencyMs": {
+        "mean": 6,
+        "median": 5.5,
+        "p95": 8.8,
+        "min": 3.6,
+        "max": 8.8
+      },
+      "memory": {
+        "peakTotalRssMB": 4898.9,
+        "settledTotalRssMB": 4898.9,
+        "mainRssMB": 240.4,
+        "gpuRssMB": 147.8,
+        "utilityRssMB": 57.5,
+        "rendererCount": 52,
+        "rendererRssTotalMB": 4453.2,
+        "meanRendererRssMB": 85.6,
+        "processCount": 55
+      },
+      "cpu": {
+        "activeCpuPercent": 14.5,
+        "idleCpuPercent": 4.9
+      }
+    }
+  ]
+}

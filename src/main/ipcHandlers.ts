@@ -13,7 +13,7 @@ export function registerKinexIpcHandlers(
   ipc.handle('kinex:get-state', (event) => {
     const mgr = getManager();
     if (!mgr) throw new Error('Browser controller unavailable');
-    if (!mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, ['shell', 'overlay'])) {
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame || !mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, ['shell', 'overlay'])) {
       throw new Error('Untrusted IPC sender for kinex:get-state');
     }
     return mgr.getSnapshot();
@@ -22,7 +22,7 @@ export function registerKinexIpcHandlers(
   ipc.handle('kinex:dispatch', (event, rawIntent: unknown) => {
     const mgr = getManager();
     if (!mgr) throw new Error('Browser controller unavailable');
-    if (!mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, ['shell', 'overlay'])) {
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame || !mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, ['shell', 'overlay'])) {
       throw new Error('Untrusted IPC sender for kinex:dispatch');
     }
     const parsed = validateIntent(rawIntent);
@@ -35,7 +35,7 @@ export function registerKinexIpcHandlers(
   ipc.handle('kinex:tab-context-menu', (event, rawTabId: unknown) => {
     const mgr = getManager();
     if (!mgr) throw new Error('Browser controller unavailable');
-    if (!mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, ['shell'])) {
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame || !mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, ['shell'])) {
       throw new Error('Untrusted IPC sender for kinex:tab-context-menu');
     }
     const parsed = validateTabContextMenuInput(rawTabId);
@@ -49,6 +49,7 @@ export function registerKinexIpcHandlers(
     const mgr = getManager();
     if (!mgr) throw new Error('Browser controller unavailable');
     if (
+      !event.senderFrame || event.senderFrame !== event.sender.mainFrame ||
       !mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, [
         'little-kinex',
         'private-header',
@@ -63,6 +64,7 @@ export function registerKinexIpcHandlers(
     const mgr = getManager();
     if (!mgr) throw new Error('Browser controller unavailable');
     if (
+      !event.senderFrame || event.senderFrame !== event.sender.mainFrame ||
       !mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, [
         'little-kinex',
         'private-header',

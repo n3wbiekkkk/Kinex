@@ -1,6 +1,6 @@
 {
   "name": "kinex-browser",
-  "version": "7.0.2",
+  "version": "7.0.3",
   "description": "Kinex Browser — a fast, private macOS Chromium workspace browser",
   "license": "GPL-3.0-only",
   "repository": {
@@ -18,14 +18,19 @@
     "test:integration": "npm run build && node tests/integration/run-integration.mjs",
     "test:e2e": "npm run build && node tests/e2e/run-e2e.mjs",
     "test:leak": "npm run build && node tests/perf/run-leak-stress.mjs",
-    "test:all": "npm run typecheck && npm test && npm run test:integration && npm run test:e2e && npm run test:keyboard && npm run test:experience && npm run test:shields",
+    "test:all": "npm run typecheck && npm test && npm run test:integration && npm run test:e2e && npm run test:keyboard && npm run test:experience && npm run test:shields && npm run test:security && npm run test:shields-startup",
     "bench": "npm run build && node tests/perf/run-benchmarks.mjs",
     "bench:memory-saver": "npm run build && node tests/perf/run-memory-saver-bench.mjs",
-    "package:mac": "npm run build && electron-builder --mac",
+    "package:mac": "npm run build && electron-builder --mac --publish never",
     "release:local": "node scripts/release-local.mjs",
     "test:keyboard": "npm run build && node tests/e2e/run-keyboard-only.mjs",
     "test:experience": "npm run build && node tests/integration/run-experience.mjs",
-    "test:shields": "npm run build && node tests/integration/run-shields.mjs"
+    "test:shields": "npm run build && node tests/integration/run-shields.mjs",
+    "lint": "tsc -p tsconfig.node.json --noEmit --noUnusedLocals --noUnusedParameters && tsc -p tsconfig.web.json --noEmit --noUnusedLocals --noUnusedParameters",
+    "test:security": "npm run build && node tests/integration/run-security.mjs",
+    "test:pure": "vitest run --exclude 'src/main/shields/**' --exclude 'src/main/features.test.ts'",
+    "test:native": "vitest run src/main/shields src/main/features.test.ts",
+    "test:shields-startup": "npm run build && node tests/perf/run-shields-initialization.mjs"
   },
   "build": {
     "appId": "com.kinex.browser",
@@ -67,8 +72,15 @@
               "nook"
             ]
           }
-        ]
-      }
+        ],
+        "NSCameraUsageDescription": "Websites can request camera access after you allow it in Kinex.",
+        "NSMicrophoneUsageDescription": "Websites can request microphone access after you allow it in Kinex.",
+        "NSLocationWhenInUseUsageDescription": "Websites can request your location after you allow it in Kinex."
+      },
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "minimumSystemVersion": "13.0"
     }
   },
   "dependencies": {
@@ -78,15 +90,23 @@
     "tldts": "^7.5.4"
   },
   "devDependencies": {
-    "@types/node": "^22.15.0",
+    "@types/node": "^24.19.2",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "@vitejs/plugin-react": "^4.5.0",
-    "electron": "^36.2.0",
-    "electron-builder": "^26.0.12",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "45.3.3",
+    "electron-builder": "26.18.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.3"
-  }
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  },
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+  },
+  "overrides": {
+    "minimatch": "11.0.9"
+  },
+  "author": "Kinex contributors"
 }

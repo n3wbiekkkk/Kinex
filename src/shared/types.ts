@@ -159,6 +159,7 @@ export interface BoostRule {
 }
 
 export interface SitePermissionDecision {
+  partition: string;
   origin: string;
   permission: string;
   decision: 'allow' | 'deny';
@@ -395,7 +396,7 @@ export type KinexIntent =
   | { type: 'set-search-engine'; engine: SearchEngineId }
   | { type: 'set-https-only'; enabled: boolean }
   | { type: 'set-clean-copy-url'; enabled: boolean }
-  | { type: 'revoke-site-permission'; origin: string; permission: string }
+  | { type: 'revoke-site-permission'; partition: string; origin: string; permission: string }
   | { type: 'save-air-traffic-rule'; rule: AirTrafficRule }
   | { type: 'delete-air-traffic-rule'; ruleId: string }
   | { type: 'clear-browsing-data'; scopes: Array<'history' | 'cookies' | 'cache' | 'archived'> }

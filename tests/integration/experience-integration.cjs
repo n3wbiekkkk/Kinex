@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, powerMonitor, protocol, session } = require('electron');
+const { app, BrowserWindow, ipcMain, powerMonitor, protocol, session, webContents } = require('electron');
 
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'kinex-experience-'));
 app.setPath('userData', userData);
@@ -15,6 +15,17 @@ const { registerKinexIpcHandlers } = require('../../dist-electron/main/ipcHandle
 const { getFocusedTab } = require('../../dist-electron/shared/domain');
 const checks = [];
 const requests = new Map();
+const focusEvents = [];
+const recordFocus = (event, id) => {
+  focusEvents.push({ event, id, at: Date.now() });
+  if (focusEvents.length > 30) focusEvents.shift();
+};
+app.on('browser-window-focus', (_event, win) => recordFocus('window-focus', win.id));
+app.on('browser-window-blur', (_event, win) => recordFocus('window-blur', win.id));
+app.on('web-contents-created', (_event, wc) => {
+  wc.on('focus', () => recordFocus('contents-focus', wc.id));
+  wc.on('blur', () => recordFocus('contents-blur', wc.id));
+});
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(predicate, label, timeout = 8000) {
   const deadline = Date.now() + timeout;
@@ -26,7 +37,8 @@ async function until(predicate, label, timeout = 8000) {
   throw new Error(`Timed out: ${label}`);
 }
 async function key(wc, keyCode, modifiers = [], text) {
-  assert.equal(wc.isFocused(), true, `Keyboard source must own native focus for ${keyCode}`);
+  await until(() => wc.isFocused(), `native keyboard focus before ${keyCode}`, 1500);
+  assert.equal(wc.isFocused(), true, `Keyboard source must own native focus for ${keyCode}: ${JSON.stringify({ expected: wc.id, focused: webContents.getFocusedWebContents()?.id, focusedWindow: BrowserWindow.getFocusedWindow()?.id, focusEvents })}`);
   wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
   if (text) wc.sendInputEvent({ type: 'char', keyCode: text, modifiers });
   wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
@@ -194,11 +206,13 @@ async function run() {
     const fsView = mgr.tabManager.getView(fsTab.id);
     const fsBefore = fsView.getBounds();
     assert.ok(fsBefore.x >= 200, 'Normal layout reserves sidebar inset before HTML5 fullscreen');
-    fsView.webContents.emit('enter-html-full-screen');
+    await fsView.webContents.executeJavaScript('document.documentElement.requestFullscreen()', true);
+    await until(() => !mgr.shellView.getVisible(), 'real HTML5 fullscreen entry');
     const contentBounds = win.getContentBounds();
     assert.deepEqual(fsView.getBounds(), { x: 0, y: 0, width: contentBounds.width, height: contentBounds.height });
     assert.equal(mgr.shellView.getVisible(), false);
-    fsView.webContents.emit('leave-html-full-screen');
+    await fsView.webContents.executeJavaScript('document.exitFullscreen()');
+    await until(() => mgr.shellView.getVisible(), 'real HTML5 fullscreen exit');
     assert.equal(mgr.shellView.getVisible(), true);
     assert.ok(fsView.getBounds().x >= 200, 'Leaving HTML5 fullscreen restores sidebar inset layout');
     checks.push('HTML5 fullscreen expands active WebContentsView edge-to-edge and hides shell chrome cleanly');

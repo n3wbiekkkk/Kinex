@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   Crosshair,
   RefreshCw,
-  Shield,
   ShieldAlert,
   ShieldCheck,
   ShieldOff,
@@ -302,9 +301,9 @@ export const ShieldsPanel: React.FC<ShieldsPanelProps> = ({
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingTop: 2 }}>
           <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-            {state.shieldsRuntime.engineReady
+            {state.shieldsRuntime.engineError || (state.shieldsRuntime.engineReady
               ? `${state.shieldsRuntime.totalRuleCount.toLocaleString()} rules ready`
-              : state.shieldsRuntime.engineError || 'Initializing engine...'}
+              : 'Initializing engine...')}
           </span>
           <button
             className="btn-secondary"

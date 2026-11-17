@@ -1,0 +1,13 @@
+
+> kinex-browser@7.0.3 build:native
+> npm --prefix node_modules/adblock-rs run build-release
+
+
+> adblock-rs@0.13.5 build-release
+> npm run build -- --release
+
+
+> adblock-rs@0.13.5 build
+> cd js && cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics --release
+
+    Finished `release` profile [optimized] target(s) in 0.14s

@@ -1,0 +1,463 @@
+
+> kinex-browser@7.0.3 test:all
+> npm run typecheck && npm test && npm run test:integration && npm run test:e2e && npm run test:keyboard && npm run test:experience && npm run test:shields && npm run test:security && npm run test:shields-startup
+
+
+> kinex-browser@7.0.3 typecheck
+> tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit
+
+
+> kinex-browser@7.0.3 test
+> vitest run
+
+
+ RUN  v5.1.0 /Users/<user>/Developer/Kinex
+
+
+ Test Files  18 passed (18)
+      Tests  91 passed (91)
+   Start at  10:47:52
+   Duration  4.19s (tests 91%, import 6%, transform 3%, worker 1%)
+
+
+> kinex-browser@7.0.3 test:integration
+> npm run build && node tests/integration/run-integration.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 72ms
+[94623:1117/104758.909656:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[94623:1117/104758.909961:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+[94623:1117/104758.919620:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[94623:1117/104758.919644:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+[94623:1117/104758.926003:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[94623:1117/104758.926075:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+[94623:1117/104758.933757:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[94623:1117/104758.933792:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+[94623:1117/104758.941870:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[94623:1117/104758.941900:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+INTEGRATION_PASS {"ok":true,"checksPassed":15,"startHeapMB":15,"endHeapMB":12,"rssMB":251,"archivedCount":11}
+Electron Integration Suite PASSED: {
+  ok: true,
+  checksPassed: 15,
+  startHeapMB: 15,
+  endHeapMB: 12,
+  rssMB: 251,
+  archivedCount: 11
+}
+
+> kinex-browser@7.0.3 test:e2e
+> npm run build && node tests/e2e/run-e2e.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 74ms
+E2E_ALL_15_WORKFLOWS_PASS {
+  stepsVerified: 15,
+  uiLayout: {
+    sidebarWidth: 256,
+    sidebarOverflowX: false,
+    trafficLightClearancePx: 68,
+    sidebarAppRegion: 'drag',
+    resizerAppRegion: 'no-drag',
+    urlBarAppRegion: 'no-drag',
+    shellClass: 'kinex-shell theme-dark'
+  },
+  persistedTabCount: 8,
+  historyCount: 6
+}
+
+> kinex-browser@7.0.3 test:keyboard
+> npm run build && node tests/e2e/run-keyboard-only.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 73ms
+PASS 1: Launch Kinex
+PASS 2: Open a new tab through Cmd+T
+PASS 3: Navigate to a local article URL
+PASS 4: Open another tab
+PASS 5: Switch tabs with Ctrl+Shift+Tab
+PASS 6: Pin a tab
+PASS 7: Move the tab to Work
+PASS 8: Create a Space
+PASS 9: Rename the Space
+PASS 10: Open Split View
+PASS 11: Adjust the split divider through keyboard
+PASS 12: Open the Command Bar from browser UI
+PASS 13: Find and select a command with keyboard
+PASS 14: Open Settings
+PASS 15: Change a setting without a mouse
+PASS 16: Open Downloads
+PASS 17: Open Reader Mode
+PASS 18: Close a tab
+PASS 19: Restore the closed tab
+PASS 20: Return focus to website content
+PASS 21: Modal focus traps forward and reverse Tab; Escape restores native focus
+PASS 22: Sidebar roving arrows, reorder alternative and F6 return path
+PASS 23: Reduced Motion disables overlay movement and completes closing lifecycle
+[94824:1117/104813.940978:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:260] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+PASS 24: Element Zapper selects, confirms and cancels through keyboard
+PASS 25: Open the real native tab context menu from keyboard
+Keyboard acceptance PASSED: 25 completed assertions, 1759 keyboard events, no mouse events.
+Keyboard-only acceptance passed. Report: /var/folders/0s/qsx23y1n3vb__7xj69m0mlvc0000gn/T/kinex-keyboard-results/keyboard-results.json
+
+> kinex-browser@7.0.3 test:experience
+> npm run build && node tests/integration/run-experience.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 76ms
+EXPERIENCE_PASS {"ok":true,"checksPassed":10,"checks":["Startup presents the native window without test calling show","Plain typing reaches the remote document without browser command dispatch","F6 crosses WebContents; Settings traps Tab and restores the Sidebar origin","Pin and Duplicate commands resolve the focused split pane","Dynamic Space/folder palette commands dismiss and preserve correct target","Live Profile reassignment recreates views without deleting or exposing old cookies","Saved zoom and Reader navigation keep native page bounds aligned with toolbar","Regular/private popup shortcuts reload and close locally without regular tab mutation","HTML5 fullscreen expands active WebContentsView edge-to-edge and hides shell chrome cleanly","Simulated power/thermal events reduce effects and listeners do not leak on reopen"],"powerEvents":"simulated Electron events, not hardware measurements"}
+Experience Integration PASSED: {
+  ok: true,
+  checksPassed: 10,
+  checks: [
+    'Startup presents the native window without test calling show',
+    'Plain typing reaches the remote document without browser command dispatch',
+    'F6 crosses WebContents; Settings traps Tab and restores the Sidebar origin',
+    'Pin and Duplicate commands resolve the focused split pane',
+    'Dynamic Space/folder palette commands dismiss and preserve correct target',
+    'Live Profile reassignment recreates views without deleting or exposing old cookies',
+    'Saved zoom and Reader navigation keep native page bounds aligned with toolbar',
+    'Regular/private popup shortcuts reload and close locally without regular tab mutation',
+    'HTML5 fullscreen expands active WebContentsView edge-to-edge and hides shell chrome cleanly',
+    'Simulated power/thermal events reduce effects and listeners do not leak on reopen'
+  ],
+  powerEvents: 'simulated Electron events, not hardware measurements'
+}
+
+> kinex-browser@7.0.3 test:shields
+> npm run build && node tests/integration/run-shields.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 73ms
+[94997:1117/104821.558363:ERROR:net/socket/ssl_client_socket_impl.cc:949] handshake failed; returned -1, SSL error code 1, net_error -107
+[94997:1117/104821.559191:ERROR:net/socket/ssl_client_socket_impl.cc:949] handshake failed; returned -1, SSL error code 1, net_error -107
+SHIELDS_INTEGRATION_PASS {
+  ok: true,
+  checksPassed: 8,
+  checks: [
+    'Shields engine initializes with >100,000 real bundled filter rules',
+    'Navigation strips tracking query parameters cleanly',
+    'Network coordinator blocks third-party ad scripts, analytics, XHR, and pixels with per-tab counters',
+    'Cosmetic filtering hides static and dynamic ad containers without exposing Electron/Node APIs',
+    'Per-site Disabled mode lifts network/cosmetic blocking cleanly on reload',
+    'Custom Element Picker rules apply and revert immediately without page reload',
+    'Private window enforces Shields and redacts blocked hostnames',
+    'Kinex Shields panel and Settings Shields section support keyboard focus, stats, and Escape dismissal'
+  ]
+}
+Shields Integration PASSED: {
+  ok: true,
+  checksPassed: 8,
+  checks: [
+    'Shields engine initializes with >100,000 real bundled filter rules',
+    'Navigation strips tracking query parameters cleanly',
+    'Network coordinator blocks third-party ad scripts, analytics, XHR, and pixels with per-tab counters',
+    'Cosmetic filtering hides static and dynamic ad containers without exposing Electron/Node APIs',
+    'Per-site Disabled mode lifts network/cosmetic blocking cleanly on reload',
+    'Custom Element Picker rules apply and revert immediately without page reload',
+    'Private window enforces Shields and redacts blocked hostnames',
+    'Kinex Shields panel and Settings Shields section support keyboard focus, stats, and Escape dismissal'
+  ]
+}
+
+> kinex-browser@7.0.3 test:security
+> npm run build && node tests/integration/run-security.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 72ms
+[95071:1117/104824.525357:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[95071:1117/104824.525541:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+{
+  "ok": true,
+  "electron": "45.3.3",
+  "chromium": "156.0.8078.100",
+  "node": "24.22.3",
+  "arch": "arm64",
+  "os": "27.2.0",
+  "drm": {
+    "status": "rejected",
+    "error": "NotSupportedError",
+    "message": "Unsupported keySystem or supportedConfigurations.",
+    "playback": "NOT TESTED"
+  },
+  "checks": [
+    "remote isolation",
+    "IndexedDB/cache/service-worker/profile isolation",
+    "private storage purge",
+    "scoped permission/revocation/private denial",
+    "CSP nonce/search",
+    "real tab preferences",
+    "unknown profile rejection",
+    "updater event lifecycle across window close"
+  ]
+}
+
+> kinex-browser@7.0.3 test:shields-startup
+> npm run build && node tests/perf/run-shields-initialization.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 71ms
+{
+  "ok": true,
+  "lifecycleChecks": 5,
+  "failures": 0,
+  "method": "Five alternating fresh Electron processes per method; timer gaps during actual initialization and a 10ms drain; RUN_AS_NODE excludes renderer/UI startup.",
+  "platform": "darwin",
+  "arch": "arm64",
+  "os": "27.2.0",
+  "cpu": "Apple M5",
+  "cores": 10,
+  "memoryBytes": 17179869184,
+  "runs": [
+    {
+      "run": 1,
+      "status": 0,
+      "measurement": {
+        "mode": "sync",
+        "elapsedMs": 85.008708,
+        "maxGapMs": 85.087375,
+        "ticksBeforeReady": 0,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 1,
+      "status": 0,
+      "measurement": {
+        "mode": "worker",
+        "elapsedMs": 105.318333,
+        "maxGapMs": 8.234875000000002,
+        "ticksBeforeReady": 87,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 2,
+      "status": 0,
+      "measurement": {
+        "mode": "sync",
+        "elapsedMs": 83.762917,
+        "maxGapMs": 83.84229099999999,
+        "ticksBeforeReady": 0,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 2,
+      "status": 0,
+      "measurement": {
+        "mode": "worker",
+        "elapsedMs": 106.636125,
+        "maxGapMs": 8.468333000000001,
+        "ticksBeforeReady": 89,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 3,
+      "status": 0,
+      "measurement": {
+        "mode": "sync",
+        "elapsedMs": 84.866583,
+        "maxGapMs": 84.941708,
+        "ticksBeforeReady": 0,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 3,
+      "status": 0,
+      "measurement": {
+        "mode": "worker",
+        "elapsedMs": 105.816708,
+        "maxGapMs": 8.948333000000005,
+        "ticksBeforeReady": 86,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 4,
+      "status": 0,
+      "measurement": {
+        "mode": "sync",
+        "elapsedMs": 85.750333,
+        "maxGapMs": 85.83933400000001,
+        "ticksBeforeReady": 0,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 4,
+      "status": 0,
+      "measurement": {
+        "mode": "worker",
+        "elapsedMs": 107.339834,
+        "maxGapMs": 9.432749999999999,
+        "ticksBeforeReady": 86,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 5,
+      "status": 0,
+      "measurement": {
+        "mode": "sync",
+        "elapsedMs": 84.397458,
+        "maxGapMs": 84.48241700000001,
+        "ticksBeforeReady": 0,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 5,
+      "status": 0,
+      "measurement": {
+        "mode": "worker",
+        "elapsedMs": 106.034708,
+        "maxGapMs": 8.718541000000002,
+        "ticksBeforeReady": 86,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    }
+  ]
+}

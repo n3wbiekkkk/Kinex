@@ -230,8 +230,16 @@ async function run() {
       { name: 'Reddit', url: 'https://www.reddit.com/r/mac/' },
       { name: 'Google Docs (landing)', url: 'https://docs.google.com/' },
       { name: 'Gmail (landing)', url: 'https://mail.google.com/' },
+      { name: 'Google Drive', url: 'https://drive.google.com/' },
+      { name: 'Discord', url: 'https://discord.com/app' },
+      { name: 'Twitch', url: 'https://www.twitch.tv/' },
+      { name: 'Google Meet', url: 'https://meet.google.com/' },
+      { name: 'Figma', url: 'https://www.figma.com/' },
+      { name: 'Netflix', url: 'https://www.netflix.com/' },
     ];
 
+    const runtime = JSON.parse(execFileSync(electronBinary, ['-p', 'JSON.stringify(process.versions)'], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8' }));
+    const environment = { timestamp: new Date().toISOString(), electron: runtime.electron, chromium: runtime.chrome, node: runtime.node, os: `${os.type()} ${os.release()}`, arch: os.arch() };
     const results = [];
     for (const site of sites) {
       const t0 = performance.now();
@@ -275,6 +283,7 @@ async function run() {
           } while (Date.now() < scrollDeadline);
           keyboard = await checkKeyboard(pageCdp);
           searchInput = await checkSearchInput(pageCdp);
+          page = await pageCdp.evalJs(`(${publicPageInfo.toString()})()`);
           const firstMedia = page.media;
           if (firstMedia.some((item) => !item.paused && item.readyState >= 2)) {
             await waitMs(1000);
@@ -295,13 +304,15 @@ async function run() {
       } finally {
         pageCdp?.close();
       }
+      if (tab) tab = await shellCdp.evalJs(`window.kinexAPI.getState().then(state => state.tabs.find(tab => tab.id === ${JSON.stringify(tab.id)}))`);
       const tree = sampleProcessTree(proc.pid);
       const loaded = Boolean(page?.ready && !page.errorPage && tab && !tab.isLoading && page.url === tab.url);
       const verdict = error ? 'inconclusive'
         : page?.blocked ? 'blocked-by-site'
           : !loaded || scroll.status === 'failed' || searchInput.status === 'failed' || media.status === 'failed' ? 'failed'
-            : scroll.status === 'passed' && keyboard.status === 'passed' ? 'public-checks-passed' : 'partial';
+            : page?.authWall ? 'partial' : scroll.status === 'passed' && keyboard.status === 'passed' ? 'public-checks-passed' : 'partial';
       results.push({
+        environment,
         site: site.name,
         requestedUrl: site.url,
         finalUrl: page?.url ?? tab?.url ?? 'timeout',

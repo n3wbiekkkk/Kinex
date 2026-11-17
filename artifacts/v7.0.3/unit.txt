@@ -1,0 +1,12 @@
+
+> kinex-browser@7.0.3 test
+> vitest run
+
+
+ RUN  v5.1.0 /Users/<user>/Developer/Kinex
+
+
+ Test Files  18 passed (18)
+      Tests  91 passed (91)
+   Start at  10:49:49
+   Duration  4.18s (tests 89%, import 6%, transform 4%, worker 1%)

@@ -1,0 +1,9 @@
+INTEGRATION_PASS {"ok":true,"checksPassed":15,"startHeapMB":15,"endHeapMB":12,"rssMB":251,"archivedCount":11}
+Electron Integration Suite PASSED: {
+  ok: true,
+  checksPassed: 15,
+  startHeapMB: 15,
+  endHeapMB: 12,
+  rssMB: 251,
+  archivedCount: 11
+}

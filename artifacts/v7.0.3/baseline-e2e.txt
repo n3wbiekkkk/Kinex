@@ -1,0 +1,14 @@
+E2E_ALL_15_WORKFLOWS_PASS {
+  stepsVerified: 15,
+  uiLayout: {
+    sidebarWidth: 256,
+    sidebarOverflowX: false,
+    trafficLightClearancePx: 68,
+    sidebarAppRegion: 'drag',
+    resizerAppRegion: 'no-drag',
+    urlBarAppRegion: 'no-drag',
+    shellClass: 'kinex-shell theme-dark'
+  },
+  persistedTabCount: 8,
+  historyCount: 6
+}

@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { app } from 'electron';
 import type { ShieldsFilterListMeta } from '../../shared/types';
 
 export const MAX_FILTER_LIST_BYTES = 12 * 1024 * 1024;
@@ -15,15 +14,7 @@ export interface LoadedFilterListText {
 }
 
 export function resolveBundledFilterDir(): string {
-  const candidates = [
-    path.join(app?.getAppPath?.() ?? process.cwd(), 'resources', 'filters'),
-    path.join(__dirname, '../../../resources/filters'),
-    path.join(process.cwd(), 'resources', 'filters'),
-  ];
-  for (const dir of candidates) {
-    if (fs.existsSync(dir)) return dir;
-  }
-  return candidates[0];
+  return path.join(__dirname, '../../../resources/filters');
 }
 
 export function validateAndNormalizeFilterText(rawInput: string): {
@@ -37,7 +28,7 @@ export function validateAndNormalizeFilterText(rawInput: string): {
   if (!rawInput || typeof rawInput !== 'string') {
     return { ok: false, reason: 'Empty filter list response' };
   }
-  if (rawInput.length > MAX_FILTER_LIST_BYTES) {
+  if (Buffer.byteLength(rawInput, 'utf8') > MAX_FILTER_LIST_BYTES) {
     return { ok: false, reason: `Filter list exceeds ${MAX_FILTER_LIST_BYTES / (1024 * 1024)} MB safety limit` };
   }
   if (rawInput.includes('\0')) {
@@ -103,13 +94,18 @@ export function writeFilterListAtomically(userDataDir: string, listId: string, c
   const compressed = zlib.gzipSync(Buffer.from(cleanText, 'utf8'));
   const targetPath = path.join(dir, `${listId}.txt.gz`);
   const tmpPath = path.join(dir, `${listId}.${process.pid}.${Date.now()}.tmp`);
-  fs.writeFileSync(tmpPath, compressed);
-  fs.renameSync(tmpPath, targetPath);
+  try {
+    fs.writeFileSync(tmpPath, compressed);
+    fs.renameSync(tmpPath, targetPath);
+  } finally {
+    fs.rmSync(tmpPath, { force: true });
+  }
 }
 
 export async function downloadAndVerifyFilterList(
   sourceUrl: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal
 ): Promise<{ ok: true; text: string; ruleCount: number } | { ok: false; error: string }> {
   let parsed: URL;
   try {
@@ -118,30 +114,47 @@ export async function downloadAndVerifyFilterList(
     return { ok: false, error: 'Invalid filter list URL' };
   }
 
-  const isLocalLoopback =
-    parsed.protocol === 'http:' &&
-    (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost');
-  if (parsed.protocol !== 'https:' && !isLocalLoopback) {
-    return { ok: false, error: 'Filter list subscriptions require HTTPS' };
-  }
-
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) controller.abort();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetchImpl(parsed.toString(), {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'Kinex-Shields-Updater',
-        Accept: 'text/plain, text/*;q=0.9',
-      },
-    });
+    let response: Response;
+    let requireHttps = parsed.protocol === 'https:';
+    let redirects = 0;
+    while (true) {
+      const isLoopback = parsed.protocol === 'http:' &&
+        ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname);
+      if (parsed.username || parsed.password ||
+          (parsed.protocol !== 'https:' && (!isLoopback || requireHttps))) {
+        return { ok: false, error: 'Filter list subscriptions require HTTPS without credentials' };
+      }
+      controller.signal.throwIfAborted();
+      response = await fetchImpl(parsed.toString(), {
+        signal: controller.signal,
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'Kinex-Shields-Updater',
+          Accept: 'text/plain, text/*;q=0.9',
+        },
+      });
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      await response.body?.cancel();
+      if (++redirects > 5) return { ok: false, error: 'Too many filter list redirects' };
+      const location = response.headers.get('location');
+      if (!location) return { ok: false, error: 'Filter list redirect has no destination' };
+      parsed = new URL(location, parsed);
+      requireHttps ||= parsed.protocol === 'https:';
+    }
     if (!response.ok) {
+      await response.body?.cancel();
       return { ok: false, error: `HTTP ${response.status} while fetching filter list` };
     }
 
     const contentLen = Number(response.headers.get('content-length') || 0);
     if (Number.isFinite(contentLen) && contentLen > MAX_FILTER_LIST_BYTES) {
+      await response.body?.cancel();
       return { ok: false, error: 'Remote filter list exceeds size limit' };
     }
 
@@ -155,7 +168,7 @@ export async function downloadAndVerifyFilterList(
         if (value) {
           totalBytes += value.byteLength;
           if (totalBytes > MAX_FILTER_LIST_BYTES) {
-            void reader.cancel();
+            await reader.cancel();
             return { ok: false, error: 'Remote filter list exceeded 12 MB safety limit' };
           }
           chunks.push(value);
@@ -182,5 +195,6 @@ export async function downloadAndVerifyFilterList(
     };
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
   }
 }

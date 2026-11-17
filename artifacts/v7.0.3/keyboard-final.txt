@@ -1,0 +1,29 @@
+PASS 1: Launch Kinex
+PASS 2: Open a new tab through Cmd+T
+PASS 3: Navigate to a local article URL
+PASS 4: Open another tab
+PASS 5: Switch tabs with Ctrl+Shift+Tab
+PASS 6: Pin a tab
+PASS 7: Move the tab to Work
+PASS 8: Create a Space
+PASS 9: Rename the Space
+PASS 10: Open Split View
+PASS 11: Adjust the split divider through keyboard
+PASS 12: Open the Command Bar from browser UI
+PASS 13: Find and select a command with keyboard
+PASS 14: Open Settings
+PASS 15: Change a setting without a mouse
+PASS 16: Open Downloads
+[95213:1117/104859.423915:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:260] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[95213:1117/104859.424200:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:260] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+PASS 17: Open Reader Mode
+PASS 18: Close a tab
+PASS 19: Restore the closed tab
+PASS 20: Return focus to website content
+PASS 21: Modal focus traps forward and reverse Tab; Escape restores native focus
+PASS 22: Sidebar roving arrows, reorder alternative and F6 return path
+PASS 23: Reduced Motion disables overlay movement and completes closing lifecycle
+PASS 24: Element Zapper selects, confirms and cancels through keyboard
+PASS 25: Open the real native tab context menu from keyboard
+Keyboard acceptance PASSED: 25 completed assertions, 1759 keyboard events, no mouse events.
+Keyboard-only acceptance passed. Report: /Users/<user>/Developer/Kinex/artifacts/v7.0.3/keyboard-final/keyboard-results.json

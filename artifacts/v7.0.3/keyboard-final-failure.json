@@ -1,0 +1,480 @@
+{
+  "timestamp": "2026-11-17T03:45:44.257Z",
+  "ok": false,
+  "steps": [
+    {
+      "number": 1,
+      "name": "Launch Kinex",
+      "status": "passed",
+      "durationMs": 227.04004200000003,
+      "evidence": {
+        "version": "45.3.3",
+        "initialTabs": 1
+      }
+    },
+    {
+      "number": 2,
+      "name": "Open a new tab through Cmd+T",
+      "status": "passed",
+      "durationMs": 118.79487499999999,
+      "evidence": null
+    },
+    {
+      "number": 3,
+      "name": "Navigate to a local article URL",
+      "status": "passed",
+      "durationMs": 102.13320800000002,
+      "evidence": {
+        "url": "http://127.0.0.1:49866/article-one"
+      }
+    },
+    {
+      "number": 4,
+      "name": "Open another tab",
+      "status": "passed",
+      "durationMs": 149.24154099999998,
+      "evidence": {
+        "url": "http://127.0.0.1:49866/article-two"
+      }
+    },
+    {
+      "number": 5,
+      "name": "Switch tabs with Ctrl+Shift+Tab",
+      "status": "passed",
+      "durationMs": 20.406999999999925,
+      "evidence": {
+        "tabId": "tab-1794887144680-66ld"
+      }
+    },
+    {
+      "number": 6,
+      "name": "Pin a tab",
+      "status": "passed",
+      "durationMs": 104.3877920000001,
+      "evidence": null
+    },
+    {
+      "number": 7,
+      "name": "Move the tab to Work",
+      "status": "passed",
+      "durationMs": 104.36683300000004,
+      "evidence": null
+    },
+    {
+      "number": 8,
+      "name": "Create a Space",
+      "status": "passed",
+      "durationMs": 161.3672499999999,
+      "evidence": null
+    },
+    {
+      "number": 9,
+      "name": "Rename the Space",
+      "status": "passed",
+      "durationMs": 445.68287499999997,
+      "evidence": null
+    },
+    {
+      "number": 10,
+      "name": "Open Split View",
+      "status": "passed",
+      "durationMs": 103.40945899999997,
+      "evidence": null
+    },
+    {
+      "number": 11,
+      "name": "Adjust the split divider through keyboard",
+      "status": "failed",
+      "durationMs": 126.94633299999987,
+      "error": "AssertionError [ERR_ASSERTION]: Keyboard input requires an actually focused WebContents\n    at currentContents (/Users/<user>/Developer/Kinex/tests/e2e/keyboard-only.cjs:59:10)\n    at tabTo (/Users/<user>/Developer/Kinex/tests/e2e/keyboard-only.cjs:102:9)\n    at async /Users/<user>/Developer/Kinex/tests/e2e/keyboard-only.cjs:254:7\n    at async step (/Users/<user>/Developer/Kinex/tests/e2e/keyboard-only.cjs:141:22)\n    at async run (/Users/<user>/Developer/Kinex/tests/e2e/keyboard-only.cjs:252:5)",
+      "diagnostics": {
+        "shell": {
+          "focused": false,
+          "active": "<button class=\"pane-pill-main\" aria-label=\"Focus pane 1: New Tab — Kinex\"><span class=\"pane-pill-url\">kinex://newtab/</span></button>",
+          "selection": [
+            null,
+            null
+          ]
+        },
+        "overlay": {
+          "focused": false,
+          "active": "<body>\n    <div id=\"root\"><div tabindex=\"-1\" class=\"overlay-backdrop theme-dark  \" data-closing=\"true\" inert=\"\" aria-hidden=\"true\"><div class=\"command-bar\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Command Bar\"><div class=\"command-input-wrap\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-search\" aria-hidden=\"true\" style=\"color: var(--text-muted); flex-shrink: 0;\"><path d=\"m21 21-4.34-4.34\"></path><circle cx=\"11\" cy=\"11\" r=\"8\"></circle></s",
+          "input": "Focus Toolbar",
+          "selection": [
+            13,
+            13
+          ]
+        }
+      }
+    }
+  ],
+  "input": {
+    "keyboardEvents": 621,
+    "mouseEvents": 0,
+    "transcript": [
+      {
+        "step": 2,
+        "webContentsId": 3,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.02545900000001211
+      },
+      {
+        "step": 3,
+        "type": "http://127.0.0.1:49866/article-one"
+      },
+      {
+        "step": 3,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.03275000000002137
+      },
+      {
+        "step": 4,
+        "webContentsId": 5,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.021541999999953987
+      },
+      {
+        "step": 4,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.0105829999999969
+      },
+      {
+        "step": 4,
+        "type": "http://127.0.0.1:49866/article-two"
+      },
+      {
+        "step": 4,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.03300000000001546
+      },
+      {
+        "step": 5,
+        "webContentsId": 6,
+        "key": "Tab",
+        "modifiers": [
+          "control",
+          "shift"
+        ],
+        "focusWaitMs": 0.02041600000006838
+      },
+      {
+        "step": 6,
+        "webContentsId": 5,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.03566699999998946
+      },
+      {
+        "step": 6,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.010374999999953616
+      },
+      {
+        "step": 6,
+        "type": "Pin / Unpin Tab"
+      },
+      {
+        "step": 6,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.03741600000000744
+      },
+      {
+        "step": 7,
+        "webContentsId": 5,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.02183300000001509
+      },
+      {
+        "step": 7,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.005499999999983629
+      },
+      {
+        "step": 7,
+        "type": "Move Tab to Work"
+      },
+      {
+        "step": 7,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.01925000000005639
+      },
+      {
+        "step": 8,
+        "webContentsId": 7,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.038584000000014385
+      },
+      {
+        "step": 8,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.009291999999959444
+      },
+      {
+        "step": 8,
+        "type": "New Space"
+      },
+      {
+        "step": 8,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.02566700000011224
+      },
+      {
+        "step": 8,
+        "type": "Keyboard Lab"
+      },
+      {
+        "step": 8,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.03754099999991922
+      },
+      {
+        "step": 9,
+        "webContentsId": 8,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.025374999999939973
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.028874999999970896
+      },
+      {
+        "step": 9,
+        "type": "Rename Space"
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.03399999999987813
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.007832999999891399
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.026499999999941792
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.03891599999997197
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.023832999999967797
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.07187500000009095
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.04795899999999165
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.022874999999885404
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.042874999999867214
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.02420799999981682
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.0437090000000353
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.02591600000005201
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.028375000000096406
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.022917000000006738
+      },
+      {
+        "step": 9,
+        "type": "Keyboard Studio"
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.023292000000083135
+      },
+      {
+        "step": 10,
+        "webContentsId": 8,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.02683300000012423
+      },
+      {
+        "step": 10,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.013249999999970896
+      },
+      {
+        "step": 10,
+        "type": "Toggle Split View"
+      },
+      {
+        "step": 10,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.024292000000059488
+      },
+      {
+        "step": 11,
+        "webContentsId": 9,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.021999999999934516
+      },
+      {
+        "step": 11,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.007790999999997439
+      },
+      {
+        "step": 11,
+        "type": "Focus Toolbar"
+      },
+      {
+        "step": 11,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.022874999999885404
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.015916000000061103
+      }
+    ]
+  },
+  "methodology": "Only focused WebContents.sendInputEvent keyDown/char/keyUp events mutate UI during acceptance. Snapshot and executeJavaScript reads assert outcomes. No clicks, scripted focus, hidden dispatch or test-only app commands.",
+  "limitations": [
+    "Deterministic local article fixture and disposable profile; arbitrary website keyboard behavior is outside this acceptance.",
+    "Native context menu opening is observed; OS-level native menu traversal is not simulated by Chromium input events."
+  ],
+  "fatalError": "AssertionError [ERR_ASSERTION]: Keyboard input requires an actually focused WebContents\n    at currentContents (/Users/<user>/Developer/Kinex/tests/e2e/keyboard-only.cjs:59:10)\n    at tabTo (/Users/<user>/Developer/Kinex/tests/e2e/keyboard-only.cjs:102:9)\n    at async /Users/<user>/Developer/Kinex/tests/e2e/keyboard-only.cjs:254:7\n    at async step (/Users/<user>/Developer/Kinex/tests/e2e/keyboard-only.cjs:141:22)\n    at async run (/Users/<user>/Developer/Kinex/tests/e2e/keyboard-only.cjs:252:5)",
+  "finalState": {
+    "tabs": 5,
+    "spaces": [
+      {
+        "id": "space-personal",
+        "name": "Personal"
+      },
+      {
+        "id": "space-work",
+        "name": "Work"
+      },
+      {
+        "id": "space-1794887145263",
+        "name": "Keyboard Studio"
+      }
+    ],
+    "overlay": "none"
+  }
+}

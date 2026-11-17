@@ -142,21 +142,21 @@ export class KinexWindowManager {
     this.permissionManager = new PermissionManager({
       getMainWindow: () => this.mainWindow,
       getDecisions: () => this.persisted.sitePermissions,
-      recordDecision: (origin, permission, decision) => {
+      recordDecision: (partition, origin, permission, decision) => {
         const filtered = this.persisted.sitePermissions.filter(
-          (p) => !(p.origin === origin && p.permission === permission)
+          (p) => !(p.partition === partition && p.origin === origin && p.permission === permission)
         );
         this.persisted = {
           ...this.persisted,
-          sitePermissions: [...filtered, { origin, permission, decision, updatedAt: Date.now() }],
+          sitePermissions: [...filtered, { partition, origin, permission, decision, updatedAt: Date.now() }],
         };
         this.persistAndBroadcast();
       },
-      revokeDecision: (origin, permission) => {
+      revokeDecision: (partition, origin, permission) => {
         this.persisted = {
           ...this.persisted,
           sitePermissions: this.persisted.sitePermissions.filter(
-            (p) => !(p.origin === origin && p.permission === permission)
+            (p) => !(p.partition === partition && p.origin === origin && p.permission === permission)
           ),
         };
         this.persistAndBroadcast();
@@ -176,9 +176,8 @@ export class KinexWindowManager {
         adBlockEnabled: this.persisted.shields.globalMode !== 'disabled',
       };
     } else {
-      setImmediate(() => {
+      void this.shieldsEngine.initialize().then(({ updatedLists }) => {
         if (this.disposed) return;
-        const { updatedLists } = this.shieldsEngine.initializeSync();
         this.persisted = {
           ...this.persisted,
           shields: { ...this.persisted.shields, filterLists: updatedLists },
@@ -219,13 +218,13 @@ export class KinexWindowManager {
         onWebContentsCreated: (wc) => {
           this.attachKeyboard(wc);
           this.attachOverlayFocusGuard(wc);
+          this.attachShieldsCleanup(wc);
         },
         onTabWebContentsCreated: (tabId, wc) => {
           this.tabIdByWcId.set(wc.id, tabId);
         },
         onTabWebContentsDestroyed: (wcId) => {
           this.tabIdByWcId.delete(wcId);
-          this.shieldsCoordinator.clearWebContentsTracking(wcId);
         },
         onApplyShieldsCosmetics: (wc, url) => this.shieldsCosmetics.applyForWebContents(wc, url),
         getTabById: (tabId) => this.persisted.tabs.find((t) => t.id === tabId),
@@ -327,7 +326,10 @@ export class KinexWindowManager {
     this.auxiliaryWindows = new AuxiliaryWindowManager(
       {
         getRendererUrl: (view) => this.getRendererUrl(view),
-        onWebContentsCreated: (wc) => this.attachKeyboard(wc),
+        onWebContentsCreated: (wc) => {
+          this.attachKeyboard(wc);
+          this.attachShieldsCleanup(wc);
+        },
         onApplyShieldsCosmetics: (wc, url) => this.shieldsCosmetics.applyForWebContents(wc, url),
         getSearchEngine: () => this.persisted.searchEngine,
         getRegularSessionForActiveSpace: () => this.getSessionForSpace(this.persisted.activeSpaceId),
@@ -350,6 +352,14 @@ export class KinexWindowManager {
         }
       }
     );
+  }
+
+  private attachShieldsCleanup(wc: WebContents): void {
+    const wcId = wc.id;
+    wc.once('destroyed', () => {
+      this.shieldsCoordinator.clearWebContentsTracking(wcId);
+      this.shieldsCosmetics.forgetWebContents(wcId);
+    });
   }
 
   setStartupUrl(rawUrl?: string): void {
@@ -424,6 +434,9 @@ export class KinexWindowManager {
         preload: path.join(__dirname, '../preload/shell.js'),
         contextIsolation: true,
         nodeIntegration: false,
+        nodeIntegrationInWorker: false,
+        nodeIntegrationInSubFrames: false,
+        webviewTag: false,
         sandbox: true,
         webSecurity: true,
         allowRunningInsecureContent: false,
@@ -524,9 +537,12 @@ export class KinexWindowManager {
     const base = this.getRendererUrl(mode).split('?')[0];
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
     wc.on('will-navigate', (event, url) => {
-      if (!url.startsWith(base)) {
+      if (url.split('?')[0].split('#')[0] !== base) {
         event.preventDefault();
       }
+    });
+    wc.on('will-redirect', (event, url) => {
+      if (url.split('?')[0].split('#')[0] !== base) event.preventDefault();
     });
     wc.on('render-process-gone', () => {
       if (!this.disposed && !wc.isDestroyed()) {
@@ -577,6 +593,9 @@ export class KinexWindowManager {
         preload: path.join(__dirname, '../preload/shell.js'),
         contextIsolation: true,
         nodeIntegration: false,
+        nodeIntegrationInWorker: false,
+        nodeIntegrationInSubFrames: false,
+        webviewTag: false,
         sandbox: true,
         webSecurity: true,
         allowRunningInsecureContent: false,
@@ -995,6 +1014,10 @@ export class KinexWindowManager {
       }
 
       case 'create-space': {
+        if (intent.profilePartition && !this.persisted.profiles.some((p) => p.partition === intent.profilePartition)) {
+          this.showToast('Select an existing Profile');
+          return;
+        }
         const id = `space-${Date.now()}`;
         const partition = intent.profilePartition || this.persisted.profiles[0]?.partition || 'persist:nook-default';
         const welcomeTab: TabItem = {
@@ -1030,6 +1053,10 @@ export class KinexWindowManager {
       }
 
       case 'update-space': {
+        if (intent.profilePartition && !this.persisted.profiles.some((p) => p.partition === intent.profilePartition)) {
+          this.showToast('Select an existing Profile');
+          return;
+        }
         const previousSpace = this.persisted.spaces.find((s) => s.id === intent.spaceId);
         const profileChanged = Boolean(intent.profilePartition && previousSpace?.profilePartition !== intent.profilePartition);
         this.persisted = {
@@ -1639,7 +1666,7 @@ export class KinexWindowManager {
       }
 
       case 'revoke-site-permission': {
-        this.permissionManager.revoke(intent.origin, intent.permission);
+        this.permissionManager.revoke(intent.partition, intent.origin, intent.permission);
         return;
       }
 
@@ -1951,7 +1978,12 @@ export class KinexWindowManager {
           : getFocusedTab(this.persisted);
         if (!tab) return;
         const clean = this.persisted.cleanCopyUrl ? stripTrackingParams(tab.url) : tab.url;
-        clipboard.writeText(clean);
+        try {
+          await clipboard.writeText(clean);
+        } catch {
+          this.showToast('Unable to copy URL');
+          return;
+        }
         this.showToast(
           clean !== tab.url ? 'Copied clean URL (tracking stripped)' : 'Copied URL'
         );
@@ -2576,7 +2608,7 @@ export class KinexWindowManager {
         case 'stop-loading': source.stop(); break;
         case 'back': if (source.navigationHistory.canGoBack()) source.navigationHistory.goBack(); break;
         case 'forward': if (source.navigationHistory.canGoForward()) source.navigationHistory.goForward(); break;
-        case 'copy-url': clipboard.writeText(source.getURL()); break;
+        case 'copy-url': await clipboard.writeText(source.getURL()).catch(() => this.showToast('Unable to copy URL')); break;
         case 'print-page': source.print({ printBackground: true }); break;
         case 'devtools': source.openDevTools({ mode: 'detach' }); break;
       }
@@ -2719,7 +2751,6 @@ export class KinexWindowManager {
 
     this.tabManager.disposeAll();
     this.auxiliaryWindows.disposeAll();
-    this.updater.dispose();
     this.tabIdByWcId.clear();
     this.needsReloadByTabId.clear();
     this.pickerActiveTabId = null;
@@ -2764,6 +2795,8 @@ export class KinexWindowManager {
   dispose(): void {
     this.cleanupWindowResources();
     this.downloadManager.dispose();
+    this.updater.dispose();
+    this.shieldsEngine.dispose();
   }
 }
 

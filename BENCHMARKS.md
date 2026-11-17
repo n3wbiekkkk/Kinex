@@ -1,5 +1,6 @@
 # Kinex Browser Performance Benchmarks (`v0.4.0` → `v0.7.0`)
 
+Current v7.0.3 measurements and limitations are in [the release report](docs/quality/v7.0.3-report.md) and [performance results](docs/quality/performance-v7.0.3.md). Numbers below are historical and are not current release gates.
 ## Test Environment & Hardware
 
 - **Machine**: Apple M5 (`arm64`), 10 CPU cores, 16 GB RAM

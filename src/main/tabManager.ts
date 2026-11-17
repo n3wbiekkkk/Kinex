@@ -98,6 +98,9 @@ export class TabManager {
         session: sess,
         contextIsolation: true,
         nodeIntegration: false,
+        nodeIntegrationInWorker: false,
+        nodeIntegrationInSubFrames: false,
+        webviewTag: false,
         sandbox: true,
         webSecurity: true,
         allowRunningInsecureContent: false,
@@ -289,7 +292,7 @@ export class TabManager {
           },
           {
             label: 'Copy Link Address',
-            click: () => clipboard.writeText(safeLink),
+            click: () => { void clipboard.writeText(safeLink).catch(() => console.warn('Kinex could not copy the link.')); },
           },
           { type: 'separator' }
         );
@@ -594,7 +597,7 @@ export class TabManager {
   }
 
   disposeAll(): void {
-    for (const popup of this.popupWindows) if (!popup.isDestroyed()) popup.close();
+    for (const popup of this.popupWindows) if (!popup.isDestroyed()) popup.destroy();
     this.popupWindows.clear();
     this.disposed = true;
     const ids = Array.from(this.tabViews.keys());

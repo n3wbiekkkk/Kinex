@@ -1,0 +1,12 @@
+file:///Users/<user>/Developer/Kinex/tests/integration/run-packaged.mjs:70
+  throw new Error(`Timed out: ${label}\n${logs}`);
+        ^
+
+Error: Timed out: packaged native Shields
+
+DevTools listening on ws://127.0.0.1:49186/devtools/browser/2043856d-9559-47b1-a724-34aa1e265183
+
+    at waitFor (file:///Users/<user>/Developer/Kinex/tests/integration/run-packaged.mjs:70:9)
+    at async file:///Users/<user>/Developer/Kinex/tests/integration/run-packaged.mjs:77:19
+
+Node.js v24.15.0

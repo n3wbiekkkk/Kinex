@@ -6,51 +6,89 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify-and-package-mac:
-    runs-on: macos-latest
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      KINEX_DISABLE_AUTO_UPDATER: '1'
+      KINEX_TEST_MODE: '1'
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          node-version: 22
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
           cache: npm
 
-      - name: Install dependencies
+      - name: Verify Apple Silicon runner and native toolchain
+        run: |
+          test "$(uname -m)" = arm64
+          xcode-select -p
+          rustc --version
+          cargo --version
+
+      - name: Install locked dependencies and build native addon
         run: npm ci
 
-      - name: Build Native Adblock Engine (Rust N-API)
-        run: npm run build:native
+      - name: Download pinned Electron runtime
+        run: npx --no-install install-electron
 
-      - name: Typecheck Main & Renderer
-        run: npm run typecheck
+      - name: Audit locked dependencies
+        run: npm audit --audit-level=moderate
 
-      - name: Run Unit Tests (Vitest)
-        run: npm test
+      - name: Typecheck and compiler lint
+        run: npm run typecheck && npm run lint
 
-      - name: Build Production Bundles
+      - name: Run pure unit and boundary regression tests
+        run: npm run test:pure
+
+      - name: Run native Shields unit tests
+        run: npm run test:native
+
+      - name: Build production bundles
         run: npm run build
 
-      - name: Run Electron Main-Process Integration Tests
-        run: npm run test:integration
+      - name: Verify cold Shields startup lifecycle and responsiveness
+        run: node tests/perf/run-shields-initialization.mjs
 
-      - name: Run Full 15-Workflow Electron E2E Suite
-        run: npm run test:e2e
+      - name: Run real Electron integration and security regressions
+        run: node tests/integration/run-integration.mjs && node tests/integration/run-security.mjs
 
-      - name: Verify Keyboard-Only Workflows
-        run: npm run test:keyboard
+      - name: Run browser E2E workflows
+        run: node tests/e2e/run-e2e.mjs
 
-      - name: Verify Focus and Window Integration
-        run: npm run test:experience
-
-      - name: Verify macOS App Packaging
-        run: npx electron-builder --mac --publish never
-
-      - name: Inspect Packaging Manifest
+      - name: Verify keyboard, focus, profile, and Shields workflows
         run: |
-          test -f release/latest-mac.yml
-          cat release/latest-mac.yml
+          node tests/e2e/run-keyboard-only.mjs --out=artifacts/ci/keyboard
+          node tests/integration/run-experience.mjs --out=artifacts/ci/experience.json
+          node tests/integration/run-shields.mjs
+
+      - name: Package unsigned arm64 validation bundle
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx --no-install electron-builder --mac --arm64 --publish never
+
+      - name: Launch packaged application with disposable data
+        run: node tests/integration/run-packaged.mjs
+
+      - name: Retain validation evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: kinex-mac-validation
+          path: artifacts/ci
+          if-no-files-found: warn
+          retention-days: 14

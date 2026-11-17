@@ -54,8 +54,8 @@ function focusedTab() {
   const split = state.splitsBySpace[state.activeSpaceId];
   return state.tabs.find((tab) => tab.id === split.tabIds[split.focusedIndex]);
 }
-function currentContents() {
-  const current = webContents.getFocusedWebContents();
+async function currentContents() {
+  const current = await until(() => webContents.getFocusedWebContents(), 'native focus before inspection', 1500);
   assert.ok(current && !current.isDestroyed(), 'Keyboard input requires an actually focused WebContents');
   return current;
 }
@@ -77,7 +77,7 @@ async function key(keyCode, modifiers = []) {
 }
 async function type(text) {
   for (const character of text) {
-    const current = currentContents();
+    const current = await currentContents();
     current.sendInputEvent({ type: 'keyDown', keyCode: character });
     current.sendInputEvent({ type: 'char', keyCode: character });
     current.sendInputEvent({ type: 'keyUp', keyCode: character });
@@ -87,7 +87,7 @@ async function type(text) {
   await delay(35);
 }
 async function clearTextField() {
-  const wc = currentContents();
+  const wc = await currentContents();
   const value = await read(wc, 'document.activeElement?.value');
   assert.equal(typeof value, 'string', 'Text replacement requires a focused text field');
   await key('End');
@@ -99,7 +99,7 @@ async function activeMatches(wc, selector) {
 }
 async function tabTo(selector, wc = manager.shellView.webContents) {
   for (let count = 0; count < 100; count++) {
-    if (currentContents().id === wc.id && await activeMatches(wc, selector)) return;
+    if ((await currentContents()).id === wc.id && await activeMatches(wc, selector)) return;
     await key('Tab');
   }
   throw new Error(`Could not reach ${selector} with Tab`);
@@ -108,7 +108,7 @@ async function palette(query, execute = true) {
   await key('t', ['meta']);
   await until(() => snapshot().overlay.mode === 'command-bar', 'Command Bar opened by Cmd+T');
   const wc = manager.overlayView.webContents;
-  await until(async () => currentContents().id === wc.id && await activeMatches(wc, '.command-input'), 'Command Bar native and DOM input focus');
+  await until(async () => (await currentContents()).id === wc.id && await activeMatches(wc, '.command-input'), 'Command Bar native and DOM input focus');
   await clearTextField();
   await type(query);
   await until(() => read(wc, `document.querySelector('.command-input')?.value === ${JSON.stringify(query)}`), 'query typed');
@@ -132,7 +132,7 @@ async function command(title) {
 async function closeOverlay() {
   await key('Escape');
   await until(() => snapshot().overlay.mode === 'none', 'Escape closed overlay');
-  await until(() => currentContents().id !== manager.overlayView?.webContents.id, 'focus leaves closed overlay');
+  await until(async () => (await currentContents()).id !== manager.overlayView?.webContents.id, 'focus leaves closed overlay');
 }
 async function step(number, name, work) {
   actionNumber = number;
@@ -268,7 +268,7 @@ async function run() {
     await step(14, 'Open Settings', async () => {
       await key('Enter');
       await until(() => snapshot().overlay.mode === 'settings', 'Settings shown');
-      assert.equal(currentContents().id, manager.overlayView.webContents.id);
+      assert.equal((await currentContents()).id, manager.overlayView.webContents.id);
     });
     await step(15, 'Change a setting without a mouse', async () => {
       const before = snapshot().cleanCopyUrl;
@@ -312,7 +312,7 @@ async function run() {
     await step(20, 'Return focus to website content', async () => {
       await command('Focus Website Content');
       const view = manager.tabManager.getView(focusedTab().id);
-      await until(() => currentContents().id === view.webContents.id, 'real native website focus');
+      await until(async () => (await currentContents()).id === view.webContents.id, 'real native website focus');
       await key('Tab');
       await until(() => activeMatches(view.webContents, '#draft'), 'website receives Tab');
       await type('ordinary typing');
@@ -331,11 +331,11 @@ async function run() {
         for (let index = 0; index <= count; index++) {
           await key('Tab', modifiers);
           assert.equal(await read(overlay, 'Boolean(document.activeElement?.closest("[role=dialog]"))'), true, 'Tab focus stays inside Settings');
-          assert.equal(currentContents().id, overlay.id);
+          assert.equal((await currentContents()).id, overlay.id);
         }
       }
       await closeOverlay();
-      assert.notEqual(currentContents().id, overlay.id, 'Closed overlay must release native focus');
+      assert.notEqual((await currentContents()).id, overlay.id, 'Closed overlay must release native focus');
       return { forwardAndReverseCycles: 2, focusableControls: count };
     });
     await step(22, 'Sidebar roving arrows, reorder alternative and F6 return path', async () => {
@@ -354,9 +354,9 @@ async function run() {
       await key(orderBefore.indexOf(selectedId) === 0 ? 'ArrowDown' : 'ArrowUp', ['alt']);
       await until(() => snapshot().tabs.filter((tab) => orderBefore.includes(tab.id)).map((tab) => tab.id).join() !== orderBefore.join(), 'keyboard reorder changes actual tab order');
       await key('Enter');
-      await until(() => currentContents().id !== shell.id, 'Enter activates sidebar tab');
+      await until(async () => (await currentContents()).id !== shell.id, 'Enter activates sidebar tab');
       await key('F6');
-      await until(() => currentContents().id === shell.id, 'F6 returns from remote page to browser UI');
+      await until(async () => (await currentContents()).id === shell.id, 'F6 returns from remote page to browser UI');
       assert.equal(await activeMatches(shell, '[data-sidebar-item]'), true);
       await command('Focus Website Content');
       return { before, after, orderBefore, orderAfter: snapshot().tabs.filter((tab) => orderBefore.includes(tab.id)).map((tab) => tab.id), f6FromWebsite: true };
@@ -391,7 +391,7 @@ async function run() {
         await tabTo('.modal-header .btn-secondary', manager.overlayView.webContents);
         await key('Enter');
         await until(() => snapshot().zapperActiveTabId === tabId, 'zapper active');
-        await until(() => currentContents().id === page.id, 'zapper receives native page focus');
+        await until(async () => (await currentContents()).id === page.id, 'zapper receives native page focus');
       }
       await startZapper();
       await key('Tab');

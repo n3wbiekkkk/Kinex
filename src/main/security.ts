@@ -61,6 +61,7 @@ export function shouldOfferInsecureHttpFallback(
 }
 
 export function isAllowedExternalProtocol(rawUrl: string): boolean {
+  if (/[\u0000-\u001f\u007f]/.test(rawUrl)) return false;
   try {
     const parsed = new URL(rawUrl);
     return ALLOWED_EXTERNAL_PROTOCOLS.has(parsed.protocol.toLowerCase());
@@ -76,8 +77,9 @@ export function isSafeUpdateFeedUrl(rawFeed: string): boolean {
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
     try {
       const parsed = new URL(trimmed);
+      if (parsed.username || parsed.password) return false;
       if (parsed.protocol === 'https:' && parsed.hostname.length > 0) return true;
-      if (parsed.protocol === 'http:' && isLocalHostname(parsed.hostname)) return true;
+      if (parsed.protocol === 'http:' && isLoopbackHostname(parsed.hostname)) return true;
       return false;
     } catch {
       return false;
@@ -142,6 +144,22 @@ export function isLocalHostname(hostname: string): boolean {
     host === '::1' ||
     host.endsWith('.local')
   );
+}
+
+export function isLoopbackHostname(hostname: string): boolean {
+  return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname.toLowerCase());
+}
+
+export function isSameOriginBlobUrl(targetUrl: string, sourceUrl: string): boolean {
+  try {
+    const target = new URL(targetUrl);
+    const source = new URL(sourceUrl);
+    return target.protocol === 'blob:' &&
+      (source.protocol === 'https:' || source.protocol === 'http:') &&
+      target.origin === source.origin;
+  } catch {
+    return false;
+  }
 }
 
 export function upgradeUrlToHttpsIfNeeded(

@@ -54,6 +54,7 @@ export function publicPageInfo() {
     ready: document.readyState === 'interactive' || document.readyState === 'complete',
     errorPage: location.protocol === 'chrome-error:',
     blocked,
+    authWall: /(^|\.)accounts\.google\.com$/.test(location.hostname) || /\/(login|signin)(?:\/|$)/i.test(location.pathname),
     textLength: document.body?.textContent?.trim().length ?? 0,
     links: document.querySelectorAll('a[href]').length,
     forms: document.forms.length,

@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -244,7 +245,9 @@ async function launchTimed(userDataDir, serverPort, extraArgs = []) {
   const shellTarget = await waitForTarget(cdpPort, (t) => t.url.includes('?view=shell'), 'shell');
   const shellCdp = await connectCdp(shellTarget.webSocketDebuggerUrl);
 
+  const shellDeadline = Date.now() + 15000;
   while (true) {
+    assert.ok(Date.now() < shellDeadline, 'Shell failed to hydrate before benchmark deadline');
     const ready = await shellCdp.evalJs(`Boolean(document.querySelector('.kinex-shell'))`).catch(() => false);
     if (ready) break;
     await waitMs(15);
@@ -258,7 +261,9 @@ async function launchTimed(userDataDir, serverPort, extraArgs = []) {
     'initial tab'
   );
   const welcomeCdp = await connectCdp(welcomeTarget.webSocketDebuggerUrl);
+  const welcomeDeadline = Date.now() + 15000;
   while (true) {
+    assert.ok(Date.now() < welcomeDeadline, 'Welcome page failed to load before benchmark deadline');
     const state = await welcomeCdp.evalJs(`document.readyState`).catch(() => '');
     if (state === 'complete') break;
     await waitMs(15);
@@ -348,15 +353,17 @@ async function measureTabScaling(serverPort, targetCount) {
       })()`);
 
       // Wait until the new tab finishes loading
+      let navigationComplete = false;
       const deadline = Date.now() + 15000;
       while (Date.now() < deadline) {
         const loaded = await shellCdp.evalJs(`window.kinexAPI.getState().then(s => {
           const t = s.tabs.find(x => x.url.includes(${JSON.stringify(`site${i}.bench.test`)}) && x.url.includes('i=${i}'));
-          return Boolean(t && !t.isLoading);
+          return Boolean(t && !t.isLoading && t.title === 'Bench Site ${i}' && !t.isCrashed);
         })`);
-        if (loaded) break;
+        if (loaded) { navigationComplete = true; break; }
         await waitMs(20);
       }
+      assert.ok(navigationComplete, `Benchmark navigation ${i} did not load correct fixture content`);
       navLatencies.push(performance.now() - tStart);
 
       if (i % 5 === 0 || i === targetCount) {
@@ -378,7 +385,9 @@ async function measureTabScaling(serverPort, targetCount) {
         await shellCdp.evalJs(`(async () => {
           await window.kinexAPI.dispatch({ type: 'select-tab', tabId: ${JSON.stringify(targetId)} });
         })()`);
+        const switchDeadline = Date.now() + 8000;
         while (true) {
+          assert.ok(Date.now() < switchDeadline, 'Tab switch failed before deadline');
           const active = await shellCdp.evalJs(`window.kinexAPI.getState().then(st => {
             const sp = st.splitsBySpace[st.activeSpaceId];
             return sp && sp.tabIds[sp.focusedIndex] === ${JSON.stringify(targetId)};
@@ -403,6 +412,7 @@ async function measureTabScaling(serverPort, targetCount) {
 
     return {
       tabs: targetCount,
+      validation: { completedNavigations: navLatencies.length, completedSwitches: switchLatencies.length, failures: 0 },
       navLatencyMs: stats(navLatencies),
       switchLatencyMs: tabIds.length >= 2 ? stats(switchLatencies) : { mean: 0, median: 0, p95: 0, min: 0, max: 0 },
       memory: {
@@ -441,6 +451,7 @@ async function main() {
     }
     const result = {
       timestamp: new Date().toISOString(),
+      runtime: JSON.parse(execFileSync(electronBinary, ['-p', 'JSON.stringify(process.versions)'], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8' })),
       hardware: {
         arch: os.arch(),
         cpus: os.cpus()[0]?.model,

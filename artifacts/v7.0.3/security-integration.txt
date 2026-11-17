@@ -1,0 +1,30 @@
+[95373:1117/104955.614284:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[95373:1117/104955.614484:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+{
+  "ok": true,
+  "electron": "45.3.3",
+  "chromium": "156.0.8078.100",
+  "node": "24.22.3",
+  "arch": "arm64",
+  "os": "27.2.0",
+  "drm": {
+    "status": "rejected",
+    "error": "NotSupportedError",
+    "message": "Unsupported keySystem or supportedConfigurations.",
+    "playback": "NOT TESTED"
+  },
+  "checks": [
+    "remote isolation",
+    "Canvas/WebGL2/local file input",
+    "IndexedDB/cache/service-worker/profile isolation",
+    "private storage purge",
+    "scoped permission/revocation/private denial",
+    "CSP nonce/search",
+    "real tab preferences",
+    "unknown profile rejection",
+    "updater event lifecycle across window close",
+    "async clipboard error handling"
+  ]
+}
+[95372:1117/104955.673694:ERROR:base/process/process_mac.cc:45] task_policy_set TASK_CATEGORY_POLICY: (os/kern) invalid argument (4)
+[95372:1117/104955.673732:ERROR:base/process/process_mac.cc:90] task_policy_set TASK_SUPPRESSION_POLICY: (os/kern) invalid argument (4)

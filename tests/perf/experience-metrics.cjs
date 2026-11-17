@@ -95,6 +95,7 @@ async function run() {
   let server;
   const result = {
     timestamp: new Date().toISOString(),
+    runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
     hardware: { arch: os.arch(), cpu: os.cpus()[0]?.model, cores: os.cpus().length, memoryGB: os.totalmem() / 1024 ** 3, os: `${os.type()} ${os.release()}` },
     methodology: [
       'One disposable Electron process; production dist assets; local stable HTTP documents; no network timing.',
@@ -107,6 +108,9 @@ async function run() {
     ],
     errors: [],
   };
+  const mainTimerGaps = [];
+  let lastMainTick = performance.now();
+  const mainTimer = setInterval(() => { const now = performance.now(); mainTimerGaps.push(now - lastMainTick); lastMainTick = now; }, 10);
   const watchdog = setTimeout(() => { console.error('Experience measurement exceeded 90 seconds'); app.exit(1); }, 90000);
   try {
     ensureAppName();
@@ -169,6 +173,24 @@ async function run() {
       switchLatencies.push(performance.now() - t0);
     }
     result.tabSwitchMs = stats(switchLatencies);
+    await manager.handleIntent({ type: 'select-space', spaceId: 'space-work' });
+    await manager.handleIntent({ type: 'open-url', url: `${result.fixtureUrl}/work`, target: 'new-tab' });
+    await until(() => manager.getSnapshot().tabs.find((tab) => tab.url.endsWith('/work') && !tab.isLoading), 'work fixture');
+    const spaceLatencies = [];
+    for (let round = 0; round < 6; round++) {
+      const spaceId = round % 2 ? 'space-work' : 'space-personal';
+      const start = performance.now();
+      await manager.handleIntent({ type: 'select-space', spaceId });
+      const snapshot = manager.getSnapshot();
+      assert.equal(snapshot.activeSpaceId, spaceId);
+      const split = snapshot.splitsBySpace[spaceId];
+      const view = manager.tabManager.getView(split.tabIds[split.focusedIndex]);
+      assert.ok(view && view.getVisible(), 'Target Space native view must be visible');
+      await paint(view.webContents);
+      spaceLatencies.push(performance.now() - start);
+    }
+    result.spaceSwitchMs = stats(spaceLatencies);
+    result.mainTimerGapMs = stats(mainTimerGaps);
     result.memory = processTree();
     app.getAppMetrics();
     await delay(1000);
@@ -180,6 +202,7 @@ async function run() {
     result.ok = false;
   } finally {
     clearTimeout(watchdog);
+    clearInterval(mainTimer);
     manager?.dispose();
     server?.closeAllConnections();
     await new Promise((resolve) => server ? server.close(resolve) : resolve());

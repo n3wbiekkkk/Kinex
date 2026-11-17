@@ -1,0 +1,9 @@
+sysctlbyname for kern.hv_vmm_present failed with status -1INTEGRATION_PASS {"ok":true,"checksPassed":15,"startHeapMB":41,"endHeapMB":46,"rssMB":284,"archivedCount":11}
+Electron Integration Suite PASSED: {
+  ok: true,
+  checksPassed: 15,
+  startHeapMB: 41,
+  endHeapMB: 46,
+  rssMB: 284,
+  archivedCount: 11
+}

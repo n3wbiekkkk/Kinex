@@ -1,0 +1,1855 @@
+{
+  "timestamp": "2026-11-17T03:37:38.623Z",
+  "ok": true,
+  "steps": [
+    {
+      "number": 1,
+      "name": "Launch Kinex",
+      "status": "passed",
+      "durationMs": 246.67566699999998,
+      "evidence": {
+        "version": "45.3.3",
+        "initialTabs": 1
+      }
+    },
+    {
+      "number": 2,
+      "name": "Open a new tab through Cmd+T",
+      "status": "passed",
+      "durationMs": 125.29379200000005,
+      "evidence": null
+    },
+    {
+      "number": 3,
+      "name": "Navigate to a local article URL",
+      "status": "passed",
+      "durationMs": 130.49229200000002,
+      "evidence": {
+        "url": "http://127.0.0.1:65248/article-one"
+      }
+    },
+    {
+      "number": 4,
+      "name": "Open another tab",
+      "status": "passed",
+      "durationMs": 181.49020800000005,
+      "evidence": {
+        "url": "http://127.0.0.1:65248/article-two"
+      }
+    },
+    {
+      "number": 5,
+      "name": "Switch tabs with Ctrl+Shift+Tab",
+      "status": "passed",
+      "durationMs": 20.700124999999957,
+      "evidence": {
+        "tabId": "tab-1794886659082-3gzy"
+      }
+    },
+    {
+      "number": 6,
+      "name": "Pin a tab",
+      "status": "passed",
+      "durationMs": 103.10170900000003,
+      "evidence": null
+    },
+    {
+      "number": 7,
+      "name": "Move the tab to Work",
+      "status": "passed",
+      "durationMs": 102.41454199999998,
+      "evidence": null
+    },
+    {
+      "number": 8,
+      "name": "Create a Space",
+      "status": "passed",
+      "durationMs": 161.02883300000008,
+      "evidence": null
+    },
+    {
+      "number": 9,
+      "name": "Rename the Space",
+      "status": "passed",
+      "durationMs": 455.5696670000002,
+      "evidence": null
+    },
+    {
+      "number": 10,
+      "name": "Open Split View",
+      "status": "passed",
+      "durationMs": 109.59229200000004,
+      "evidence": null
+    },
+    {
+      "number": 11,
+      "name": "Adjust the split divider through keyboard",
+      "status": "passed",
+      "durationMs": 449.28341599999976,
+      "evidence": {
+        "before": 0.5,
+        "after": 0.52
+      }
+    },
+    {
+      "number": 12,
+      "name": "Open the Command Bar from browser UI",
+      "status": "passed",
+      "durationMs": 25.523249999999734,
+      "evidence": null
+    },
+    {
+      "number": 13,
+      "name": "Find and select a command with keyboard",
+      "status": "passed",
+      "durationMs": 37.21891600000026,
+      "evidence": null
+    },
+    {
+      "number": 14,
+      "name": "Open Settings",
+      "status": "passed",
+      "durationMs": 20.805958000000373,
+      "evidence": null
+    },
+    {
+      "number": 15,
+      "name": "Change a setting without a mouse",
+      "status": "passed",
+      "durationMs": 329.902791,
+      "evidence": {
+        "setting": "cleanCopyUrl",
+        "before": true,
+        "after": false
+      }
+    },
+    {
+      "number": 16,
+      "name": "Open Downloads",
+      "status": "passed",
+      "durationMs": 153.42604200000005,
+      "evidence": null
+    },
+    {
+      "number": 17,
+      "name": "Open Reader Mode",
+      "status": "passed",
+      "durationMs": 575.9285840000002,
+      "evidence": {
+        "readerEntered": true,
+        "originalUrlRestored": true
+      }
+    },
+    {
+      "number": 18,
+      "name": "Close a tab",
+      "status": "passed",
+      "durationMs": 21.528332999999748,
+      "evidence": null
+    },
+    {
+      "number": 19,
+      "name": "Restore the closed tab",
+      "status": "passed",
+      "durationMs": 83.14979100000028,
+      "evidence": null
+    },
+    {
+      "number": 20,
+      "name": "Return focus to website content",
+      "status": "passed",
+      "durationMs": 171.26299999999992,
+      "evidence": {
+        "webContentsId": 10,
+        "websiteTypingPreserved": true
+      }
+    },
+    {
+      "number": 21,
+      "name": "Modal focus traps forward and reverse Tab; Escape restores native focus",
+      "status": "passed",
+      "durationMs": 1348.1903749999997,
+      "evidence": {
+        "forwardAndReverseCycles": 2,
+        "focusableControls": 27
+      }
+    },
+    {
+      "number": 22,
+      "name": "Sidebar roving arrows, reorder alternative and F6 return path",
+      "status": "passed",
+      "durationMs": 214.66325000000052,
+      "evidence": {
+        "before": "tab:tab-restored-1794886661916-0-s4x",
+        "after": "tab:tab-1794886659715-w",
+        "orderBefore": [
+          "tab-1794886659715-w",
+          "tab-restored-1794886661916-0-s4x"
+        ],
+        "orderAfter": [
+          "tab-restored-1794886661916-0-s4x",
+          "tab-1794886659715-w"
+        ],
+        "f6FromWebsite": true
+      }
+    },
+    {
+      "number": 23,
+      "name": "Reduced Motion disables overlay movement and completes closing lifecycle",
+      "status": "passed",
+      "durationMs": 105.17612499999996,
+      "evidence": {
+        "animationDuration": "1e-05s",
+        "transitionDuration": "1e-05s"
+      }
+    },
+    {
+      "number": 24,
+      "name": "Element Zapper selects, confirms and cancels through keyboard",
+      "status": "passed",
+      "durationMs": 880.9762920000003,
+      "evidence": {
+        "selector": "h1",
+        "confirmedAndCancelled": true
+      }
+    },
+    {
+      "number": 25,
+      "name": "Open the real native tab context menu from keyboard",
+      "status": "passed",
+      "durationMs": 137.5504579999997,
+      "evidence": {
+        "nativeMenuShown": true,
+        "osMenuTraversal": "not-tested"
+      }
+    }
+  ],
+  "input": {
+    "keyboardEvents": 1759,
+    "mouseEvents": 0,
+    "transcript": [
+      {
+        "step": 2,
+        "webContentsId": 3,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.01841699999999946
+      },
+      {
+        "step": 3,
+        "type": "http://127.0.0.1:65248/article-one"
+      },
+      {
+        "step": 3,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.04866600000002563
+      },
+      {
+        "step": 4,
+        "webContentsId": 5,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.02091700000005403
+      },
+      {
+        "step": 4,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.013832999999976892
+      },
+      {
+        "step": 4,
+        "type": "http://127.0.0.1:65248/article-two"
+      },
+      {
+        "step": 4,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.023124999999936335
+      },
+      {
+        "step": 5,
+        "webContentsId": 6,
+        "key": "Tab",
+        "modifiers": [
+          "control",
+          "shift"
+        ],
+        "focusWaitMs": 0.01941599999997834
+      },
+      {
+        "step": 6,
+        "webContentsId": 5,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.024707999999918684
+      },
+      {
+        "step": 6,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.012916999999902146
+      },
+      {
+        "step": 6,
+        "type": "Pin / Unpin Tab"
+      },
+      {
+        "step": 6,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.03833400000007714
+      },
+      {
+        "step": 7,
+        "webContentsId": 5,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.025167000000010376
+      },
+      {
+        "step": 7,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.016957999999931417
+      },
+      {
+        "step": 7,
+        "type": "Move Tab to Work"
+      },
+      {
+        "step": 7,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.030459000000064407
+      },
+      {
+        "step": 8,
+        "webContentsId": 7,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.019708999999920707
+      },
+      {
+        "step": 8,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.007250000000112777
+      },
+      {
+        "step": 8,
+        "type": "New Space"
+      },
+      {
+        "step": 8,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.036875000000009095
+      },
+      {
+        "step": 8,
+        "type": "Keyboard Lab"
+      },
+      {
+        "step": 8,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.025457999999844105
+      },
+      {
+        "step": 9,
+        "webContentsId": 8,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.026541999999835753
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.00666599999999562
+      },
+      {
+        "step": 9,
+        "type": "Rename Space"
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.03470799999990959
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.012416999999913969
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.030917000000044936
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.057833999999957086
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.03300000000012915
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.02962500000012369
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.0571669999999358
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.03062499999987267
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.02845800000000054
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.028666999999813925
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.030915999999933774
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.030041999999866675
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.03099999999994907
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Backspace",
+        "modifiers": [],
+        "focusWaitMs": 0.03008399999998801
+      },
+      {
+        "step": 9,
+        "type": "Keyboard Studio"
+      },
+      {
+        "step": 9,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.037542000000030384
+      },
+      {
+        "step": 10,
+        "webContentsId": 8,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.025833000000147877
+      },
+      {
+        "step": 10,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.0060829999999896245
+      },
+      {
+        "step": 10,
+        "type": "Toggle Split View"
+      },
+      {
+        "step": 10,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.021958999999924345
+      },
+      {
+        "step": 11,
+        "webContentsId": 9,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.02195900000015172
+      },
+      {
+        "step": 11,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.010583000000224274
+      },
+      {
+        "step": 11,
+        "type": "Focus Toolbar"
+      },
+      {
+        "step": 11,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.02187499999990905
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.012249999999994543
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009583000000020547
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.014665999999806445
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.008375000000114596
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.013249999999970896
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.00666599999999562
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.012167000000090411
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.013083000000278844
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.008457999999791355
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.00937500000009095
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.013166000000182976
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.01125000000001819
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.011833000000024185
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.013790999999855558
+      },
+      {
+        "step": 11,
+        "webContentsId": 2,
+        "key": "Right",
+        "modifiers": [],
+        "focusWaitMs": 0.00920799999994415
+      },
+      {
+        "step": 12,
+        "webContentsId": 2,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.023082999999587628
+      },
+      {
+        "step": 13,
+        "type": "Open Settings"
+      },
+      {
+        "step": 14,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.026916000000255735
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.010500000000320142
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.017250000000331056
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009417000000212283
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.011958000000049651
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009666999999808468
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.012874999999894499
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009000000000014552
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.013500000000021828
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.011999999999716238
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.010041999999884865
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.00845900000012989
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.011042000000088592
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.01212500000019645
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.011416000000281201
+      },
+      {
+        "step": 15,
+        "webContentsId": 4,
+        "key": "Space",
+        "modifiers": [],
+        "focusWaitMs": 0.013707999999951426
+      },
+      {
+        "step": 16,
+        "webContentsId": 4,
+        "key": "Escape",
+        "modifiers": [],
+        "focusWaitMs": 0.02275000000008731
+      },
+      {
+        "step": 16,
+        "webContentsId": 2,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.005417000000306871
+      },
+      {
+        "step": 16,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.006624999999985448
+      },
+      {
+        "step": 16,
+        "type": "Open Downloads"
+      },
+      {
+        "step": 16,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.02187499999990905
+      },
+      {
+        "step": 16,
+        "webContentsId": 4,
+        "key": "Escape",
+        "modifiers": [],
+        "focusWaitMs": 0.024083000000246102
+      },
+      {
+        "step": 17,
+        "webContentsId": 2,
+        "key": "L",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.006750000000010914
+      },
+      {
+        "step": 17,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.007916999999906693
+      },
+      {
+        "step": 17,
+        "type": "http://127.0.0.1:65248/article-reader"
+      },
+      {
+        "step": 17,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.02554099999997561
+      },
+      {
+        "step": 17,
+        "webContentsId": 9,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.027832999999645835
+      },
+      {
+        "step": 17,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.00829199999998309
+      },
+      {
+        "step": 17,
+        "type": "Open / Close Reader Mode"
+      },
+      {
+        "step": 17,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.024875000000065484
+      },
+      {
+        "step": 17,
+        "webContentsId": 9,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.02962500000012369
+      },
+      {
+        "step": 17,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.007834000000002561
+      },
+      {
+        "step": 17,
+        "type": "Open / Close Reader Mode"
+      },
+      {
+        "step": 17,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.024290999999720952
+      },
+      {
+        "step": 18,
+        "webContentsId": 9,
+        "key": "W",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.02500000000009095
+      },
+      {
+        "step": 19,
+        "webContentsId": 8,
+        "key": "T",
+        "modifiers": [
+          "meta",
+          "shift"
+        ],
+        "focusWaitMs": 0.03570899999976973
+      },
+      {
+        "step": 20,
+        "webContentsId": 10,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.022792000000208645
+      },
+      {
+        "step": 20,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.006708000000344327
+      },
+      {
+        "step": 20,
+        "type": "Focus Website Content"
+      },
+      {
+        "step": 20,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.02741599999990285
+      },
+      {
+        "step": 20,
+        "webContentsId": 10,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.004750000000058208
+      },
+      {
+        "step": 20,
+        "type": "ordinary typing"
+      },
+      {
+        "step": 21,
+        "webContentsId": 10,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.023791000000073836
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.00829199999998309
+      },
+      {
+        "step": 21,
+        "type": "Open Settings"
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.027916999999888503
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.02970899999991161
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009958000000096945
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.013249999999970896
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.01108299999987139
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.008874999999989086
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.010582999999769527
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.010375000000294676
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.011040999999750056
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.01258300000017698
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.017916999999670224
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009875000000192813
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.018999999999778083
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.010416000000077474
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.008249999999861757
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.0097499999997126
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009250000000065484
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.00912499999958527
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.00945899999987887
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.008875000000443833
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009374999999636202
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.012625000000298314
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.010290999999597261
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.011625000000094587
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.008625000000392902
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.00874999999996362
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009500000000116415
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009333999999398657
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.010041999999884865
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.008041999999477412
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.009167000000161352
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.01004200000079436
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.015750000000480213
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.008166999999957625
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.01116699999965931
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.009874999999738066
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.00966599999992468
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.009207999999489402
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.009041000000252097
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.009917000000314147
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.011834000000817468
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.008499999999912689
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.030625000000327418
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.015082999999322055
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.009540999999444466
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.00966599999992468
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.01062499999989086
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.0117500000005748
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.009708999999929802
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.012040999999953783
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.008708000000297034
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.009167000000161352
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.01333399999930407
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.010457999999744061
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.009375000000545697
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.00908400000025722
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.012832999999773165
+      },
+      {
+        "step": 21,
+        "webContentsId": 4,
+        "key": "Escape",
+        "modifiers": [],
+        "focusWaitMs": 0.011375000000043656
+      },
+      {
+        "step": 22,
+        "webContentsId": 10,
+        "key": "F6",
+        "modifiers": [],
+        "focusWaitMs": 0.00820800000019517
+      },
+      {
+        "step": 22,
+        "webContentsId": 2,
+        "key": "Down",
+        "modifiers": [],
+        "focusWaitMs": 0.041291999999884865
+      },
+      {
+        "step": 22,
+        "webContentsId": 2,
+        "key": "Down",
+        "modifiers": [
+          "alt"
+        ],
+        "focusWaitMs": 0.030542000000423286
+      },
+      {
+        "step": 22,
+        "webContentsId": 2,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.03112500000042928
+      },
+      {
+        "step": 22,
+        "webContentsId": 8,
+        "key": "F6",
+        "modifiers": [],
+        "focusWaitMs": 0.007916000000477652
+      },
+      {
+        "step": 22,
+        "webContentsId": 2,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.007958000000144239
+      },
+      {
+        "step": 22,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.011332999999467575
+      },
+      {
+        "step": 22,
+        "type": "Focus Website Content"
+      },
+      {
+        "step": 22,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.028792000000066764
+      },
+      {
+        "step": 23,
+        "webContentsId": 8,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.020915999999488122
+      },
+      {
+        "step": 23,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.00687500000003638
+      },
+      {
+        "step": 23,
+        "type": ""
+      },
+      {
+        "step": 23,
+        "webContentsId": 4,
+        "key": "Escape",
+        "modifiers": [],
+        "focusWaitMs": 0.026083000000653556
+      },
+      {
+        "step": 24,
+        "webContentsId": 8,
+        "key": "L",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.0072919999993246165
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.007916999999906693
+      },
+      {
+        "step": 24,
+        "type": "http://127.0.0.1:65248/article-zapper"
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.02525000000059663
+      },
+      {
+        "step": 24,
+        "webContentsId": 8,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.01958299999932933
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.011375000000043656
+      },
+      {
+        "step": 24,
+        "type": "Open Boosts Studio"
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.022790999999415362
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.012375000000247383
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.015416999999615655
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009082999999918684
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.021999999999934516
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.011583000000428001
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.011959000000388187
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.01279199999953562
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.007666999999855761
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.010791999999128166
+      },
+      {
+        "step": 24,
+        "webContentsId": 8,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.005624999999781721
+      },
+      {
+        "step": 24,
+        "webContentsId": 8,
+        "key": "Down",
+        "modifiers": [],
+        "focusWaitMs": 0.02562500000021828
+      },
+      {
+        "step": 24,
+        "webContentsId": 8,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.06295799999952578
+      },
+      {
+        "step": 24,
+        "webContentsId": 8,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.02404099999967002
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.015124999999898137
+      },
+      {
+        "step": 24,
+        "type": "Open Boosts Studio"
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.025042000000212283
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009207999999489402
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.01116699999965931
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.01095900000018446
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.00766600000042672
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.020916999999826658
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.010874999999941792
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.007958000000144239
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.010583000000224274
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.009958999999980733
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Tab",
+        "modifiers": [],
+        "focusWaitMs": 0.01062499999989086
+      },
+      {
+        "step": 24,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.009041000000252097
+      },
+      {
+        "step": 24,
+        "webContentsId": 8,
+        "key": "Escape",
+        "modifiers": [],
+        "focusWaitMs": 0.0046249999995779945
+      },
+      {
+        "step": 25,
+        "webContentsId": 8,
+        "key": "T",
+        "modifiers": [
+          "meta"
+        ],
+        "focusWaitMs": 0.02166600000055041
+      },
+      {
+        "step": 25,
+        "webContentsId": 4,
+        "key": "End",
+        "modifiers": [],
+        "focusWaitMs": 0.007083999999849766
+      },
+      {
+        "step": 25,
+        "type": "Focus Sidebar"
+      },
+      {
+        "step": 25,
+        "webContentsId": 4,
+        "key": "Enter",
+        "modifiers": [],
+        "focusWaitMs": 0.024999999999636202
+      },
+      {
+        "step": 25,
+        "webContentsId": 2,
+        "key": "F10",
+        "modifiers": [
+          "shift"
+        ],
+        "focusWaitMs": 0.0373329999993075
+      }
+    ]
+  },
+  "methodology": "Only focused WebContents.sendInputEvent keyDown/char/keyUp events mutate UI during acceptance. Snapshot and executeJavaScript reads assert outcomes. No clicks, scripted focus, hidden dispatch or test-only app commands.",
+  "limitations": [
+    "Deterministic local article fixture and disposable profile; arbitrary website keyboard behavior is outside this acceptance.",
+    "Native context menu opening is observed; OS-level native menu traversal is not simulated by Chromium input events."
+  ],
+  "finalState": {
+    "tabs": 5,
+    "spaces": [
+      {
+        "id": "space-personal",
+        "name": "Personal"
+      },
+      {
+        "id": "space-work",
+        "name": "Work"
+      },
+      {
+        "id": "space-1794886659715",
+        "name": "Keyboard Studio"
+      }
+    ],
+    "overlay": "none"
+  }
+}

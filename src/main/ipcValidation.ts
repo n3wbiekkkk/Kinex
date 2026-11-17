@@ -184,13 +184,9 @@ export class TrustedIpcRegistry {
     if (!role) return false;
     if (allowedRoles && !allowedRoles.includes(role)) return false;
 
-    if (this.allowedBaseUrls.size > 0) {
-      if (!senderFrameUrl) return false;
-      const cleanFrame = senderFrameUrl.split('?')[0].split('#')[0];
-      if (!this.allowedBaseUrls.has(cleanFrame)) {
-        return false;
-      }
-    }
+    if (!senderFrameUrl || this.allowedBaseUrls.size === 0) return false;
+    const cleanFrame = senderFrameUrl.split('?')[0].split('#')[0];
+    if (!this.allowedBaseUrls.has(cleanFrame)) return false;
     return true;
   }
 }
@@ -451,8 +447,9 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
         : { ok: false, error: 'Invalid boolean enabled flag' };
 
     case 'revoke-site-permission':
-      return isNonEmptyString(raw.origin, 512) && isNonEmptyString(raw.permission, 128)
-        ? { ok: true, value: { type: 'revoke-site-permission', origin: raw.origin, permission: raw.permission } }
+      return isSafeProfilePartition(raw.partition) && isNonEmptyString(raw.partition, 256) &&
+        isNonEmptyString(raw.origin, 512) && isNonEmptyString(raw.permission, 128)
+        ? { ok: true, value: { type: 'revoke-site-permission', partition: raw.partition, origin: raw.origin, permission: raw.permission } }
         : { ok: false, error: 'Invalid revoke-site-permission payload' };
 
     case 'save-air-traffic-rule':

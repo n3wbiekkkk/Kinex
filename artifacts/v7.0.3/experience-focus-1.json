@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "checksPassed": 10,
+  "checks": [
+    "Startup presents the native window without test calling show",
+    "Plain typing reaches the remote document without browser command dispatch",
+    "F6 crosses WebContents; Settings traps Tab and restores the Sidebar origin",
+    "Pin and Duplicate commands resolve the focused split pane",
+    "Dynamic Space/folder palette commands dismiss and preserve correct target",
+    "Live Profile reassignment recreates views without deleting or exposing old cookies",
+    "Saved zoom and Reader navigation keep native page bounds aligned with toolbar",
+    "Regular/private popup shortcuts reload and close locally without regular tab mutation",
+    "HTML5 fullscreen expands active WebContentsView edge-to-edge and hides shell chrome cleanly",
+    "Simulated power/thermal events reduce effects and listeners do not leak on reopen"
+  ],
+  "powerEvents": "simulated Electron events, not hardware measurements"
+}

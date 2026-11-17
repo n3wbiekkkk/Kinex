@@ -68,6 +68,12 @@ export class AuxiliaryWindowManager {
       ? normalizeNavigationInput(rawUrl, this.host.getSearchEngine())
       : 'kinex://newtab';
 
+    const sess = this.host.getRegularSessionForActiveSpace();
+    if (this.littleWindow && !this.littleWindow.win.isDestroyed() &&
+      this.littleWindow.webView.webContents.session !== sess) {
+      this.littleWindow.win.close();
+      if (this.littleWindow && !this.littleWindow.win.isDestroyed()) return;
+    }
     if (this.littleWindow && !this.littleWindow.win.isDestroyed()) {
       this.littleWindow.win.show();
       this.littleWindow.win.focus();
@@ -75,7 +81,6 @@ export class AuxiliaryWindowManager {
       return;
     }
 
-    const sess = this.host.getRegularSessionForActiveSpace();
     const state = this.createAuxWindow({
       isPrivate: false,
       sess,
@@ -131,6 +136,9 @@ export class AuxiliaryWindowManager {
         preload: path.join(__dirname, '../preload/shell.js'),
         contextIsolation: true,
         nodeIntegration: false,
+        nodeIntegrationInWorker: false,
+        nodeIntegrationInSubFrames: false,
+        webviewTag: false,
         sandbox: true,
         webSecurity: true,
         allowRunningInsecureContent: false,
@@ -144,6 +152,9 @@ export class AuxiliaryWindowManager {
         session: opts.sess,
         contextIsolation: true,
         nodeIntegration: false,
+        nodeIntegrationInWorker: false,
+        nodeIntegrationInSubFrames: false,
+        webviewTag: false,
         sandbox: true,
         webSecurity: true,
         allowRunningInsecureContent: false,
@@ -280,11 +291,12 @@ export class AuxiliaryWindowManager {
     });
 
     headerWc.setWindowOpenHandler(() => ({ action: 'deny' }));
-    headerWc.on('will-navigate', (event, targetUrl) => {
-      if (!targetUrl.startsWith(this.host.getRendererUrl(opts.isPrivate ? 'private' : 'little').split('?')[0])) {
-        event.preventDefault();
-      }
-    });
+    const guardHeaderNavigation = (event: Electron.Event, targetUrl: string) => {
+      const base = this.host.getRendererUrl(opts.isPrivate ? 'private' : 'little').split('?')[0].split('#')[0];
+      if (targetUrl.split('?')[0].split('#')[0] !== base) event.preventDefault();
+    };
+    headerWc.on('will-navigate', guardHeaderNavigation);
+    headerWc.on('will-redirect', guardHeaderNavigation);
 
     webView.webContents.on('context-menu', (_event, params) => {
       const wc = webView.webContents;
@@ -301,7 +313,7 @@ export class AuxiliaryWindowManager {
           },
           {
             label: 'Copy Link Address',
-            click: () => clipboard.writeText(safeLink),
+            click: () => { void clipboard.writeText(safeLink).catch(() => console.warn('Kinex could not copy the link.')); },
           },
           { type: 'separator' }
         );
@@ -343,7 +355,7 @@ export class AuxiliaryWindowManager {
 
       for (const popup of state.popupWindows) {
         if (!popup.isDestroyed()) {
-          popup.close();
+          popup.destroy();
         }
       }
       state.popupWindows.clear();
@@ -439,7 +451,7 @@ export class AuxiliaryWindowManager {
         case 'stop-loading': wc.stop(); break;
         case 'back': if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); break;
         case 'forward': if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward(); break;
-        case 'copy-url': clipboard.writeText(wc.getURL()); break;
+        case 'copy-url': void clipboard.writeText(wc.getURL()).catch(() => console.warn('Kinex could not copy the URL.')); break;
         case 'print-page': wc.print({ printBackground: true }); break;
         case 'devtools': wc.openDevTools({ mode: 'detach' }); break;
       }
@@ -470,7 +482,7 @@ export class AuxiliaryWindowManager {
       case 'stop-loading': wc.stop(); break;
       case 'back': if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); break;
       case 'forward': if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward(); break;
-      case 'copy-url': clipboard.writeText(wc.getURL()); break;
+      case 'copy-url': void clipboard.writeText(wc.getURL()).catch(() => console.warn('Kinex could not copy the URL.')); break;
       case 'zoom-in': wc.setZoomFactor(Math.min(3, wc.getZoomFactor() + 0.1)); break;
       case 'zoom-out': wc.setZoomFactor(Math.max(0.25, wc.getZoomFactor() - 0.1)); break;
       case 'zoom-reset': wc.setZoomFactor(1); break;

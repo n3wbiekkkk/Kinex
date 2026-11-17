@@ -1,0 +1,12 @@
+
+> kinex-browser@7.0.3 test:pure
+> vitest run --exclude 'src/main/shields/**' --exclude 'src/main/features.test.ts'
+
+
+ RUN  v5.1.0 /Users/<user>/Developer/Kinex
+
+
+ Test Files  15 passed (15)
+      Tests  65 passed (65)
+   Start at  10:38:16
+   Duration  4.19s (tests 92%, import 5%, transform 2%, worker 1%)

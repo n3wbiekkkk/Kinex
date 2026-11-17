@@ -1,0 +1,131 @@
+
+> kinex-browser@7.0.3 test:all
+> npm run typecheck && npm test && npm run test:integration && npm run test:e2e && npm run test:keyboard && npm run test:experience && npm run test:shields && npm run test:security && npm run test:shields-startup
+
+
+> kinex-browser@7.0.3 typecheck
+> tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit
+
+
+> kinex-browser@7.0.3 test
+> vitest run
+
+
+ RUN  v5.1.0 /Users/<user>/Developer/Kinex
+
+
+ Test Files  18 passed (18)
+      Tests  91 passed (91)
+   Start at  10:45:27
+   Duration  4.17s (tests 91%, import 6%, transform 3%, worker 1%)
+
+
+> kinex-browser@7.0.3 test:integration
+> npm run build && node tests/integration/run-integration.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 106ms
+INTEGRATION_PASS {"ok":true,"checksPassed":15,"startHeapMB":15,"endHeapMB":12,"rssMB":251,"archivedCount":11}
+Electron Integration Suite PASSED: {
+  ok: true,
+  checksPassed: 15,
+  startHeapMB: 15,
+  endHeapMB: 12,
+  rssMB: 251,
+  archivedCount: 11
+}
+
+> kinex-browser@7.0.3 test:e2e
+> npm run build && node tests/e2e/run-e2e.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 76ms
+E2E_ALL_15_WORKFLOWS_PASS {
+  stepsVerified: 15,
+  uiLayout: {
+    sidebarWidth: 256,
+    sidebarOverflowX: false,
+    trafficLightClearancePx: 68,
+    sidebarAppRegion: 'drag',
+    resizerAppRegion: 'no-drag',
+    urlBarAppRegion: 'no-drag',
+    shellClass: 'kinex-shell theme-dark'
+  },
+  persistedTabCount: 8,
+  historyCount: 6
+}
+
+> kinex-browser@7.0.3 test:keyboard
+> npm run build && node tests/e2e/run-keyboard-only.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 73ms
+PASS 1: Launch Kinex
+PASS 2: Open a new tab through Cmd+T
+PASS 3: Navigate to a local article URL
+PASS 4: Open another tab
+PASS 5: Switch tabs with Ctrl+Shift+Tab
+PASS 6: Pin a tab
+PASS 7: Move the tab to Work
+PASS 8: Create a Space
+PASS 9: Rename the Space
+PASS 10: Open Split View
+Keyboard acceptance FAILED: 11 completed assertions, 621 keyboard events, no mouse events.
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Keyboard acceptance failed (1)
+
+1 !== 0
+
+    at file:///Users/<user>/Developer/Kinex/tests/e2e/run-keyboard-only.mjs:28:10
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 1,
+  expected: 0,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.15.0

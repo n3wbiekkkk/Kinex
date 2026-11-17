@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Archive,
@@ -148,7 +148,7 @@ const OverlayContent: React.FC<OverlayAppProps & { active: boolean }> = ({ state
   } catch {
     focusedOrigin = '';
   }
-  const sitePerms = state.sitePermissions.filter((p) => p.origin === focusedOrigin);
+  const sitePerms = state.sitePermissions.filter((p) => p.origin === focusedOrigin && p.partition === state.spaces.find((space) => space.id === state.activeSpaceId)?.profilePartition);
 
   const securityLabel = () => {
     switch (focusedTab?.securityState) {
@@ -368,6 +368,7 @@ const OverlayContent: React.FC<OverlayAppProps & { active: boolean }> = ({ state
                       onClick={() =>
                         dispatch({
                           type: 'revoke-site-permission',
+                          partition: p.partition,
                           origin: p.origin,
                           permission: p.permission,
                         })

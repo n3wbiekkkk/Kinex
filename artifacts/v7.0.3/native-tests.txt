@@ -1,0 +1,12 @@
+
+> kinex-browser@7.0.3 test:native
+> vitest run src/main/shields src/main/features.test.ts
+
+
+ RUN  v5.1.0 /Users/<user>/Developer/Kinex
+
+
+ Test Files  3 passed (3)
+      Tests  25 passed (25)
+   Start at  10:42:42
+   Duration  384ms (tests 78%, import 12%, transform 9%, worker 1%)

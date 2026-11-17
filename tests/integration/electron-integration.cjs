@@ -7,6 +7,7 @@ const { app, BrowserWindow, ipcMain, protocol } = require('electron');
 
 const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'kinex-int-'));
 app.setPath('userData', tmpUserData);
+app.setPath('downloads', tmpUserData);
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'kinex', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -235,6 +236,7 @@ async function run() {
     const { EventEmitter } = require('node:events');
     const mockWc = new EventEmitter();
     mockWc.id = 9001;
+    mockWc.session = personalSession;
     mockWc.isDestroyed = () => false;
     mockWc.getURL = () => 'https://bank.example/start';
     mockWc.getTitle = () => 'Bank';
@@ -267,7 +269,7 @@ async function run() {
     assert.ok(crashTab, 'Crash test tab exists');
     const crashView = mgr.tabManager.getView(crashTab.id);
     assert.ok(crashView, 'Crash test tab WebContentsView exists');
-    crashView.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 1 });
+    crashView.webContents.forcefullyCrashRenderer();
     await waitForTabUrl(
       mgr,
       (s) => {
@@ -514,6 +516,7 @@ async function run() {
     }
     fs.writeSync(1, `INTEGRATION_PASS ${JSON.stringify(summary)}\n`);
   } finally {
+    mgr.dispose();
     server.close();
     try {
       fs.rmSync(tmpUserData, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });

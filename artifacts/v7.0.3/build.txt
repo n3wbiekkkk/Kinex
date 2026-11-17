@@ -1,0 +1,15 @@
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 72ms

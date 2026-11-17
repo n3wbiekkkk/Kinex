@@ -116,72 +116,77 @@ export class KinexShieldsCoordinator {
     if (this.attachedSessions.has(sess)) return;
     this.attachedSessions.add(sess);
 
-    sess.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (details, callback) => {
-      const wcId = details.webContentsId ?? -1;
-      const tabId = wcId > 0 ? this.host.resolveTabIdByWebContentsId(wcId) : undefined;
-      const tabKey = tabId ?? (wcId > 0 ? `aux:${wcId}` : 'global');
-      const isPrivate = wcId > 0 ? this.host.isPrivateWebContents(wcId) : false;
+    sess.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
+      const evaluate = () => {
+        const wcId = details.webContentsId ?? -1;
+        const tabId = wcId > 0 ? this.host.resolveTabIdByWebContentsId(wcId) : undefined;
+        const tabKey = tabId ?? (wcId > 0 ? `aux:${wcId}` : 'global');
+        const isPrivate = wcId > 0 ? this.host.isPrivateWebContents(wcId) : false;
 
-      if (details.resourceType === 'mainFrame') {
-        if (wcId > 0) {
-          this.topPageUrlByWcId.set(wcId, details.url);
-        }
-        if (tabId) {
-          this.resetTabStatsForNavigation(tabId);
-        } else if (wcId > 0) {
-          this.resetTabStatsForNavigation(`aux:${wcId}`);
-        }
-
-        const shieldsCfg = this.engine.getSettings();
-        const modeInfo = this.engine.resolveModeForPage(details.url);
-        if (modeInfo.mode !== 'disabled' && shieldsCfg.stripTrackingParams) {
-          const stripped = stripTrackingParams(details.url);
-          if (stripped !== details.url && stripped.startsWith('http')) {
-            callback({ redirectURL: stripped });
-            return;
+        if (details.resourceType === 'mainFrame') {
+          if (wcId > 0) {
+            this.topPageUrlByWcId.set(wcId, details.url);
           }
-        }
-        callback({ cancel: false });
-        return;
-      }
+          if (tabId) {
+            this.resetTabStatsForNavigation(tabId);
+          } else if (wcId > 0) {
+            this.resetTabStatsForNavigation(`aux:${wcId}`);
+          }
 
-      const sourceUrl =
-        details.referrer ||
-        (wcId > 0 ? this.topPageUrlByWcId.get(wcId) : undefined) ||
-        details.url;
-
-      const evalResult = this.engine.evaluateNetworkRequest({
-        url: details.url,
-        sourceUrl,
-        resourceType: details.resourceType,
-        method: details.method,
-      });
-
-      if (evalResult.blocked) {
-        if (this.recordDedupRequestId(details.id)) {
-          this.recordBlocked(
-            tabKey,
-            details.url,
-            details.resourceType,
-            evalResult.category,
-            evalResult.listName,
-            isPrivate
-          );
-        }
-        if (evalResult.redirectUrl) {
-          callback({ redirectURL: evalResult.redirectUrl });
+          const shieldsCfg = this.engine.getSettings();
+          const modeInfo = this.engine.resolveModeForPage(details.url);
+          if (modeInfo.mode !== 'disabled' && shieldsCfg.stripTrackingParams) {
+            const stripped = stripTrackingParams(details.url);
+            if (stripped !== details.url && stripped.startsWith('http')) {
+              callback({ redirectURL: stripped });
+              return;
+            }
+          }
+          callback({ cancel: false });
           return;
         }
-        callback({ cancel: true });
-        return;
-      }
 
-      if (evalResult.rewrittenUrl && evalResult.rewrittenUrl !== details.url) {
-        callback({ redirectURL: evalResult.rewrittenUrl });
-        return;
-      }
+        const sourceUrl =
+          details.referrer ||
+          (wcId > 0 ? this.topPageUrlByWcId.get(wcId) : undefined) ||
+          details.url;
 
-      callback({ cancel: false });
+        const evalResult = this.engine.evaluateNetworkRequest({
+          url: details.url,
+          sourceUrl,
+          pageUrl: wcId > 0 ? this.topPageUrlByWcId.get(wcId) : undefined,
+          resourceType: details.resourceType,
+          method: details.method,
+        });
+
+        if (evalResult.blocked) {
+          if (this.recordDedupRequestId(details.id)) {
+            this.recordBlocked(
+              tabKey,
+              details.url,
+              details.resourceType,
+              evalResult.category,
+              evalResult.listName,
+              isPrivate
+            );
+          }
+          if (evalResult.redirectUrl) {
+            callback({ redirectURL: evalResult.redirectUrl });
+            return;
+          }
+          callback({ cancel: true });
+          return;
+        }
+
+        if (evalResult.rewrittenUrl && evalResult.rewrittenUrl !== details.url) {
+          callback({ redirectURL: evalResult.rewrittenUrl });
+          return;
+        }
+
+        callback({ cancel: false });
+      };
+      if (this.engine.isReady()) evaluate();
+      else void this.engine.whenInitialized().then(evaluate, () => callback({ cancel: false }));
     });
   }
 }

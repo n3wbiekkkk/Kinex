@@ -1,0 +1,80 @@
+LEAK_STRESS_PASS {"ok":true,"baseline":{"heapUsedMB":8.91,"rssMB":234.1,"tree":{"totalRssMB":677.5,"rendererCount":3}},"stages":[{"scenario":"100-tabs-open-close","heapUsedMB":10.09,"rssMB":260.6,"tree":{"totalRssMB":981.8,"rendererCount":3},"peakTreeRss":2430},{"scenario":"500-space-switches","heapUsedMB":10.06,"rssMB":266.4,"tree":{"totalRssMB":1129.7,"rendererCount":4}},{"scenario":"50-split-toggles","heapUsedMB":10.07,"rssMB":266.7,"tree":{"totalRssMB":1262,"rendererCount":5}},{"scenario":"10-private-windows","heapUsedMB":10.12,"rssMB":270.9,"tree":{"totalRssMB":1640.1,"rendererCount":6}},{"scenario":"50-repeated-navs","heapUsedMB":10.13,"rssMB":270.9,"tree":{"totalRssMB":1397,"rendererCount":6}},{"scenario":"10-little-kinex","heapUsedMB":10.14,"rssMB":283.9,"tree":{"totalRssMB":1522.8,"rendererCount":6}}],"finalPostClose":{"heapUsedMB":10.11,"rssMB":282.4,"tree":{"totalRssMB":1028.3,"rendererCount":2},"liveWebContentsCount":0},"mainHeapGrowthMB":1.2}
+LEAK_STRESS_ALL_7_SCENARIOS_PASS {
+  "ok": true,
+  "baseline": {
+    "heapUsedMB": 8.91,
+    "rssMB": 234.1,
+    "tree": {
+      "totalRssMB": 677.5,
+      "rendererCount": 3
+    }
+  },
+  "stages": [
+    {
+      "scenario": "100-tabs-open-close",
+      "heapUsedMB": 10.09,
+      "rssMB": 260.6,
+      "tree": {
+        "totalRssMB": 981.8,
+        "rendererCount": 3
+      },
+      "peakTreeRss": 2430
+    },
+    {
+      "scenario": "500-space-switches",
+      "heapUsedMB": 10.06,
+      "rssMB": 266.4,
+      "tree": {
+        "totalRssMB": 1129.7,
+        "rendererCount": 4
+      }
+    },
+    {
+      "scenario": "50-split-toggles",
+      "heapUsedMB": 10.07,
+      "rssMB": 266.7,
+      "tree": {
+        "totalRssMB": 1262,
+        "rendererCount": 5
+      }
+    },
+    {
+      "scenario": "10-private-windows",
+      "heapUsedMB": 10.12,
+      "rssMB": 270.9,
+      "tree": {
+        "totalRssMB": 1640.1,
+        "rendererCount": 6
+      }
+    },
+    {
+      "scenario": "50-repeated-navs",
+      "heapUsedMB": 10.13,
+      "rssMB": 270.9,
+      "tree": {
+        "totalRssMB": 1397,
+        "rendererCount": 6
+      }
+    },
+    {
+      "scenario": "10-little-kinex",
+      "heapUsedMB": 10.14,
+      "rssMB": 283.9,
+      "tree": {
+        "totalRssMB": 1522.8,
+        "rendererCount": 6
+      }
+    }
+  ],
+  "finalPostClose": {
+    "heapUsedMB": 10.11,
+    "rssMB": 282.4,
+    "tree": {
+      "totalRssMB": 1028.3,
+      "rendererCount": 2
+    },
+    "liveWebContentsCount": 0
+  },
+  "mainHeapGrowthMB": 1.2,
+  "restartRestoreCycles": 5
+}

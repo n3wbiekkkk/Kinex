@@ -1,0 +1,194 @@
+
+> kinex-browser@7.0.3 test:all
+> npm run typecheck && npm test && npm run test:integration && npm run test:e2e && npm run test:keyboard && npm run test:experience && npm run test:shields && npm run test:security && npm run test:shields-startup
+
+
+> kinex-browser@7.0.3 typecheck
+> tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit
+
+
+> kinex-browser@7.0.3 test
+> vitest run
+
+
+ RUN  v5.1.0 /Users/<user>/Developer/Kinex
+
+
+ Test Files  18 passed (18)
+      Tests  90 passed (90)
+   Start at  10:38:23
+   Duration  4.17s (tests 91%, import 6%, transform 2%, worker 1%)
+
+
+> kinex-browser@7.0.3 test:integration
+> npm run build && node tests/integration/run-integration.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 107ms
+[91656:1117/103830.270211:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[91656:1117/103830.270426:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+[91656:1117/103830.278363:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[91656:1117/103830.278386:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+[91656:1117/103830.287603:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[91656:1117/103830.287632:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+[91656:1117/103830.295845:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:376] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[91656:1117/103830.295895:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+INTEGRATION_PASS {"ok":true,"checksPassed":15,"startHeapMB":15,"endHeapMB":12,"rssMB":251,"archivedCount":11}
+Electron Integration Suite PASSED: {
+  ok: true,
+  checksPassed: 15,
+  startHeapMB: 15,
+  endHeapMB: 12,
+  rssMB: 251,
+  archivedCount: 11
+}
+
+> kinex-browser@7.0.3 test:e2e
+> npm run build && node tests/e2e/run-e2e.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 76ms
+E2E_ALL_15_WORKFLOWS_PASS {
+  stepsVerified: 15,
+  uiLayout: {
+    sidebarWidth: 256,
+    sidebarOverflowX: false,
+    trafficLightClearancePx: 68,
+    sidebarAppRegion: 'drag',
+    resizerAppRegion: 'no-drag',
+    urlBarAppRegion: 'no-drag',
+    shellClass: 'kinex-shell theme-dark'
+  },
+  persistedTabCount: 8,
+  historyCount: 6
+}
+
+> kinex-browser@7.0.3 test:keyboard
+> npm run build && node tests/e2e/run-keyboard-only.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 76ms
+PASS 1: Launch Kinex
+PASS 2: Open a new tab through Cmd+T
+PASS 3: Navigate to a local article URL
+PASS 4: Open another tab
+PASS 5: Switch tabs with Ctrl+Shift+Tab
+PASS 6: Pin a tab
+PASS 7: Move the tab to Work
+PASS 8: Create a Space
+PASS 9: Rename the Space
+PASS 10: Open Split View
+PASS 11: Adjust the split divider through keyboard
+PASS 12: Open the Command Bar from browser UI
+PASS 13: Find and select a command with keyboard
+PASS 14: Open Settings
+PASS 15: Change a setting without a mouse
+PASS 16: Open Downloads
+PASS 17: Open Reader Mode
+PASS 18: Close a tab
+PASS 19: Restore the closed tab
+PASS 20: Return focus to website content
+PASS 21: Modal focus traps forward and reverse Tab; Escape restores native focus
+PASS 22: Sidebar roving arrows, reorder alternative and F6 return path
+PASS 23: Reduced Motion disables overlay movement and completes closing lifecycle
+PASS 24: Element Zapper selects, confirms and cancels through keyboard
+PASS 25: Open the real native tab context menu from keyboard
+Keyboard acceptance PASSED: 25 completed assertions, 1759 keyboard events, no mouse events.
+Keyboard-only acceptance passed. Report: /var/folders/0s/qsx23y1n3vb__7xj69m0mlvc0000gn/T/kinex-keyboard-results/keyboard-results.json
+
+> kinex-browser@7.0.3 test:experience
+> npm run build && node tests/integration/run-experience.mjs
+
+
+> kinex-browser@7.0.3 build
+> tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 1629 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                        0.70 kB │ gzip:  0.40 kB
+dist/assets/kinex-logo-CSJGSLXE.png  558.78 kB
+dist/assets/index-Bf5CpU5V.css        30.85 kB │ gzip:  5.90 kB
+dist/assets/index-DVtVereS.js        338.84 kB │ gzip: 98.12 kB
+
+✓ built in 80ms
+Experience integration failed: AssertionError [ERR_ASSERTION]: Keyboard source must own native focus for Tab
+
+false !== true
+
+    at key (/Users/<user>/Developer/Kinex/tests/integration/experience-integration.cjs:29:10)
+    at run (/Users/<user>/Developer/Kinex/tests/integration/experience-integration.cjs:100:13) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Experience integration failed: AssertionError [ERR_ASSERTION]: Keyboard source must own native focus for Tab
+
+false !== true
+
+    at key (/Users/<user>/Developer/Kinex/tests/integration/experience-integration.cjs:29:10)
+    at run (/Users/<user>/Developer/Kinex/tests/integration/experience-integration.cjs:100:13)
+
+1 !== 0
+
+    at file:///Users/<user>/Developer/Kinex/tests/integration/run-experience.mjs:28:8
+    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)
+    at async node:internal/modules/esm/loader:639:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 1,
+  expected: 0,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.15.0

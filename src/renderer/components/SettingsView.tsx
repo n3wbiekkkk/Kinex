@@ -479,15 +479,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="settings-row-desc">No site permissions granted or blocked yet.</div>
                 ) : (
                   state.sitePermissions.map((perm) => (
-                    <div key={`${perm.origin}:${perm.permission}`} className="settings-row">
+                    <div key={`${perm.partition}:${perm.origin}:${perm.permission}`} className="settings-row">
                       <div style={{ fontSize: 12.5 }}>
-                        <strong>{perm.origin}</strong> · {perm.permission} ({perm.decision})
+                        <strong>{perm.origin}</strong> · {state.profiles.find((profile) => profile.partition === perm.partition)?.name || perm.partition} · {perm.permission} ({perm.decision})
                       </div>
                       <button
                         className="btn-secondary"
                         onClick={() =>
                           dispatch({
                             type: 'revoke-site-permission',
+                            partition: perm.partition,
                             origin: perm.origin,
                             permission: perm.permission,
                           })

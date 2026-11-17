@@ -109,6 +109,21 @@ function getBackgroundCss(background: NewTabConfig['background'], isDark: boolea
   return isDark ? '#101116' : '#f6f7f9';
 }
 
+function renderSearchScript(inputId: string, template: string): string {
+  const templateJson = JSON.stringify(template).replaceAll('<', '\\u003c');
+  return `<script>
+    document.querySelector('form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const query = document.getElementById('${inputId}').value.trim();
+      if (!query) return;
+      const isUrl = /^(https?:\\/\\/|localhost(:\\d+)?|[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)+)/.test(query);
+      window.location.href = isUrl
+        ? (/^https?:\\/\\//.test(query) ? query : (query.startsWith('localhost') ? 'http://' : 'https://') + query)
+        : ${templateJson}.replace('%s', encodeURIComponent(query));
+    });
+  </script>`;
+}
+
 export function renderKinexInternalHtml(
   url: string,
   context: NewTabRenderContext = {}
@@ -193,11 +208,12 @@ export function renderKinexInternalHtml(
       <span class="badge">Isolated</span>
     </div>
     <p>Pages viewed in this window use an ephemeral in-memory session. Cookies, cache, and local storage are cleared when this window closes. Browsing and download history are not recorded. Files you download remain on disk.</p>
-    <form class="search-box" onsubmit="event.preventDefault(); const q=document.getElementById('pq').value.trim(); if(!q) return; const isUrl=/^(https?:\\/\\/|localhost(:\\d+)?|[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)+)/.test(q); window.location.href=isUrl ? (/^https?:\\/\\//.test(q)?q:(q.startsWith('localhost')?'http://'+q:'https://'+q)) : 'https://duckduckgo.com/?q='+encodeURIComponent(q);">
+    <form class="search-box">
       <input id="pq" type="text" placeholder="Search privately with DuckDuckGo or enter a URL..." autofocus />
       <button type="submit">Go</button>
     </form>
   </main>
+  ${renderSearchScript('pq', 'https://duckduckgo.com/?q=%s')}
 </body>
 </html>`;
   }
@@ -221,7 +237,6 @@ export function renderKinexInternalHtml(
     context.searchEngineTemplate && /^https:\/\/.+\?/.test(context.searchEngineTemplate)
       ? context.searchEngineTemplate
       : 'https://www.google.com/search?q=%s';
-  const searchBaseJson = JSON.stringify(engineTemplate);
   const logoUri = getKinexLogoDataUri();
 
   const favoriteItems: NewTabShortcutItem[] =
@@ -492,7 +507,7 @@ export function renderKinexInternalHtml(
           </div>`
     }
 
-    <form class="search-form" onsubmit="event.preventDefault(); const q=document.getElementById('q').value.trim(); if(!q) return; const isUrl=/^(https?:\\/\\/|localhost(:\\d+)?|[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)+)/.test(q); const tpl=${searchBaseJson}; window.location.href=isUrl ? (/^https?:\\/\\//.test(q)?q:(q.startsWith('localhost')?'http://'+q:'https://'+q)) : tpl.replace('%s', encodeURIComponent(q));">
+    <form class="search-form">
       <input id="q" type="text" placeholder="Search ${escapeHtml(engineName)} or enter an address..." autofocus />
       <button type="submit">Go</button>
     </form>
@@ -507,6 +522,7 @@ export function renderKinexInternalHtml(
       <span class="hint"><kbd>⌘,</kbd> Settings</span>
     </div>
   </main>
+  ${renderSearchScript('q', engineTemplate)}
   <script>
     const el = document.getElementById('clock');
     if (el) {

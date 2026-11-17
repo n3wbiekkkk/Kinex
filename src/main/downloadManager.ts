@@ -13,13 +13,16 @@ export function isTrackedDownloadPath(savePath: string, downloads: DownloadItem[
   return downloads.some((d) => d.savePath && path.resolve(d.savePath) === resolved);
 }
 
-export function getUniqueDownloadSavePath(dlDir: string, rawFilename: string): string {
-  const baseName = path.basename(rawFilename || 'download').replace(/[\0/\\]/g, '_') || 'download';
+export function getUniqueDownloadSavePath(dlDir: string, rawFilename: string, reservedPaths: ReadonlySet<string> = new Set()): string {
+  const cleaned = path.basename(rawFilename || 'download').replace(/[\0/\\]/g, '_');
+  const baseName = !cleaned || cleaned === '.' || cleaned === '..' ? 'download' : cleaned;
   const ext = path.extname(baseName);
   const stem = ext ? baseName.slice(0, -ext.length) : baseName;
   let candidate = path.join(dlDir, baseName);
   let counter = 1;
-  while (fs.existsSync(candidate) && counter < 100) {
+  const reserved = (candidatePath: string) => reservedPaths.has(candidatePath) ||
+    (process.platform === 'darwin' && [...reservedPaths].some((p) => p.normalize('NFD').toLowerCase() === candidatePath.normalize('NFD').toLowerCase()));
+  while (fs.lstatSync(candidate, { throwIfNoEntry: false }) || reserved(candidate)) {
     candidate = path.join(dlDir, `${stem} (${counter})${ext}`);
     counter += 1;
   }
@@ -31,9 +34,23 @@ export class DownloadManager {
   private readonly liveItems = new Map<string, ElectronDownloadItem>();
   private readonly speedSampleById = new Map<string, { atMs: number; bytes: number; lastBroadcastMs: number }>();
   private readonly activeDownloadCountsByWcId = new Map<number, number>();
+  private readonly reservedPaths = new Set<string>();
+  private readonly privateItems = new Set<ElectronDownloadItem>();
   private disposed = false;
 
   constructor(private readonly onUpdated: () => void) {}
+
+  private reserveSavePath(item: ElectronDownloadItem): string | null {
+    try {
+      const targetPath = getUniqueDownloadSavePath(app.getPath('downloads'), item.getFilename() || 'download', this.reservedPaths);
+      item.setSavePath(targetPath);
+      this.reservedPaths.add(targetPath);
+      return targetPath;
+    } catch (error) {
+      console.warn('Kinex could not prepare a download.', error instanceof Error && 'code' in error ? error.code : 'path unavailable');
+      return null;
+    }
+  }
 
   getDownloads(): DownloadItem[] {
     return this.downloads;
@@ -67,11 +84,10 @@ export class DownloadManager {
     trackedRegularSessions.add(sess);
 
     sess.on('will-download', (_event, item, webContents) => {
-      if (this.disposed) return;
-      const dlDir = app.getPath('downloads');
-      const targetPath = getUniqueDownloadSavePath(dlDir, item.getFilename() || 'download');
+      if (this.disposed) { _event.preventDefault(); return; }
+      const targetPath = this.reserveSavePath(item);
+      if (!targetPath) { _event.preventDefault(); return; }
       const finalFilename = path.basename(targetPath);
-      item.setSavePath(targetPath);
 
       const sourceWcId = webContents && !webContents.isDestroyed() ? webContents.id : undefined;
       this.incrementActiveWc(sourceWcId);
@@ -132,6 +148,7 @@ export class DownloadManager {
       });
 
       item.once('done', (_ev, state) => {
+        this.reservedPaths.delete(targetPath);
         this.decrementActiveWc(sourceWcId);
         this.liveItems.delete(id);
         this.speedSampleById.delete(id);
@@ -154,9 +171,14 @@ export class DownloadManager {
     trackedPrivateSessions.add(sess);
 
     sess.on('will-download', (_event, item) => {
-      const dlDir = app.getPath('downloads');
-      const targetPath = getUniqueDownloadSavePath(dlDir, item.getFilename() || 'download');
-      item.setSavePath(targetPath);
+      if (this.disposed) { _event.preventDefault(); return; }
+      const targetPath = this.reserveSavePath(item);
+      if (!targetPath) { _event.preventDefault(); return; }
+      this.privateItems.add(item);
+      item.once('done', () => {
+        this.reservedPaths.delete(targetPath);
+        this.privateItems.delete(item);
+      });
       // Intentionally do not record private-window downloads in regular session history/snapshot
     });
   }
@@ -207,7 +229,7 @@ export class DownloadManager {
     if (!fs.existsSync(resolved)) {
       return false;
     }
-    void shell.openPath(resolved);
+    void shell.openPath(resolved).catch(() => console.warn('Kinex could not open the download.'));
     return true;
   }
 
@@ -234,7 +256,7 @@ export class DownloadManager {
 
   dispose(): void {
     this.disposed = true;
-    for (const item of this.liveItems.values()) {
+    for (const item of [...this.liveItems.values(), ...this.privateItems]) {
       try {
         item.cancel();
       } catch {
@@ -245,5 +267,7 @@ export class DownloadManager {
     this.speedSampleById.clear();
     this.downloads = [];
     this.activeDownloadCountsByWcId.clear();
+    this.reservedPaths.clear();
+    this.privateItems.clear();
   }
 }

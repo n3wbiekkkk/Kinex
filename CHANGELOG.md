@@ -2,6 +2,32 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [7.0.3] - 2026-11-17
+
+Local implementation. No release has been published. See [verification and remaining gates](docs/quality/v7.0.3-report.md).
+
+### Changed
+
+- Upgrade Electron 36.9.5 to pinned 45.3.3, Chromium 156, embedded Node 24.22.3. The minimum macOS version is 13.
+- Update Vite, Vitest, electron-builder, and Node definitions. Pin a patched minimatch override for build tooling. The final locked audit reports no advisories.
+- Compile cold Shields filters in a worker. Hold initial intercepted requests until initialization completes. Preserve native filtering and show initialization failures.
+- Prepare arm64 packaging, targeted hardened-runtime entitlements, signing gates, pinned CI actions, and real packaged startup verification.
+
+### Fixed
+
+- Scope site permissions and revocation to the owning Profile. Separate microphone and camera grants. Reject stale prompts, unknown permissions, untrusted IPC frames, and insecure LAN update feeds.
+- Scope TLS exceptions to the session, origin, certificate fingerprint, and error. Preserve legitimate same-origin blob previews in sandboxed popups.
+- Prevent older asynchronous saves from overwriting final shutdown state. Validate corrupted collections and split state, preserve damaged originals, and retain valid tabs and profiles.
+- Avoid download filename overwrite after 99 collisions and collisions between concurrent regular/private downloads.
+- Recreate Little Kinex after a Profile change. Destroy private popups before cleanup and attempt all purge operations independently.
+- Apply per-site Shields exceptions inside third-party frames. Preserve concurrent list settings, reject insecure redirect chains and corrupt native caches, cancel disposed updates, and clean cosmetic state.
+- Apply nonce-authorized internal scripts and script-disabled Reader responses. Harden local update file serving and retain updater lifecycle across macOS window close.
+
+### Verification limits
+
+- Automated unit, browser, security, keyboard, native startup, stress, and unsigned packaged checks are recorded in the report. A prior combined-suite native focus failure remains explicitly recorded.
+- Login, MFA, signed hardware consent, signing/notarization, signed installation, and protected Netflix playback are not passing claims.
+
 ## [7.0.2] - 2026-11-17
 ### Added
 - **Kinex Shields Native Blocking Engine (`adblock-rs` + `tldts`)**: Replaced legacy 26-domain suffix filtering with a native Rust `adblock-rs` content-blocking subsystem (`MPL-2.0`) supporting EasyList/ABP filter syntax, resource-type matching, Public Suffix List first/third-party classification, vetted local scriptlets (`nobab`, `abort-on-property-read/write`, `set-constant`, `no-setTimeout/Interval-if`, `nowebrtc`, `no-fetch-if`), and redirect stubs (`noopjs`, `1x1.gif`, `2x2.png`).

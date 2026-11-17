@@ -15,8 +15,17 @@ export class ShieldsCosmeticInjector {
   private readonly cssKeysByWc = new Map<number, string[]>();
   private readonly applyChainByWc = new Map<number, Promise<void>>();
   private readonly generationByWc = new Map<number, number>();
+  private readonly timersByWc = new Map<number, Set<NodeJS.Timeout>>();
 
   constructor(private readonly engine: KinexShieldsEngine) {}
+
+  forgetWebContents(wcId: number): void {
+    this.cssKeysByWc.delete(wcId);
+    this.applyChainByWc.delete(wcId);
+    this.generationByWc.delete(wcId);
+    for (const timer of this.timersByWc.get(wcId) ?? []) clearTimeout(timer);
+    this.timersByWc.delete(wcId);
+  }
 
   async clearInjectedCss(wc: WebContents): Promise<void> {
     if (wc.isDestroyed()) {
@@ -45,6 +54,8 @@ export class ShieldsCosmeticInjector {
     const wcId = wc.id;
     const gen = (this.generationByWc.get(wcId) ?? 0) + 1;
     this.generationByWc.set(wcId, gen);
+    for (const timer of this.timersByWc.get(wcId) ?? []) clearTimeout(timer);
+    this.timersByWc.delete(wcId);
 
     const prev = this.applyChainByWc.get(wcId) ?? Promise.resolve();
     const next = prev
@@ -189,7 +200,14 @@ export class ShieldsCosmeticInjector {
         } catch {}
       };
       for (const delayMs of [250, 900]) {
-        const timer = setTimeout(() => void scanTokens(), delayMs);
+        const timers = this.timersByWc.get(wcId) ?? new Set<NodeJS.Timeout>();
+        const timer = setTimeout(() => {
+          timers.delete(timer);
+          if (timers.size === 0) this.timersByWc.delete(wcId);
+          void scanTokens();
+        }, delayMs);
+        timers.add(timer);
+        this.timersByWc.set(wcId, timers);
         timer.unref?.();
       }
     }

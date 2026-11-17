@@ -3,6 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import type { AppUpdaterEvents } from 'electron-updater/out/AppUpdater';
 import { DEFAULT_UPDATE_FEED_URL } from '../shared/domain';
 import type { UpdateStatus } from '../shared/types';
 import { isSafeUpdateFeedUrl } from './security';
@@ -32,10 +33,74 @@ export function classifyUpdateFeedSource(rawFeed: string): FeedSource {
   return { kind: 'local-dir', dir: path.resolve(trimmed) };
 }
 
+export function createLocalUpdateFeedServer(dir: string): http.Server {
+  const root = path.resolve(dir);
+  return http.createServer((req, res) => {
+    void (async () => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.writeHead(405).end();
+        return;
+      }
+      let name: string;
+      try {
+        name = decodeURIComponent((req.url || '/').split('?')[0]).replace(/^\/+/, '');
+      } catch {
+        res.writeHead(400).end();
+        return;
+      }
+      if (!name || name.includes('\0') || name !== path.basename(name) || name.includes('\\') ||
+          !(name === 'latest-mac.yml' || /\.zip(?:\.blockmap)?$/i.test(name))) {
+        res.writeHead(404).end();
+        return;
+      }
+      const file = await fs.promises.open(path.join(root, name), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      try {
+        const stat = await file.stat();
+        if (!stat.isFile()) {
+          res.writeHead(404).end();
+          return;
+        }
+        res.writeHead(200, {
+          'Content-Type': name.endsWith('.yml') ? 'text/yaml; charset=utf-8' : 'application/octet-stream',
+          'Content-Length': stat.size,
+          'X-Content-Type-Options': 'nosniff',
+        });
+        if (req.method === 'HEAD') {
+          res.end();
+          return;
+        }
+        const stream = file.createReadStream({ autoClose: false });
+        stream.on('error', () => res.destroy());
+        res.once('close', () => stream.destroy());
+        await new Promise<void>((resolve) => {
+          stream.once('close', resolve);
+          stream.once('end', resolve);
+          stream.once('error', () => resolve());
+          stream.pipe(res);
+        });
+      } finally {
+        await file.close();
+      }
+    })().catch(() => {
+      if (!res.headersSent) res.writeHead(404).end();
+      else res.destroy();
+    });
+  });
+}
+
 export class KinexAutoUpdater {
   private status: UpdateStatus = { state: 'idle' };
   private localServer: http.Server | null = null;
   private initialized = false;
+  private generation = 0;
+  private disposed = false;
+  private checkPromise: Promise<void> | null = null;
+  private readonly removeListeners: Array<() => void> = [];
+
+  private on<K extends keyof AppUpdaterEvents>(event: K, listener: AppUpdaterEvents[K]): void {
+    autoUpdater.on(event, listener);
+    this.removeListeners.push(() => autoUpdater.removeListener(event, listener));
+  }
 
   constructor(
     private readonly getFeedUrl: () => string,
@@ -47,6 +112,7 @@ export class KinexAutoUpdater {
   }
 
   private setStatus(next: UpdateStatus): void {
+    if (this.disposed) return;
     this.status = next;
     this.onStatusChanged(next);
   }
@@ -54,19 +120,20 @@ export class KinexAutoUpdater {
   init(): void {
     if (this.initialized) return;
     this.initialized = true;
+    this.disposed = false;
 
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 
-    autoUpdater.on('checking-for-update', () => {
+    this.on('checking-for-update', () => {
       this.setStatus({ state: 'checking' });
     });
 
-    autoUpdater.on('update-available', (info) => {
+    this.on('update-available', (info) => {
       this.setStatus({ state: 'available', version: info.version });
     });
 
-    autoUpdater.on('download-progress', (progress) => {
+    this.on('download-progress', (progress) => {
       const ver =
         this.status.state === 'available' || this.status.state === 'downloading'
           ? this.status.version
@@ -78,17 +145,17 @@ export class KinexAutoUpdater {
       });
     });
 
-    autoUpdater.on('update-downloaded', (info) => {
+    this.on('update-downloaded', (info) => {
       this.setStatus({ state: 'downloaded', version: info.version });
       this.stopLocalFeedServer();
     });
 
-    autoUpdater.on('update-not-available', (info) => {
+    this.on('update-not-available', (info) => {
       this.setStatus({ state: 'up-to-date', version: info.version || app.getVersion() });
       this.stopLocalFeedServer();
     });
 
-    autoUpdater.on('error', (err) => {
+    this.on('error', (err) => {
       this.setStatus({ state: 'error', message: formatUpdaterError(err) });
       this.stopLocalFeedServer();
     });
@@ -105,44 +172,24 @@ export class KinexAutoUpdater {
     }
   }
 
-  private async startLocalFeedServer(dir: string): Promise<string> {
+  private async startLocalFeedServer(dir: string, generation = this.generation): Promise<string> {
     this.stopLocalFeedServer();
     const manifestPath = path.join(dir, 'latest-mac.yml');
     if (!fs.existsSync(manifestPath)) {
       throw new Error(`No latest-mac.yml found in ${dir}`);
     }
 
-    const server = http.createServer((req, res) => {
-      const reqPath = decodeURIComponent((req.url || '/').split('?')[0]).replace(/^\/+/, '');
-      if (!reqPath || reqPath.includes('..')) {
-        res.writeHead(404);
-        res.end();
-        return;
-      }
-      const resolved = path.resolve(dir, reqPath);
-      if (!resolved.startsWith(dir + path.sep) || !fs.existsSync(resolved) || fs.statSync(resolved).isDirectory()) {
-        res.writeHead(404);
-        res.end();
-        return;
-      }
-      const stat = fs.statSync(resolved);
-      const contentType = resolved.endsWith('.yml')
-        ? 'text/yaml; charset=utf-8'
-        : resolved.endsWith('.zip')
-          ? 'application/zip'
-          : 'application/octet-stream';
-      res.writeHead(200, {
-        'Content-Type': contentType,
-        'Content-Length': stat.size,
-      });
-      fs.createReadStream(resolved).pipe(res);
-    });
+    const server = createLocalUpdateFeedServer(dir);
 
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       server.listen(0, '127.0.0.1', () => resolve());
     });
 
+    if (this.disposed || generation !== this.generation) {
+      server.close();
+      throw new Error('Update check cancelled');
+    }
     this.localServer = server;
     const addr = server.address();
     if (!addr || typeof addr === 'string') {
@@ -151,8 +198,17 @@ export class KinexAutoUpdater {
     return `http://127.0.0.1:${addr.port}`;
   }
 
-  async checkForUpdates(silentIfUnconfigured = false): Promise<void> {
+  checkForUpdates(silentIfUnconfigured = false): Promise<void> {
+    if (this.status.state === 'downloading' || this.status.state === 'available' || this.status.state === 'downloaded') return Promise.resolve();
+    if (!this.checkPromise) {
+      this.checkPromise = this.performCheck(silentIfUnconfigured).finally(() => { this.checkPromise = null; });
+    }
+    return this.checkPromise;
+  }
+
+  private async performCheck(silentIfUnconfigured: boolean): Promise<void> {
     this.init();
+    const generation = this.generation;
 
     if (!app.isPackaged) {
       if (!silentIfUnconfigured) {
@@ -188,14 +244,16 @@ export class KinexAutoUpdater {
           });
           return;
         } else {
-          const localUrl = await this.startLocalFeedServer(source.dir);
+          const localUrl = await this.startLocalFeedServer(source.dir, generation);
           autoUpdater.setFeedURL({ provider: 'generic', url: localUrl });
         }
       } else {
         autoUpdater.setFeedURL({ provider: 'generic', url: source.url });
       }
+      if (this.disposed || generation !== this.generation) return;
       await autoUpdater.checkForUpdates();
     } catch (err) {
+      if (this.disposed || generation !== this.generation) return;
       this.stopLocalFeedServer();
       this.setStatus({
         state: 'error',
@@ -206,17 +264,26 @@ export class KinexAutoUpdater {
 
   async downloadUpdate(): Promise<void> {
     if (!app.isPackaged) return;
-    await autoUpdater.downloadUpdate();
+    try {
+      await autoUpdater.downloadUpdate();
+    } catch (error) {
+      this.setStatus({ state: 'error', message: formatUpdaterError(error) });
+    }
   }
 
   quitAndInstall(): void {
     this.stopLocalFeedServer();
-    if (app.isPackaged) {
+    if (app.isPackaged && this.status.state === 'downloaded') {
       autoUpdater.quitAndInstall(false, true);
     }
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.generation += 1;
+    for (const remove of this.removeListeners) remove();
+    this.removeListeners.length = 0;
+    this.initialized = false;
     this.stopLocalFeedServer();
   }
 }

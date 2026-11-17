@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import vm from 'node:vm';
-import { findScrollSurface, selectProbeTarget, summarizeScroll, waitForPaint } from './compatibilityProbe.mjs';
+import { findScrollSurface, publicPageInfo, selectProbeTarget, summarizeScroll, waitForPaint } from './compatibilityProbe.mjs';
 
 test('binds a new page across Gmail redirects without matching the requested hostname', () => {
   const previous = new Set(['shell', 'old-google']);
@@ -80,4 +80,19 @@ test('paint wait does not resolve until both requested animation frames have run
     if (original) globalThis.requestAnimationFrame = original;
     else delete globalThis.requestAnimationFrame;
   }
+});
+
+
+test('records authentication redirects without treating an account wall as the target application', () => {
+  const context = {
+    location: { href: 'https://accounts.google.com/signin', hostname: 'accounts.google.com', pathname: '/signin', protocol: 'https:' },
+    document: { body: { innerText: 'Sign in', textContent: 'Sign in' }, title: 'Sign in', readyState: 'complete', querySelectorAll: () => [], forms: [] },
+  };
+  assert.equal(vm.runInNewContext(`(${publicPageInfo})()`, context).authWall, true);
+  context.location.hostname = 'discord.com';
+  context.location.pathname = '/login';
+  assert.equal(vm.runInNewContext(`(${publicPageInfo})()`, context).authWall, true);
+  context.location.hostname = 'github.com';
+  context.location.pathname = '/n3wbiekkkk/Kinex';
+  assert.equal(vm.runInNewContext(`(${publicPageInfo})()`, context).authWall, false);
 });

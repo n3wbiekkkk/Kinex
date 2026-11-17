@@ -1,0 +1,174 @@
+{
+  "ok": true,
+  "lifecycleChecks": 5,
+  "failures": 0,
+  "method": "Five alternating fresh Electron processes per method; timer gaps during actual initialization and a 10ms drain; RUN_AS_NODE excludes renderer/UI startup.",
+  "platform": "darwin",
+  "arch": "arm64",
+  "os": "27.2.0",
+  "cpu": "Apple M5",
+  "cores": 10,
+  "memoryBytes": 17179869184,
+  "runs": [
+    {
+      "run": 1,
+      "status": 0,
+      "measurement": {
+        "mode": "sync",
+        "elapsedMs": 89.845208,
+        "maxGapMs": 89.92845799999999,
+        "ticksBeforeReady": 0,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 1,
+      "status": 0,
+      "measurement": {
+        "mode": "worker",
+        "elapsedMs": 116.57312499999999,
+        "maxGapMs": 9.688625000000002,
+        "ticksBeforeReady": 97,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 2,
+      "status": 0,
+      "measurement": {
+        "mode": "sync",
+        "elapsedMs": 92.070708,
+        "maxGapMs": 92.154375,
+        "ticksBeforeReady": 0,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 2,
+      "status": 0,
+      "measurement": {
+        "mode": "worker",
+        "elapsedMs": 119.386041,
+        "maxGapMs": 9.580417000000011,
+        "ticksBeforeReady": 94,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 3,
+      "status": 0,
+      "measurement": {
+        "mode": "sync",
+        "elapsedMs": 89.568458,
+        "maxGapMs": 89.665625,
+        "ticksBeforeReady": 0,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 3,
+      "status": 0,
+      "measurement": {
+        "mode": "worker",
+        "elapsedMs": 123.78,
+        "maxGapMs": 11.655250000000024,
+        "ticksBeforeReady": 88,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 4,
+      "status": 0,
+      "measurement": {
+        "mode": "sync",
+        "elapsedMs": 95.287375,
+        "maxGapMs": 95.467333,
+        "ticksBeforeReady": 0,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 4,
+      "status": 0,
+      "measurement": {
+        "mode": "worker",
+        "elapsedMs": 121.453791,
+        "maxGapMs": 9.708042000000006,
+        "ticksBeforeReady": 100,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 5,
+      "status": 0,
+      "measurement": {
+        "mode": "sync",
+        "elapsedMs": 89.450792,
+        "maxGapMs": 89.573167,
+        "ticksBeforeReady": 0,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    },
+    {
+      "run": 5,
+      "status": 0,
+      "measurement": {
+        "mode": "worker",
+        "elapsedMs": 125.39795799999999,
+        "maxGapMs": 10.674624999999992,
+        "ticksBeforeReady": 100,
+        "matched": true,
+        "rules": 145405,
+        "electron": "45.3.3",
+        "chrome": "156.0.8078.100",
+        "node": "24.22.3"
+      },
+      "stderr": ""
+    }
+  ]
+}

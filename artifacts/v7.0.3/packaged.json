@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "version": "7.0.3",
+  "arch": "arm64",
+  "minimumMacOS": "13.0",
+  "nativeRules": 145405,
+  "checks": [
+    "bundle metadata",
+    "arm64 executable/addon",
+    "packaged native initialization",
+    "sandboxed navigation",
+    "shutdown persistence"
+  ],
+  "signing": "Not established by this smoke test"
+}

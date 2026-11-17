@@ -1,8 +1,9 @@
-import { dialog, shell, type BrowserWindow, type WebContents } from 'electron';
+import { dialog, shell, type BrowserWindow, type WebContents, type Session } from 'electron';
 import {
   classifyLoadError,
   isAllowedExternalProtocol,
   isSafeNavigationUrl,
+  isSameOriginBlobUrl,
   shouldOfferInsecureHttpFallback,
   upgradeUrlToHttpsIfNeeded,
 } from './security';
@@ -34,19 +35,18 @@ interface PendingUpgrade {
 }
 
 export class NavigationManager {
-  private readonly insecureFallbackHosts = new Set<string>();
-  private readonly approvedCertKeys = new Set<string>();
+  private readonly approvedCertKeys = new WeakMap<Session, Set<string>>();
   private readonly pendingUpgradesByWc = new Map<number, PendingUpgrade>();
   private readonly certDialogInFlight = new Set<string>();
-  private readonly privateFallbackByWc = new WeakMap<WebContents, Set<string>>();
+  private readonly fallbackBySession = new WeakMap<Session, Set<string>>();
 
   constructor(private readonly host: NavigationHost) {}
 
-  private getPrivateFallbackSet(wc: WebContents): Set<string> {
-    let set = this.privateFallbackByWc.get(wc);
+  private getFallbackSet(wc: WebContents): Set<string> {
+    let set = this.fallbackBySession.get(wc.session);
     if (!set) {
       set = new Set<string>();
-      this.privateFallbackByWc.set(wc, set);
+      this.fallbackBySession.set(wc.session, set);
     }
     return set;
   }
@@ -62,11 +62,7 @@ export class NavigationManager {
     if (opts.skipHttpsUpgrade) {
       return { safe: true, targetUrl: candidate, upgradedFromHttp: false };
     }
-    const exemptHosts = opts.isPrivate
-      ? opts.wc
-        ? this.getPrivateFallbackSet(opts.wc)
-        : new Set<string>()
-      : this.insecureFallbackHosts;
+    const exemptHosts = opts.wc ? this.getFallbackSet(opts.wc) : new Set<string>();
     const upgraded = upgradeUrlToHttpsIfNeeded(candidate, this.host.isHttpsOnly(), exemptHosts);
     return {
       safe: true,
@@ -119,17 +115,27 @@ export class NavigationManager {
   }
 
   attachWebContentsGuards(wc: WebContents, options: NavigationGuardOptions): void {
-    const privateApprovedCertHosts = options.isPrivate ? new Set<string>() : null;
-    const fallbackHosts = options.isPrivate
-      ? this.getPrivateFallbackSet(wc)
-      : this.insecureFallbackHosts;
-    const certScope = options.partitionKey || (options.isPrivate ? `priv:${wc.id}` : 'default');
+    let approvedCerts = this.approvedCertKeys.get(wc.session);
+    if (!approvedCerts) {
+      approvedCerts = new Set<string>();
+      this.approvedCertKeys.set(wc.session, approvedCerts);
+    }
+    const sessionApprovedCerts = approvedCerts;
+    let bypassedOrigin = '';
+    let navigationGeneration = 0;
+    wc.on('did-start-navigation', (_event, _url, _isInPlace, isMainFrame) => {
+      if (isMainFrame !== false) {
+        navigationGeneration += 1;
+        bypassedOrigin = '';
+      }
+    });
+    const fallbackHosts = this.getFallbackSet(wc);
 
     const enforceNavOrRedirect = (event: Electron.Event, targetUrl: string, isMainFrame: boolean) => {
-      if (!isSafeNavigationUrl(targetUrl)) {
+      if (!isSafeNavigationUrl(targetUrl) && !isSameOriginBlobUrl(targetUrl, wc.getURL())) {
         event.preventDefault();
         if (isAllowedExternalProtocol(targetUrl)) {
-          void this.confirmAndOpenExternal(targetUrl);
+          void this.confirmAndOpenExternal(targetUrl).catch(() => {});
         } else {
           this.host.onBlockedNavigation?.(targetUrl, 'Blocked unsafe navigation protocol');
         }
@@ -198,7 +204,7 @@ export class NavigationManager {
         return;
       }
 
-      void this.promptForHttpFallback(wc, host, fallbackHttpUrl, fallbackHosts);
+      void this.promptForHttpFallback(wc, host, fallbackHttpUrl, fallbackHosts).catch(() => {});
     });
 
     wc.on('certificate-error', (event, url, error, certificate, callback) => {
@@ -212,20 +218,27 @@ export class NavigationManager {
         // Keep raw string as fallback label
       }
 
-      const certKey = `${certScope}::${host}`;
-      if (
-        (privateApprovedCertHosts && privateApprovedCertHosts.has(host)) ||
-        (!options.isPrivate && this.approvedCertKeys.has(certKey))
-      ) {
+      let origin: string;
+      try {
+        origin = new URL(url).origin;
+      } catch {
+        callback(false);
+        return;
+      }
+      const certKey = `${origin}::${certificate.fingerprint}::${error}`;
+      const promptKey = `${wc.id}::${certKey}`;
+      const generation = navigationGeneration;
+      if (certificate.fingerprint && sessionApprovedCerts.has(certKey)) {
+        bypassedOrigin = origin;
         callback(true);
         return;
       }
 
-      if (this.certDialogInFlight.has(certKey)) {
+      if (this.certDialogInFlight.has(promptKey)) {
         callback(false);
         return;
       }
-      this.certDialogInFlight.add(certKey);
+      this.certDialogInFlight.add(promptKey);
 
       const parentWin = this.host.getDialogParentWindow();
       const show = parentWin && !parentWin.isDestroyed()
@@ -242,13 +255,10 @@ export class NavigationManager {
 
       void show
         .then((res) => {
-          const allow = res.response === 1;
+          const allow = res.response === 1 && !wc.isDestroyed() && generation === navigationGeneration;
           if (allow) {
-            if (privateApprovedCertHosts) {
-              privateApprovedCertHosts.add(host);
-            } else {
-              this.approvedCertKeys.add(certKey);
-            }
+            bypassedOrigin = origin;
+            if (certificate.fingerprint) sessionApprovedCerts.add(certKey);
           }
           callback(allow);
         })
@@ -256,7 +266,7 @@ export class NavigationManager {
           callback(false);
         })
         .finally(() => {
-          this.certDialogInFlight.delete(certKey);
+          this.certDialogInFlight.delete(promptKey);
         });
     });
 
@@ -267,10 +277,7 @@ export class NavigationManager {
       const currentUrl = wc.getURL();
       if (currentUrl.startsWith('https://')) {
         try {
-          const host = new URL(currentUrl).hostname.toLowerCase();
-          const isBypassed = privateApprovedCertHosts
-            ? privateApprovedCertHosts.has(host)
-            : this.approvedCertKeys.has(`${certScope}::${host}`);
+          const isBypassed = new URL(currentUrl).origin === bypassedOrigin;
           if (!isBypassed) {
             options.onCertErrorChanged?.(false);
           }
@@ -318,16 +325,17 @@ export class NavigationManager {
     });
 
     wc.setWindowOpenHandler(({ url, disposition, features }) => {
-      if (!isSafeNavigationUrl(url)) {
+      const isBlobPreview = isSameOriginBlobUrl(url, wc.getURL());
+      if (!isSafeNavigationUrl(url) && !isBlobPreview) {
         if (isAllowedExternalProtocol(url)) {
-          void this.confirmAndOpenExternal(url);
+          void this.confirmAndOpenExternal(url).catch(() => {});
         } else {
           this.host.onBlockedNavigation?.(url, 'Blocked unsafe popup URL');
         }
         return { action: 'deny' };
       }
 
-      if (features && features.trim().length > 0) {
+      if (isBlobPreview || (features && features.trim().length > 0)) {
         return {
           action: 'allow',
           overrideBrowserWindowOptions: {
@@ -337,6 +345,9 @@ export class NavigationManager {
               preload: undefined,
               contextIsolation: true,
               nodeIntegration: false,
+              nodeIntegrationInWorker: false,
+              nodeIntegrationInSubFrames: false,
+              webviewTag: false,
               sandbox: true,
               webSecurity: true,
               allowRunningInsecureContent: false,
@@ -379,19 +390,28 @@ export class NavigationManager {
     const parentWin = this.host.getDialogParentWindow();
     if (!parentWin || parentWin.isDestroyed() || wc.isDestroyed()) return;
 
-    const res = await dialog.showMessageBox(parentWin, {
-      type: 'warning',
-      buttons: ['Cancel', 'Load Unencrypted HTTP'],
-      defaultId: 0,
-      cancelId: 0,
-      title: 'HTTPS-Only Mode',
-      message: `${host} does not appear to support a secure HTTPS connection.`,
-      detail: `Your connection to ${httpUrl} would not be encrypted. Do you want to continue using insecure HTTP for ${host}?`,
-    });
+    let invalidated = false;
+    const invalidate = () => { invalidated = true; };
+    wc.on('did-start-navigation', invalidate);
+    wc.once('destroyed', invalidate);
+    try {
+      const res = await dialog.showMessageBox(parentWin, {
+        type: 'warning',
+        buttons: ['Cancel', 'Load Unencrypted HTTP'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'HTTPS-Only Mode',
+        message: `${host} does not appear to support a secure HTTPS connection.`,
+        detail: `Your connection to ${httpUrl} would not be encrypted. Do you want to continue using insecure HTTP for ${host}?`,
+      });
 
-    if (res.response === 1 && !wc.isDestroyed()) {
-      fallbackHosts.add(host);
-      await wc.loadURL(httpUrl).catch(() => {});
+      if (res.response === 1 && !invalidated && !wc.isDestroyed()) {
+        fallbackHosts.add(host);
+        await wc.loadURL(httpUrl).catch(() => {});
+      }
+    } finally {
+      wc.removeListener('did-start-navigation', invalidate);
+      wc.removeListener('destroyed', invalidate);
     }
   }
 

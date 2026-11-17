@@ -1,0 +1,10 @@
+ts	phase	decision	why	evidence	result
+2026-11-17T03:24:27Z	baseline	Recorded clean baseline and reproduced boundary defects	Fix shared trust boundaries and preserve existing features	artifacts/v7.0.3/baseline-integration.txt	43 unit tests and integration/e2e pass
+2026-11-17T03:24:27Z	runtime	Select current stable Electron 45.3.3 and supported toolchain	Old runtime and test tooling have security advisories	artifacts/v7.0.3/baseline-audit.json	implementation in progress
+2026-11-17T03:35:05Z	security	Validated real Electron storage permissions CSP and crash recovery	Prove enforcement with actual sessions and renderers	artifacts/v7.0.3/security-integration.txt	PASS
+2026-11-17T03:35:05Z	compatibility	Expanded public probe to all twelve requested sites	Account walls and marketing pages cannot prove authenticated workflows	artifacts/v7.0.3/website-probe.json	public checks recorded; authenticated scenarios blocked
+2026-11-17T03:46:27Z	packaging	Removed Electron app API import from worker filter path resolution	Packaged workers cannot require Electron even when development resolution succeeds	artifacts/v7.0.3/packaged-worker-failure.txt	final packaged smoke passes after correction
+2026-11-17T03:46:27Z	reliability	Keep updater lifetime until application disposal	Window close must not lose in-flight update events	artifacts/v7.0.3/security-integration.txt	PASS
+2026-11-17T03:46:27Z	focus	Retain combined-suite focus failure after three isolated passes	Root cause remains unproven; passing reruns do not erase failure	artifacts/v7.0.3/all-tests-focus-failure.txt	unresolved intermittent risk
+2026-11-17T03:52:42Z	verification	Await real native focus in test drivers without forcing focus or weakening assertions	The failing paths bypassed the readiness wait already used by keyboard input	artifacts/v7.0.3/all-tests-synchronized.txt	complete combined suite passed; earlier failures retained
+2026-11-17T03:52:42Z	final	Report unsigned package success with public-release blockers	Signing and provider prerequisites were unavailable; do not turn unexecuted scenarios into passes	docs/quality/v7.0.3-report.md	NOT READY for public release

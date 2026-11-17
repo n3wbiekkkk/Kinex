@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   createDefaultPersistedData,
   createDefaultShieldsFilterLists,
@@ -16,13 +17,45 @@ import type {
   PersistedShieldsSettings,
   SearchEngineId,
   ShieldsMode,
+  Profile,
+  Space,
+  TabItem,
+  SplitLayout,
+  SitePermissionDecision,
 } from '../shared/types';
-import { isSafeNavigationUrl, isSafeUpdateFeedUrl } from './security';
+import { classifySecurityState, isLocalHostname, isSafeNavigationUrl, isSafeUpdateFeedUrl } from './security';
 
 const VALID_MEMORY_SAVER = new Set<MemorySaverTimeout>(['disabled', '5m', '15m', '30m', '60m']);
 const VALID_NEW_TAB_PRESETS = new Set(['minimal', 'focus', 'personal']);
 const VALID_NEW_TAB_BGS = new Set(['clean', 'mist', 'dusk', 'sage']);
 const VALID_SHIELDS_MODES = new Set<ShieldsMode>(['standard', 'aggressive', 'disabled']);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isPartition(value: unknown): value is string {
+  return typeof value === 'string' && /^persist:[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(value);
+}
+
+function isId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256 &&
+    !['__proto__', 'constructor', 'prototype'].includes(value);
+}
+
+function finiteNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function sanitizeFavicon(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  return /^https?:\/\//i.test(value) || /^data:image\/(?:png|gif|jpeg|webp|x-icon|vnd\.microsoft\.icon|svg\+xml)(?:;[^,]*)?,/i.test(value)
+    ? value : undefined;
+}
 
 function sanitizePersistedShields(
   rawShields: unknown,
@@ -50,7 +83,7 @@ function sanitizePersistedShields(
         ? 'aggressive'
         : 'standard';
 
-  const siteOverrides: Record<string, ShieldsMode> = {};
+  const siteOverrides: Record<string, ShieldsMode> = Object.create(null);
   if (obj.siteOverrides && typeof obj.siteOverrides === 'object' && !Array.isArray(obj.siteOverrides)) {
     for (const [rawKey, mode] of Object.entries(obj.siteOverrides as Record<string, unknown>)) {
       const key = normalizeShieldsSiteKey(rawKey);
@@ -75,13 +108,13 @@ function sanitizePersistedShields(
     return {
       ...def,
       enabled: typeof saved.enabled === 'boolean' ? saved.enabled : def.enabled,
-      ruleCount: typeof saved.ruleCount === 'number' && saved.ruleCount >= 0 ? saved.ruleCount : def.ruleCount,
-      lastUpdatedAt: typeof saved.lastUpdatedAt === 'number' ? saved.lastUpdatedAt : undefined,
+      ruleCount: Math.max(0, finiteNumber(saved.ruleCount, def.ruleCount)),
+      lastUpdatedAt: typeof saved.lastUpdatedAt === 'number' && Number.isFinite(saved.lastUpdatedAt) ? saved.lastUpdatedAt : undefined,
       lastError: typeof saved.lastError === 'string' ? saved.lastError : undefined,
     };
   });
 
-  const customCosmeticRules: Record<string, string[]> = {};
+  const customCosmeticRules: Record<string, string[]> = Object.create(null);
   if (obj.customCosmeticRules && typeof obj.customCosmeticRules === 'object' && !Array.isArray(obj.customCosmeticRules)) {
     for (const [rawDomain, rules] of Object.entries(obj.customCosmeticRules as Record<string, unknown>)) {
       const key = normalizeShieldsSiteKey(rawDomain);
@@ -114,7 +147,7 @@ function sanitizePersistedShields(
     filterLists,
     customCosmeticRules,
     lastGlobalUpdateAt:
-      typeof obj.lastGlobalUpdateAt === 'number' ? obj.lastGlobalUpdateAt : undefined,
+      typeof obj.lastGlobalUpdateAt === 'number' && Number.isFinite(obj.lastGlobalUpdateAt) ? obj.lastGlobalUpdateAt : undefined,
   };
 }
 
@@ -147,6 +180,8 @@ export class KinexPersistence {
   private pendingData: PersistedKinexData | null = null;
   private writeChain: Promise<void> = Promise.resolve();
   private ensuredDir = false;
+  private writeGeneration = 0;
+  private recoveryPayload: string | null = null;
 
   constructor(userDataDir: string) {
     this.filePath = path.join(userDataDir, 'kinex-state.json');
@@ -161,6 +196,7 @@ export class KinexPersistence {
   }
 
   load(): PersistedKinexData {
+    let raw: string | undefined;
     try {
       const sourcePath = fs.existsSync(this.filePath)
         ? this.filePath
@@ -168,41 +204,126 @@ export class KinexPersistence {
       if (!sourcePath) {
         return createDefaultPersistedData();
       }
-      const raw = fs.readFileSync(sourcePath, 'utf8');
-      const parsed = JSON.parse(raw) as Partial<PersistedKinexData>;
+      raw = fs.readFileSync(sourcePath, 'utf8');
+      const decoded: unknown = JSON.parse(raw);
+      if (!isRecord(decoded)) throw new Error('Invalid state document');
+      const parsed = decoded as Partial<PersistedKinexData>;
       const defaults = createDefaultPersistedData();
-      if (!Array.isArray(parsed.spaces) || parsed.spaces.length === 0) {
-        return defaults;
-      }
-      const normalizedSpaces = parsed.spaces
-        .filter((s) => s && typeof s.id === 'string' && typeof s.name === 'string')
+      let damaged = false;
+      const records = (value: unknown): Record<string, unknown>[] => {
+        if (value === undefined) return [];
+        if (!Array.isArray(value)) { damaged = true; return []; }
+        const result = value.filter(isRecord);
+        if (result.length !== value.length) damaged = true;
+        return result;
+      };
+      const namedRecords = (value: unknown): Record<string, unknown>[] => {
+        const seen = new Set<string>();
+        return records(value).filter((item) => {
+          if (!isId(item.id) || seen.has(item.id)) { damaged = true; return false; }
+          seen.add(item.id);
+          return true;
+        });
+      };
+      const rawSpaces = namedRecords(parsed.spaces).filter((space) => {
+        if (typeof space.name !== 'string') { damaged = true; return false; }
+        return true;
+      });
+      if (rawSpaces.length === 0) damaged = true;
+      const normalizedSpaces: Space[] = (rawSpaces.length > 0 ? rawSpaces : defaults.spaces)
         .map((s) => {
-          const presetMatch = SPACE_THEME_PRESETS.find((p) => p.id === s.theme?.id);
+          if (s.theme !== undefined && !isRecord(s.theme)) damaged = true;
+          const theme = isRecord(s.theme) ? s.theme : {};
+          const preset = SPACE_THEME_PRESETS.find((p) => p.id === theme.id) ?? SPACE_THEME_PRESETS[0];
+          const partition = isPartition(s.profilePartition) ? s.profilePartition
+            : s.profilePartition === undefined ? defaults.profiles[0].partition
+              : `persist:kinex-recovered-${createHash('sha256').update(String(s.id)).digest('hex').slice(0, 16)}`;
+          if (s.profilePartition !== undefined && !isPartition(s.profilePartition)) damaged = true;
           return {
-            ...s,
-            profilePartition: s.profilePartition || defaults.profiles[0].partition,
+            id: String(s.id),
+            name: String(s.name),
+            icon: typeof s.icon === 'string' ? s.icon : '✦',
+            profilePartition: partition,
             theme: {
-              ...SPACE_THEME_PRESETS[0],
-              ...s.theme,
-              tintRgba: s.theme?.tintRgba || presetMatch?.tintRgba || 'rgba(26, 27, 33, 0.78)',
+              id: optionalString(theme.id) ?? preset.id,
+              name: optionalString(theme.name) ?? preset.name,
+              gradientFrom: optionalString(theme.gradientFrom) ?? preset.gradientFrom,
+              gradientTo: optionalString(theme.gradientTo) ?? preset.gradientTo,
+              tintRgba: optionalString(theme.tintRgba) ?? preset.tintRgba,
+              accent: optionalString(theme.accent) ?? preset.accent,
+              isDark: typeof theme.isDark === 'boolean' ? theme.isDark : preset.isDark,
             },
           };
         });
-      if (normalizedSpaces.length === 0) {
-        return defaults;
+      const spaceIds = new Set(normalizedSpaces.map((space) => space.id));
+      const usedPartitions = new Set<string>();
+      const profiles: Profile[] = namedRecords(parsed.profiles === undefined ? defaults.profiles : parsed.profiles).flatMap((profile) => {
+        if (typeof profile.name !== 'string' || !isPartition(profile.partition) || usedPartitions.has(profile.partition)) {
+          damaged = true;
+          return [];
+        }
+        usedPartitions.add(profile.partition);
+        return [{ id: String(profile.id), name: profile.name, partition: profile.partition }];
+      });
+      for (const space of normalizedSpaces) {
+        if (!usedPartitions.has(space.profilePartition)) {
+          usedPartitions.add(space.profilePartition);
+          profiles.push({ id: `recovered-${randomUUID()}`, name: space.name, partition: space.profilePartition });
+        }
       }
-
-      const rawTabs = Array.isArray(parsed.tabs) && parsed.tabs.length > 0 ? parsed.tabs : defaults.tabs;
-      const migratedTabs = rawTabs
-        .filter((t) => t && typeof t.id === 'string')
-        .map((t) => ({
-          ...t,
-          url: sanitizePersistedUrl(t.url, 'kinex://welcome'),
+      const folders = namedRecords(parsed.folders).flatMap((folder) => {
+        if (typeof folder.name !== 'string' || typeof folder.spaceId !== 'string' || !spaceIds.has(folder.spaceId)) { damaged = true; return []; }
+        return [{ id: String(folder.id), spaceId: folder.spaceId, name: folder.name, collapsed: folder.collapsed === true }];
+      });
+      const migratedTabs: TabItem[] = namedRecords(parsed.tabs === undefined ? defaults.tabs : parsed.tabs).map((t) => {
+        const spaceId = typeof t.spaceId === 'string' && spaceIds.has(t.spaceId) ? t.spaceId : normalizedSpaces[0].id;
+        if (spaceId !== t.spaceId) damaged = true;
+        const url = sanitizePersistedUrl(t.url, 'kinex://welcome');
+        return {
+          id: String(t.id),
+          spaceId,
+          location: t.location === 'pinned' || t.location === 'topApp' ? t.location : 'unpinned',
+          folderId: folders.some((f) => f.id === t.folderId && f.spaceId === spaceId) ? String(t.folderId) : undefined,
+          url,
           pinnedUrl: t.pinnedUrl ? sanitizePersistedUrl(t.pinnedUrl, 'kinex://welcome') : undefined,
-          title: t.title === 'Welcome to NOOK' ? 'Welcome to Kinex' : String(t.title || 'New Tab'),
+          title: t.title === 'Welcome to NOOK' ? 'Welcome to Kinex' : optionalString(t.title) || 'New Tab',
+          favicon: sanitizeFavicon(t.favicon),
           isLoading: false,
           isCrashed: false,
-        }));
+          isDiscarded: t.isDiscarded === true,
+          canGoBack: false,
+          canGoForward: false,
+          isMuted: t.isMuted === true,
+          isAudible: false,
+          securityState: classifySecurityState(url, false),
+          zoomFactor: typeof t.zoomFactor === 'number' && t.zoomFactor >= 0.5 && t.zoomFactor <= 2.5 ? t.zoomFactor : undefined,
+          lastActiveAt: Math.max(0, finiteNumber(t.lastActiveAt)),
+        };
+      });
+      const splitsBySpace: Record<string, SplitLayout> = Object.create(null);
+      const rawSplits = isRecord(parsed.splitsBySpace) ? parsed.splitsBySpace : {};
+      if (parsed.splitsBySpace !== undefined && !isRecord(parsed.splitsBySpace)) damaged = true;
+      for (const space of normalizedSpaces) {
+        const rawSplit = rawSplits[space.id];
+        const split: Record<string, unknown> = isRecord(rawSplit) ? rawSplit : {};
+        if (rawSplit !== undefined && (!isRecord(rawSplit) || !Array.isArray(split.tabIds))) damaged = true;
+        const requestedIds = Array.isArray(split.tabIds) ? split.tabIds : [];
+        const tabIds = [...new Set(requestedIds.filter((id): id is string =>
+          typeof id === 'string' && migratedTabs.some((tab) => tab.id === id && tab.spaceId === space.id)
+        ))].slice(0, 2);
+        if (requestedIds.length !== tabIds.length) damaged = true;
+        if (split.focusedIndex !== undefined && (!Number.isInteger(split.focusedIndex) || finiteNumber(split.focusedIndex) < 0 || finiteNumber(split.focusedIndex) >= Math.max(1, tabIds.length))) damaged = true;
+        if (split.splitRatio !== undefined && (typeof split.splitRatio !== 'number' || split.splitRatio < 0.2 || split.splitRatio > 0.8)) damaged = true;
+        if (tabIds.length === 0) {
+          const fallback = migratedTabs.find((tab) => tab.spaceId === space.id);
+          if (fallback) tabIds.push(fallback.id);
+        }
+        splitsBySpace[space.id] = {
+          tabIds,
+          focusedIndex: Math.max(0, Math.min(tabIds.length - 1, Math.trunc(finiteNumber(split.focusedIndex)))),
+          splitRatio: typeof split.splitRatio === 'number' && split.splitRatio >= 0.2 && split.splitRatio <= 0.8 ? split.splitRatio : 0.5,
+        };
+      }
 
       const activeSpaceId = normalizedSpaces.some((s) => s.id === parsed.activeSpaceId)
         ? String(parsed.activeSpaceId)
@@ -215,38 +336,60 @@ export class KinexPersistence {
       const resolvedFeedUrl = resolvePersistedUpdateFeedUrl(parsed.updateFeedUrl, defaults.updateFeedUrl);
       const shields = sanitizePersistedShields(parsed.shields, parsed.adBlockEnabled ?? defaults.adBlockEnabled);
 
-      return {
+      const sitePermissions = records(parsed.sitePermissions).flatMap<SitePermissionDecision>((permission) => {
+        if (!isPartition(permission.partition) || !usedPartitions.has(permission.partition) ||
+            typeof permission.origin !== 'string' || typeof permission.permission !== 'string' ||
+            !permission.permission || (permission.decision !== 'allow' && permission.decision !== 'deny')) {
+          damaged = true;
+          return [];
+        }
+        try {
+          const url = new URL(permission.origin);
+          if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLocalHostname(url.hostname))) { damaged = true; return []; }
+          return [{ partition: permission.partition, origin: url.origin, permission: permission.permission,
+            decision: permission.decision, updatedAt: Math.max(0, finiteNumber(permission.updatedAt)) }];
+        } catch { damaged = true; return []; }
+      });
+      const boosts = namedRecords(parsed.boosts).flatMap((boost) => {
+        if (typeof boost.name !== 'string' || typeof boost.domainPattern !== 'string' ||
+            typeof boost.css !== 'string' || typeof boost.js !== 'string') { damaged = true; return []; }
+        return [{ id: String(boost.id), name: boost.name, domainPattern: boost.domainPattern,
+          enabled: boost.enabled === true, css: boost.css, js: boost.js,
+          zappedSelectors: Array.isArray(boost.zappedSelectors)
+            ? boost.zappedSelectors.filter((s): s is string => typeof s === 'string' && s.length <= 512 && !/[{}\n\r;]/.test(s)) : [],
+          filterInvert: boost.filterInvert === true, fontFamily: optionalString(boost.fontFamily),
+          zoomFactor: typeof boost.zoomFactor === 'number' && boost.zoomFactor >= 0.5 && boost.zoomFactor <= 2.5 ? boost.zoomFactor : undefined }];
+      });
+      const airTrafficRules = namedRecords(parsed.airTrafficRules).flatMap((rule) => {
+        if (typeof rule.pattern !== 'string' || typeof rule.spaceId !== 'string' || !spaceIds.has(rule.spaceId)) { damaged = true; return []; }
+        return [{ id: String(rule.id), pattern: rule.pattern, spaceId: rule.spaceId, enabled: rule.enabled === true }];
+      });
+      const result: PersistedKinexData = {
         ...defaults,
-        ...parsed,
         activeSpaceId,
         spaces: normalizedSpaces,
-        profiles: Array.isArray(parsed.profiles) && parsed.profiles.length > 0 ? parsed.profiles : defaults.profiles,
-        folders: Array.isArray(parsed.folders) ? parsed.folders : [],
+        profiles,
+        folders,
         tabs: migratedTabs,
-        splitsBySpace: parsed.splitsBySpace && typeof parsed.splitsBySpace === 'object'
-          ? parsed.splitsBySpace
-          : defaults.splitsBySpace,
-        boosts: Array.isArray(parsed.boosts) ? parsed.boosts : [],
-        history: Array.isArray(parsed.history)
-          ? parsed.history
-              .filter((h) => h && isSafeNavigationUrl(String(h.url ?? '')))
-              .map((h) => ({ ...h, url: sanitizePersistedUrl(h.url) }))
-          : [],
-        archivedTabs: Array.isArray(parsed.archivedTabs)
-          ? parsed.archivedTabs
-              .filter((a) => a && typeof a.id === 'string')
-              .map((a) => ({ ...a, url: sanitizePersistedUrl(a.url) }))
-          : [],
-        closedTabs: Array.isArray(parsed.closedTabs)
-          ? parsed.closedTabs
-              .filter((c) => c && typeof c.id === 'string')
-              .map((c) => ({
-                ...c,
-                url: sanitizePersistedUrl(c.url),
-                pinnedUrl: c.pinnedUrl ? sanitizePersistedUrl(c.pinnedUrl) : undefined,
-              }))
-              .slice(0, 50)
-          : [],
+        splitsBySpace,
+        boosts,
+        history: records(parsed.history).filter((h) => typeof h.url === 'string' && isSafeNavigationUrl(h.url)).map((h) => ({
+          url: sanitizePersistedUrl(h.url), title: optionalString(h.title) || optionalString(h.url) || 'New Tab',
+          visitedAt: Math.max(0, finiteNumber(h.visitedAt)), visitCount: Math.max(1, Math.trunc(finiteNumber(h.visitCount, 1))),
+        })),
+        archivedTabs: namedRecords(parsed.archivedTabs).map((a) => ({
+          id: String(a.id), spaceId: typeof a.spaceId === 'string' && spaceIds.has(a.spaceId) ? a.spaceId : activeSpaceId,
+          url: sanitizePersistedUrl(a.url), title: optionalString(a.title) || 'New Tab',
+          favicon: sanitizeFavicon(a.favicon), archivedAt: Math.max(0, finiteNumber(a.archivedAt)),
+        })),
+        closedTabs: namedRecords(parsed.closedTabs).slice(0, 50).map((c) => ({
+          id: String(c.id), spaceId: typeof c.spaceId === 'string' && spaceIds.has(c.spaceId) ? c.spaceId : activeSpaceId,
+          location: c.location === 'pinned' || c.location === 'topApp' ? c.location : 'unpinned',
+          folderId: optionalString(c.folderId), folderName: optionalString(c.folderName),
+          url: sanitizePersistedUrl(c.url), pinnedUrl: c.pinnedUrl ? sanitizePersistedUrl(c.pinnedUrl) : undefined,
+          title: optionalString(c.title) || 'New Tab', favicon: sanitizeFavicon(c.favicon),
+          closedAt: Math.max(0, finiteNumber(c.closedAt)), groupId: optionalString(c.groupId),
+        })),
         zoomByHost:
           parsed.zoomByHost && typeof parsed.zoomByHost === 'object' && !Array.isArray(parsed.zoomByHost)
             ? Object.fromEntries(
@@ -270,14 +413,15 @@ export class KinexPersistence {
               : defaults.readerOptions.theme,
         },
         sidebarWidth: Math.min(380, Math.max(200, Math.round(rawSidebarWidth))),
+        sidebarOpen: typeof parsed.sidebarOpen === 'boolean' ? parsed.sidebarOpen : defaults.sidebarOpen,
         shields,
         adBlockEnabled: shields.globalMode !== 'disabled',
-        httpsOnly: parsed.httpsOnly ?? defaults.httpsOnly,
-        cleanCopyUrl: parsed.cleanCopyUrl ?? defaults.cleanCopyUrl,
-        sitePermissions: Array.isArray(parsed.sitePermissions) ? parsed.sitePermissions : [],
-        airTrafficRules: Array.isArray(parsed.airTrafficRules) ? parsed.airTrafficRules : [],
+        httpsOnly: typeof parsed.httpsOnly === 'boolean' ? parsed.httpsOnly : defaults.httpsOnly,
+        cleanCopyUrl: typeof parsed.cleanCopyUrl === 'boolean' ? parsed.cleanCopyUrl : defaults.cleanCopyUrl,
+        sitePermissions,
+        airTrafficRules,
         searchEngine:
-          typeof parsed.searchEngine === 'string' && parsed.searchEngine in SEARCH_ENGINES
+          typeof parsed.searchEngine === 'string' && Object.hasOwn(SEARCH_ENGINES, parsed.searchEngine)
             ? (parsed.searchEngine as SearchEngineId)
             : defaults.searchEngine,
         updateFeedUrl: resolvedFeedUrl,
@@ -313,7 +457,10 @@ export class KinexPersistence {
               : defaults.newTabConfig.showFrequent,
         } satisfies NewTabConfig,
       };
+      if (damaged) this.recoveryPayload = raw;
+      return result;
     } catch {
+      if (raw !== undefined) this.recoveryPayload = raw;
       return createDefaultPersistedData();
     }
   }
@@ -337,7 +484,7 @@ export class KinexPersistence {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    const toWrite = this.pendingData ?? fallbackData ?? null;
+    const toWrite = fallbackData ?? this.pendingData ?? null;
     this.pendingData = null;
     if (toWrite) {
       this.save(toWrite);
@@ -346,37 +493,58 @@ export class KinexPersistence {
 
   private enqueueAsyncWrite(data: PersistedKinexData): void {
     const payload = JSON.stringify(data);
+    const generation = ++this.writeGeneration;
+    const tmpPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
     this.writeChain = this.writeChain
       .then(async () => {
+        if (generation !== this.writeGeneration) return;
         if (!this.ensuredDir) {
           await fs.promises.mkdir(path.dirname(this.filePath), { recursive: true });
           this.ensuredDir = true;
         }
-        const tmpPath = `${this.filePath}.${process.pid}.tmp`;
-        await fs.promises.writeFile(tmpPath, payload, 'utf8');
-        await fs.promises.rename(tmpPath, this.filePath);
+        try {
+          await fs.promises.writeFile(tmpPath, payload, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+          if (generation === this.writeGeneration) {
+            this.preserveRecoveryPayload();
+            // Keep the generation check and promotion in one turn so shutdown cannot interleave.
+            fs.renameSync(tmpPath, this.filePath);
+          }
+        } finally {
+          await fs.promises.rm(tmpPath, { force: true });
+        }
       })
-      .catch(() => {
-        // Ignore transient disk write failures
+      .catch((error: unknown) => {
+        console.warn('Kinex could not save browser state.', error instanceof Error && 'code' in error ? error.code : 'write failed');
       });
   }
 
+  private preserveRecoveryPayload(): void {
+    if (this.recoveryPayload === null) return;
+    const backupPath = `${this.filePath}.corrupt-${randomUUID()}.json`;
+    fs.writeFileSync(backupPath, this.recoveryPayload, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    this.recoveryPayload = null;
+  }
+
   save(data: PersistedKinexData): void {
+    this.writeGeneration += 1;
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
     this.pendingData = null;
+    const tmpPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
     try {
       if (!this.ensuredDir) {
         fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
         this.ensuredDir = true;
       }
-      const tmpPath = `${this.filePath}.${process.pid}.tmp`;
-      fs.writeFileSync(tmpPath, JSON.stringify(data), 'utf8');
+      fs.writeFileSync(tmpPath, JSON.stringify(data), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      this.preserveRecoveryPayload();
       fs.renameSync(tmpPath, this.filePath);
-    } catch {
-      // Ignore transient disk write failures during rapid shutdown
+    } catch (error) {
+      console.warn('Kinex could not save browser state.', error instanceof Error && 'code' in error ? error.code : 'write failed');
+    } finally {
+      try { fs.rmSync(tmpPath, { force: true }); } catch {}
     }
   }
 }
