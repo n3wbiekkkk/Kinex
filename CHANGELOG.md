@@ -2,6 +2,13 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.18] - 2026-11-17
+
+Pre-production preview. Record 0.7.17 extension publication evidence.
+
+- Record the 0.7.17 source push, passing CI and Release runs, DMG/ZIP digests, and the remaining unsigned-preview installation limits in the update compatibility document.
+- Restate the supported unpacked MV3 extension scope and the absent signed auto-installation path.
+
 ## [0.7.17] - 2026-11-17
 
 Pre-production preview. Add unpacked Manifest V3 extension support with per-Profile isolation.

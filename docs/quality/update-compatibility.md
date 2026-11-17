@@ -74,3 +74,12 @@ syspolicy_check no longer reports the damaged resource seal, but still reports a
 In 0.7.9 through 0.7.11, `Settings -> Updates & About` exposed the update feed URL/folder text input and reported `No release manifest (latest-mac.yml) published at this update feed yet` whenever `latest-mac.yml` returned HTTP 404 on unsigned 0.x preview releases.
 
 Version 0.7.12 removes the update feed URL/folder controls from `SettingsView.tsx` and resolves the latest GitHub Release (`api.github.com/repos/n3wbiekkkk/Kinex/releases/latest`, with `HEAD /releases/latest` redirect fallback) when `latest-mac.yml` is absent on the GitHub feed. If the installed version is current or the remote tag is an incompatible legacy 7.0.x build, the updater reports `up-to-date`. If a newer compatible version is available, the updater downloads the release archive over HTTPS, verifies its SHA-256 digest (and `hdiutil verify` for `.dmg` images), reports `downloaded`, and opens the verified installer via `shell.openPath` on `Restart & Update` before quitting. Signed automatic replacement via `Squirrel.Mac` remains gated on Developer ID credentials.
+
+
+### 0.7.17 extension preview publication
+
+- Source: `main` push `df88d5e` (0.7.17).
+- CI: run `44097276096` passed on that SHA, including unit/boundary, real-Electron integration/security, E2E, keyboard/experience, packaged-app launch and DMG mount checks.
+- Publication: run `44098361502` passed. `v0.7.17` is Latest and carries `Kinex-0.7.17-arm64.dmg` (sha256 `c8d0124b42f7614ba8b36b3baf53df82935028d77e8b0d91b18b36eef7362464`) and `Kinex-0.7.17-arm64-mac.zip` (sha256 `358d4f3d1dd640b90379dc7ed29c099890491cd53b75e037d3d06d057212b58a`).
+- Installed-update validation: **not proven**. No Developer ID secrets are configured, so publication produced an ad-hoc sealed manual preview with no signed auto-installation and no `latest-mac.yml`. DMG verification and mounted-app launch passed in CI with disposable data; Gatekeeper acceptance and signed auto-installation remain unverified.
+- Extension scope: unpacked local MV3 folders, per-Profile partition, explicit permission review, `allowFileAccess: false`, no `.crx`/Web Store, and no `chrome.action` badge/command shim. Electron's extension API is a limited DevTools-oriented subset, so full Chrome extension compatibility is not claimed.
