@@ -19,6 +19,12 @@ function formatUpdaterError(err: unknown): string {
   return raw.split('\n')[0].slice(0, 140) || 'Update check failed';
 }
 
+const MISNUMBERED_RELEASES = new Set(['7.0.1', '7.0.2', '7.0.3']);
+
+export function isCompatibleUpdateVersion(currentVersion: string, nextVersion: string): boolean {
+  return !currentVersion.startsWith('0.') || !MISNUMBERED_RELEASES.has(nextVersion);
+}
+
 export type FeedSource =
   | { kind: 'remote'; url: string }
   | { kind: 'local-dir'; dir: string }
@@ -122,6 +128,10 @@ export class KinexAutoUpdater {
     this.initialized = true;
     this.disposed = false;
 
+    autoUpdater.allowDowngrade = false;
+    const supported = autoUpdater.isUpdateSupported;
+    autoUpdater.isUpdateSupported = (info) => isCompatibleUpdateVersion(autoUpdater.currentVersion.version, info.version) && supported(info);
+    this.removeListeners.push(() => { autoUpdater.isUpdateSupported = supported; });
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 
@@ -150,8 +160,8 @@ export class KinexAutoUpdater {
       this.stopLocalFeedServer();
     });
 
-    this.on('update-not-available', (info) => {
-      this.setStatus({ state: 'up-to-date', version: info.version || app.getVersion() });
+    this.on('update-not-available', () => {
+      this.setStatus({ state: 'up-to-date', version: app.getVersion() });
       this.stopLocalFeedServer();
     });
 

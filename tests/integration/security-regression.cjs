@@ -146,6 +146,16 @@ async function run() {
     } finally { clipboard.writeText = writeText; }
     const { autoUpdater } = require('electron-updater');
     manager.updater.init();
+    assert.equal(autoUpdater.allowDowngrade, false, 'automatic downgrades remain disabled');
+    const currentVersion = autoUpdater.currentVersion;
+    try {
+      autoUpdater.currentVersion = new currentVersion.constructor('0.7.0');
+      assert.equal(await autoUpdater.isUpdateAvailable({ version: '0.7.3' }), true, 'real updater accepts 0.7.0 to 0.7.3');
+      assert.equal(await autoUpdater.isUpdateAvailable({ version: '7.0.2' }), false, 'real updater rejects historical misnumbered releases');
+      assert.equal(await autoUpdater.isUpdateAvailable({ version: '1.0.0' }), true, 'production upgrade remains available');
+    } finally { autoUpdater.currentVersion = currentVersion; }
+    autoUpdater.emit('update-not-available', { version: '7.0.2' });
+    assert.equal(manager.getSnapshot().updateStatus.version, app.getVersion(), 'status reports the installed version');
     const updateListeners = autoUpdater.listenerCount('update-downloaded');
     autoUpdater.emit('update-available', { version: '99.0.0' });
     autoUpdater.emit('download-progress', { percent: 10 });
@@ -155,7 +165,7 @@ async function run() {
     assert.equal(manager.getSnapshot().updateStatus.state, 'downloaded', 'update status must advance after window close');
     manager.dispose();
     assert.equal(autoUpdater.listenerCount('update-downloaded'), updateListeners - 1, 'application disposal removes updater listener');
-    console.log(JSON.stringify({ ok: true, electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node, arch: process.arch, os: os.release(), drm, checks: ['remote isolation', 'Canvas/WebGL2/local file input', 'IndexedDB/cache/service-worker/profile isolation', 'private storage purge', 'scoped permission/revocation/private denial', 'CSP nonce/search', 'real tab preferences', 'unknown profile rejection', 'updater event lifecycle across window close', 'async clipboard error handling'] }, null, 2));
+    console.log(JSON.stringify({ ok: true, electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node, arch: process.arch, os: os.release(), drm, checks: ['remote isolation', 'Canvas/WebGL2/local file input', 'IndexedDB/cache/service-worker/profile isolation', 'private storage purge', 'scoped permission/revocation/private denial', 'CSP nonce/search', 'real tab preferences', 'unknown profile rejection', '0.7.x update version compatibility', 'updater event lifecycle across window close', 'async clipboard error handling'] }, null, 2));
   } finally {
     manager?.dispose();
     downloads.dispose();

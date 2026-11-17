@@ -4,7 +4,7 @@ All notable releases of **Kinex Browser** follow a traditional, lightweight, pri
 
 ## [0.7.3] - 2026-11-17
 
-Pre-release. Version numbering was reset from 7.0.3 to 0.7.3: the 0.x line is pre-production, and 1.0.0 is reserved for the production release. This build is unsigned and not notarized. See [verification and remaining gates](docs/quality/v7.0.3-report.md) for evidence recorded during the 7.0.3 implementation.
+Pre-production preview. Version numbering was reset from 7.0.3 to 0.7.3: the 0.x line is pre-production, and 1.0.0 is reserved for the production release. This build is unsigned and not notarized. See [verification and remaining gates](docs/quality/v7.0.3-report.md) for evidence recorded during the 7.0.3 implementation.
 
 ### Changed
 
@@ -14,6 +14,8 @@ Pre-release. Version numbering was reset from 7.0.3 to 0.7.3: the 0.x line is pr
 - Prepare arm64 packaging, targeted hardened-runtime entitlements, signing gates, pinned CI actions, and real packaged startup verification.
 
 ### Fixed
+
+- Preserve the 0.7.x update feed by publishing signed artifacts through GitHub Latest. Prevent 0.x installations from selecting the obsolete misnumbered 7.0.1/7.0.2/7.0.3 builds. Signing credentials and publication remain prerequisites, not verified installation claims.
 
 - Scope site permissions and revocation to the owning Profile. Separate microphone and camera grants. Reject stale prompts, unknown permissions, untrusted IPC frames, and insecure LAN update feeds.
 - Scope TLS exceptions to the session, origin, certificate fingerprint, and error. Preserve legitimate same-origin blob previews in sandboxed popups.

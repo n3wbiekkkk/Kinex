@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { createLocalUpdateFeedServer, KinexAutoUpdater } from './updater';
+import { createLocalUpdateFeedServer, isCompatibleUpdateVersion, KinexAutoUpdater } from './updater';
 
 describe('local update feed trust boundary', () => {
   it('serves release artifacts and survives malformed, traversal, missing, and symlink requests', async () => {
@@ -50,4 +50,13 @@ it('closes a local feed that finishes binding after updater disposal', async () 
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+
+it.each(['7.0.1', '7.0.2', '7.0.3'])('rejects legacy misnumbered %s updates on the 0.x line', (version) => {
+  expect(isCompatibleUpdateVersion('0.7.3', version)).toBe(false);
+});
+
+it.each(['0.7.4', '0.8.0', '1.0.0'])('keeps the normal upgrade path to %s', (version) => {
+  expect(isCompatibleUpdateVersion('0.7.3', version)).toBe(true);
 });
