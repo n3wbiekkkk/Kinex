@@ -1,41 +1,40 @@
-# Update compatibility for the 0.7.x preview line
+# Releases and update compatibility
 
-Kinex 0.7.5 is a pre-production preview. Version 1.0.0 remains reserved for the first production release. The package and lockfile declare 0.7.5, and packaged validation reads the expected version from package.json.
+Kinex 0.7.6 is a pre-production preview. The owner prefers free distribution without Apple Developer membership. Version 1.0.0 remains reserved for production.
 
-## Older 0.7.x clients
+## Free preview Releases
 
-Older clients read https://github.com/n3wbiekkkk/Kinex/releases/latest/download/latest-mac.yml. GitHub's Latest endpoint excludes releases marked prerelease. The release workflow therefore publishes with `--latest` and without the GitHub prerelease flag. A 0.x release remains a preview by version and documentation; this flag choice makes the existing client feed work.
+GitHub Releases do not require Apple signing credentials. After successful main-push CI, the release workflow checks out the tested SHA, verifies it again, builds an Apple Silicon DMG and ZIP, verifies the DMG, and launches its actual mounted app with disposable data. Each delivery push gets a new patch version under [the repository rules](../../AGENTS.md).
 
-After each successful main-push CI run, the workflow checks out the tested SHA, derives its version tag from package.json, rejects a tag already assigned to another commit, and prepares signed artifacts as a draft before making them Latest. Explicit tag pushes remain supported and must match package.json. Each delivery push gets a new patch version under [the repository rules](../../AGENTS.md). Stale runs do not replace the newer main update feed; published assets are preserved on reruns. The workflow validates the version and requires Developer ID signing and notarization for published update artifacts, including previews. Local unsigned packages are manual testing artifacts.
+Without signing credentials, 0.x releases publish as explicitly unsigned, not-notarized manual downloads. Download the DMG or ZIP from the [Latest Release](https://github.com/n3wbiekkkk/Kinex/releases/latest). Gatekeeper may block downloaded unsigned applications; local package startup does not establish acceptance of a quarantined download. No protection bypass is included.
 
-The actual electron-updater version comparator was exercised with current version 0.7.0 and candidate 0.7.3. It accepts the upgrade. It also accepts the future 1.0.0 production upgrade. The existing operating-system compatibility check remains active, and automatic downgrades remain disabled.
+The workflow does not upload latest-mac.yml or blockmaps for unsigned previews. Downloading a release and installing an automatic signed update are different capabilities. Existing signed installations cannot be promised automatic replacement with an unsigned preview; they require a separate manual installation or a compatible signed update.
 
-A guard prevents the new 0.x client from treating the obsolete misnumbered 7.0.1, 7.0.2 and 7.0.3 builds as upgrades if a stale feed still exposes them. This guard cannot modify an already installed older executable; the server-side Latest release must still be updated during publication.
+Complete signing/notarization credentials select signed packaging. Missing credentials must not block unsigned 0.x previews; they still block production releases. See [build/signing procedures](build-and-signing.md).
 
-## Signing blocks installation
+## Signed automatic installation
 
-The local 0.7.0 archive contains a signed executable. The inspected 0.7.3 local package has an ad-hoc signature; no signed 0.7.5 package has been qualified. No matching Developer ID identity was found in the local keychain, and the repository and release environment list no signing secrets.
+Older clients read https://github.com/n3wbiekkkk/Kinex/releases/latest/download/latest-mac.yml. Signed releases retain that endpoint. GitHub Latest excludes releases marked prerelease, so the workflow uses Latest without the prerelease flag; 0.x remains a preview by version and documentation. An unsigned Latest intentionally has no automatic-installation manifest, so an older automatic client may report an unavailable feed. Use the release page for its manual download.
 
-Electron's macOS updater requires a signed application. A correct version comparison and downloadable ZIP do not establish a successful installation. The old signed installation needs an update signed with the compatible publisher identity. Signing checks have not been disabled.
+The actual electron-updater comparator was previously exercised with current version 0.7.0 and candidate 0.7.3; it accepts that upgrade and the future 1.0.0 upgrade. The OS compatibility check remains active and automatic downgrades remain disabled. The new 0.x client rejects obsolete misnumbered 7.0.1, 7.0.2 and 7.0.3 candidates. This guard cannot modify already installed older executables.
 
-Configure the signing and notarization credentials described in [Build and signing](build-and-signing.md) through the trusted CI secret configuration. Never commit a certificate password, private key, or Apple app-specific password. Publication remains blocked until those credentials are available.
+The inspected old local 0.7.0 executable had a Developer ID signature and the local new package was ad-hoc signed. No matching signing identity was found locally, and the inspected repository/release secret-name lists were empty. Signed installation remains **BLOCKED** by credentials. Signature checks have not been disabled.
 
-No release was published by this change. The inspected live Latest release was v7.0.2, so the public feed is not yet serving the new 0.7.x preview.
-
-## Qualification procedure
-
-1. Build and sign the new 0.7.x version with the publisher identity compatible with the old application, then notarize and verify it.
-2. Package the signed app, its ZIP/blockmap, and matching latest-mac.yml. Verify version and hashes.
-3. Copy an old 0.7.x application and its test profile into a disposable environment. Point only that test copy at the local release directory.
-4. Verify detection, full download, signature checks, installation, relaunch at the new version, and preserved tabs/profiles. Do not test installation over a real user application or profile.
-5. Publish the qualified artifacts as GitHub Latest only after that signed installation succeeds, then verify the existing HTTPS feed from an old test client.
-
-Implemented checks cover version selection, obsolete-release rejection, OS-check composition, disabled downgrades, and packaged startup. Signed update installation remains BLOCKED by credentials.
+For a future signed update, use the publisher identity compatible with the old app, notarize and verify the package, then exercise detection, download, signature verification, installation, relaunch, and state preservation using disposable old-client copies. This has not been verified successfully.
 
 References: [Electron autoUpdater](https://www.electronjs.org/docs/latest/api/auto-updater) and [Electron code signing](https://www.electronjs.org/docs/latest/tutorial/code-signing).
 
-## Automatic publication regression evidence (2026-11-17)
+## Publication safety and evidence
 
-Local typecheck, compiler lint, production build, and 105 tests across 20 files passed. This includes eight release regressions: three real npm version/lockfile cases, main-push version selection and explicit-tag mismatch, annotated tag reuse rejection using real Git refs, stale-commit publication suppression, draft-before-Latest publication ordering, and missing-signing-credential rejection. The external GitHub publication command is replaced only in these offline workflow tests; these tests do not establish a real release or installation.
+Explicit version-tag pushes remain supported and must match package.json. The workflow rejects version tags owned by another commit, serializes releases, skips stale commits, uploads complete assets as a draft before exposing Latest, and preserves published assets on reruns.
 
-Actionlint 1.7.12 passed both workflow files. The complete macOS browser suite, newly versioned package, and live publication still require their CI runs. Signing and installed-update qualification remain blocked as described above.
+The 0.7.5 local evidence recorded typecheck, compiler lint, production build, 105 tests, and actionlint 1.7.12 passing. Its later CI run failed at fullscreen after eight experience groups; the unbounded page API promise outlasted the process timeout. These failures are not reclassified as passes. The corrected harness requests transitions without awaiting page API promises over IPC, waits for real native/DOM fullscreen state, and explicitly restores focus after private-window closure. Its first local execution exposed DOM exit occurring after the native event; the bounded predicate now waits for both states.
+
+The release-mode regression failed before the fix because a credential-free 0.x preview returned exit 1. Tests now cover unsigned preview publication, production credential enforcement, complete-credential signed selection, DMG inclusion, and signed-only update metadata. Real DMG and updated CI outcomes must be recorded after execution; offline publication tests replace only the external GitHub command and do not establish live publication or signed installation.
+
+
+### Local 0.7.6 results
+
+Typecheck, compiler lint, production build, 110 tests across 20 files, and actionlint passed. The corrected experience integration passed all ten groups locally. Unsigned arm64 packaging produced `Kinex-0.7.6-arm64.dmg` and `Kinex-0.7.6-arm64-mac.zip`. The DMG checksum verification, read-only mount, and mounted application smoke test passed: version 0.7.6, arm64 executable/addon, 145405 real Shields rules, sandboxed navigation, and shutdown persistence. Evidence remains in `artifacts/ci/dmg.json` locally; CI retains the equivalent artifact.
+
+These local results do not establish completed GitHub CI/publication, Gatekeeper acceptance of an internet download, or signed automatic installation. hdiutil on the local OS emitted a detach deprecation warning but unmounted the image successfully.

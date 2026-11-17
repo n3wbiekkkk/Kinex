@@ -215,13 +215,19 @@ async function run() {
     const fsView = mgr.tabManager.getView(fsTab.id);
     const fsBefore = fsView.getBounds();
     assert.ok(fsBefore.x >= 200, 'Normal layout reserves sidebar inset before HTML5 fullscreen');
-    await fsView.webContents.executeJavaScript('document.documentElement.requestFullscreen()', true);
-    await until(() => !mgr.shellView.getVisible(), 'real HTML5 fullscreen entry');
+    win.focus();
+    fsView.webContents.focus();
+    await until(() => win.isFocused() && fsView.webContents.isFocused(), 'fullscreen native focus after private window close');
+    // Observe the real transition below instead of awaiting an unbounded page API promise over IPC.
+    await fsView.webContents.executeJavaScript('void document.documentElement.requestFullscreen()', true);
+    await until(async () => !mgr.shellView.getVisible() && await fsView.webContents.executeJavaScript('Boolean(document.fullscreenElement)'), 'real HTML5 fullscreen entry');
+    assert.equal(await fsView.webContents.executeJavaScript('Boolean(document.fullscreenElement)'), true);
     const contentBounds = win.getContentBounds();
     assert.deepEqual(fsView.getBounds(), { x: 0, y: 0, width: contentBounds.width, height: contentBounds.height });
     assert.equal(mgr.shellView.getVisible(), false);
-    await fsView.webContents.executeJavaScript('document.exitFullscreen()');
-    await until(() => mgr.shellView.getVisible(), 'real HTML5 fullscreen exit');
+    await fsView.webContents.executeJavaScript('void document.exitFullscreen()');
+    await until(async () => mgr.shellView.getVisible() && await fsView.webContents.executeJavaScript('!document.fullscreenElement'), 'real HTML5 fullscreen exit');
+    assert.equal(await fsView.webContents.executeJavaScript('Boolean(document.fullscreenElement)'), false);
     assert.equal(mgr.shellView.getVisible(), true);
     assert.ok(fsView.getBounds().x >= 200, 'Leaving HTML5 fullscreen restores sidebar inset layout');
     checks.push('HTML5 fullscreen expands active WebContentsView edge-to-edge and hides shell chrome cleanly');

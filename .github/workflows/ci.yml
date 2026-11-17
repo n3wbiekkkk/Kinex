@@ -84,6 +84,9 @@ jobs:
       - name: Launch packaged application with disposable data
         run: node tests/integration/run-packaged.mjs
 
+      - name: Verify DMG and launch its bundled application
+        run: node tests/integration/run-dmg.mjs
+
       - name: Retain validation evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

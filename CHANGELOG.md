@@ -2,6 +2,15 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.6] - 2026-11-17
+
+Pre-production preview. Restore free GitHub Releases without requiring an Apple Developer membership.
+
+- Publish unsigned 0.x previews as clearly labeled manual DMG/ZIP downloads when signing credentials are absent. Keep production signing requirements and macOS updater signature checks.
+- Publish auto-update manifests only for signed builds, so unsigned previews are not advertised as installable signed updates.
+- Add an Apple Silicon DMG target and verify the disk image, mount it read-only, and launch its actual app with disposable data in CI and release qualification.
+- Bound fullscreen test transitions by observable DOM/native state and restore native focus after closing private windows. Retain fullscreen layout assertions and add DOM fullscreen assertions; CI confirmation is still required.
+
 ## [0.7.5] - 2026-11-17
 
 Pre-production preview. Add executable release-workflow regression checks for version/tag validation, annotated tag reuse, stale main commits, draft publication ordering, and missing signing credentials. Typecheck, lint, build, 105 unit/regression tests, and actionlint pass locally. Signed updates remain blocked by unavailable credentials.

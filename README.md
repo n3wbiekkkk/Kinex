@@ -1,6 +1,6 @@
 <div align="center">
   <img src="build/icon.png" alt="Kinex Browser" width="112" height="112" />
-  <h1>Kinex Browser (v0.7.5)</h1>
+  <h1>Kinex Browser (v0.7.6)</h1>
   <p>A fast, memory-efficient, everyday privacy-focused macOS desktop browser built on Chromium and Electron — with zero AI bloat.</p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square" alt="License: GPL v3" /></a>
@@ -11,13 +11,13 @@
 
 ---
 
-## v0.7.5 verification
+## v0.7.6 verification
 
-Electron is pinned to **45.3.3**, with Chromium **156.0.8078.100** and embedded Node **24.22.3**. Version numbering was reset from 7.0.3 to 0.7.3; the 0.x line is pre-production and 1.0.0 is reserved for the production release. The current local preview is unsigned and not notarized. Published update artifacts require matching Developer ID signing even before 1.0.0. It adds profile-scoped permission grants, stricter IPC and TLS boundaries, recoverable state writes, safer downloads, and worker-based cold Shields initialization. Existing unscoped permission grants require fresh consent.
+Electron is pinned to **45.3.3**, with Chromium **156.0.8078.100** and embedded Node **24.22.3**. Version numbering was reset from 7.0.3 to 0.7.3; the 0.x line is pre-production and 1.0.0 is reserved for the production release. The current local preview is unsigned and not notarized. Free 0.x Releases include an unsigned DMG and ZIP for manual installation. Automatic update installation requires matching Developer ID signing even before 1.0.0; no auto-update manifest is published for unsigned previews. It adds profile-scoped permission grants, stricter IPC and TLS boundaries, recoverable state writes, safer downloads, and worker-based cold Shields initialization. Existing unscoped permission grants require fresh consent.
 
 Read the [release evidence and readiness report](docs/quality/v7.0.3-report.md), [compatibility matrix](docs/quality/compatibility-matrix.md), [security architecture](docs/security-architecture.md), and [test procedures](docs/quality/testing.md). Public landing pages do not establish authenticated app compatibility. Signed distribution and protected playback remain unverified. The report retains an intermittent combined-suite native focus failure.
 
-Every completed main push receives a new patch version. Successful main CI triggers signed update publication; missing signing credentials block publication. Contributor rules and handoff notes are in [AGENTS.md](AGENTS.md).
+Every completed main push receives a new patch version. Successful main CI triggers preview publication with DMG verification and mounted-app startup checks. Signing credentials are optional for 0.x manual previews and required for production and signed auto-installation. Contributor rules and handoff notes are in [AGENTS.md](AGENTS.md).
 
 For older 0.7.x installations, see [update compatibility and signing prerequisites](docs/quality/update-compatibility.md).
 

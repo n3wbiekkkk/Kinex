@@ -2,7 +2,7 @@
 
 ## Default delivery rules
 
-The owner requests implementation, verification, and a push after every completed task. This supersedes the original overhaul prompt's local-only/no-commit/no-push restrictions. Ordinary fixes do not need another confirmation. The owner also authorizes the signed update publication pipeline described below.
+The owner requests implementation, verification, and a push after every completed task. This supersedes the original overhaul prompt's local-only/no-commit/no-push restrictions. Ordinary fixes do not need another confirmation. The owner authorizes automatic preview Releases after successful main CI and explicitly declines paying for Apple Developer membership. Keep free manual preview publication available; compatible signed automatic installation is a separate capability.
 
 1. Inspect `git status`, the affected implementation, callers, and existing tests. Preserve unrelated work, including untracked `.perch/` and `artifacts/ci/`.
 2. Implement the smallest complete fix. Add a meaningful regression test for each meaningful bug fix. Preserve security checks and existing behavior; investigate failing tests instead of weakening assertions.
@@ -14,12 +14,13 @@ The current line is **0.7.x preview**. **1.0.0 is reserved for production** and 
 
 ## Update contract
 
-- Each completed push to `main` must have a new version so the existing Update button can detect an upgrade. Commits collected into one push receive one version. Feature branches and PRs validate code but do not publish updates.
-- `.github/workflows/ci.yml` verifies the source and unsigned arm64 package. `.github/workflows/release.yml` starts after successful main-push CI, checks out that exact SHA, verifies again, signs/notarizes, smoke-tests, and publishes. Explicit version-tag pushes remain supported and undergo verification too.
+- Each completed push to `main` must have a new version so Releases and update version checks can distinguish upgrades. Commits collected into one push receive one version. Feature branches and PRs validate code but do not publish updates.
+- `.github/workflows/ci.yml` verifies the source and unsigned arm64 package. `.github/workflows/release.yml` starts after successful main-push CI, checks out that exact SHA, verifies again, packages, smoke-tests, and publishes. Without signing credentials, 0.x previews publish as unsigned manual downloads; complete signing credentials select signed/notarized packaging. Production versions require signing credentials. Explicit version-tag pushes remain supported and undergo verification too.
 - Keep publication restricted to trusted repository main-push runs and version tags. Preserve pinned actions, limited token permissions, credential-free checkout, and release serialization. A stale run must not replace the newer main update feed. Prepare assets as a draft before making the release Latest; published artifacts are immutable.
-- Preserve the legacy HTTPS feed `/releases/latest/download/latest-mac.yml`. GitHub Latest excludes prereleases, so 0.x previews use Latest without the GitHub prerelease flag. Their version and documentation still identify them as previews.
-- Every distributed macOS update, including 0.x, requires Developer ID signing compatible with the old installed app and notarization. Keep signature, OS, HTTPS, and downgrade protections enabled. Local unsigned packaging is a test artifact.
-- Missing credentials are a release blocker, not a reason to publish unsigned updates. Configure `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` through trusted repository or `release` environment secrets. Never request secret values in chat or commit them.
+- Every Release must include an Apple Silicon `.dmg` and `.zip`. Verify the DMG and launch its mounted application with disposable data before publication.
+- Preserve the legacy HTTPS feed `/releases/latest/download/latest-mac.yml`. GitHub Latest excludes prereleases, so 0.x previews use Latest without the GitHub prerelease flag. Their version and documentation still identify them as previews. Publish latest-mac.yml/blockmaps only for signed builds; unsigned releases are manual downloads and may be blocked by Gatekeeper.
+- Automatic macOS update installation, including 0.x, requires Developer ID signing compatible with the old installed app and notarization. Keep signature, OS, HTTPS, and downgrade protections enabled. Unsigned 0.x Releases may be distributed as clearly labeled manual previews; never claim they support signed auto-installation.
+- Missing credentials block signed automatic installation and production releases, but must not block free unsigned 0.x preview Releases. Configure `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` through trusted repository or `release` environment secrets. Never request secret values in chat or commit them.
 - For feed changes, old-client qualification, signing setup, or publication failures, read [update compatibility](docs/quality/update-compatibility.md) and [build/signing procedures](docs/quality/build-and-signing.md) before editing.
 
 ## Security and product invariants
@@ -38,7 +39,7 @@ The current line is **0.7.x preview**. **1.0.0 is reserved for production** and 
 
 Main/window/tab/session behavior lives in `src/main/`; site filtering in `src/main/shields/`; privileged bridges in `src/preload/`; typed contracts in `src/shared/`; UI in `src/renderer/`. Read package.json for the authoritative scripts, versions, packaging, and dependencies.
 
-- For TypeScript/application changes, run typecheck, lint, unit tests, and production build, plus the affected real Electron suites. For IPC/navigation/permissions/private state/updater boundaries, run `test:security`; for Shields, run native, real Shields integration, and cold-start checks. For tabs/focus/shortcuts, run E2E, keyboard, and experience checks. For packaging changes, launch the actual packaged app with disposable data.
+- For TypeScript/application changes, run typecheck, lint, unit tests, and production build, plus the affected real Electron suites. For IPC/navigation/permissions/private state/updater boundaries, run `test:security`; for Shields, run native, real Shields integration, and cold-start checks. For tabs/focus/shortcuts, run E2E, keyboard, and experience checks. For packaging changes, launch the actual packaged app and the application mounted from the DMG with disposable data (`node tests/integration/run-dmg.mjs`).
 - Native validation needs an Apple Silicon Mac, Node 24, Rust/Cargo, and Xcode tools. `npm ci` builds adblock-rs; `npx --no-install install-electron` downloads the pinned runtime. Treat native compilation/loader failures separately from assertion failures.
 - Read [test procedures](docs/quality/testing.md) when selecting or changing checks; [security architecture](docs/security-architecture.md) for trust-boundary changes; [compatibility matrix](docs/quality/compatibility-matrix.md) for website/media claims; [performance evidence](docs/quality/performance-v7.0.3.md) and [BENCHMARKS.md](BENCHMARKS.md) before performance claims.
 
