@@ -1,18 +1,12 @@
-import { execSync } from 'node:child_process';
-import fs from 'node:fs';
+import { execFileSync, execSync } from 'node:child_process';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const pkgPath = path.join(root, 'package.json');
-const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-
 if (!process.argv.includes('--no-bump')) {
-  const [maj, min, pat] = String(pkg.version).split('.').map(Number);
-  const bumpMinor = process.argv.includes('--minor');
-  const nextVersion = bumpMinor ? `${maj}.${min + 1}.0` : `${maj}.${min}.${pat + 1}`;
-  pkg.version = nextVersion;
-  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
-  console.log(`Bumped Kinex version -> ${nextVersion}`);
+  execFileSync('npm', ['version', process.argv.includes('--minor') ? 'minor' : 'patch', '--no-git-tag-version'], {
+    cwd: root,
+    stdio: 'inherit',
+  });
 }
 
 execSync('npm run typecheck && npm test && npm run package:mac', {
@@ -21,4 +15,4 @@ execSync('npm run typecheck && npm test && npm run package:mac', {
 });
 
 console.log(`\nRelease ready in ${path.join(root, 'release')}`);
-console.log('Running Kinex.app instances configured with this release folder can now auto-update.');
+console.log('Local package only. Automatic installation requires compatible Developer ID signing and update qualification.');

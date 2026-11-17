@@ -1,6 +1,10 @@
 name: Release Kinex macOS
 
 on:
+  workflow_run:
+    workflows: ['Kinex Browser CI']
+    branches: [main]
+    types: [completed]
   push:
     tags:
       - 'v*'
@@ -8,8 +12,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: kinex-macos-release
+  cancel-in-progress: false
+
 jobs:
   release-mac:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: macos-15
     timeout-minutes: 40
     environment: release
@@ -18,7 +31,25 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
+
+      - name: Require signing and notarization configuration
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=0
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing release secret: $name. Automatic macOS updates require signing and notarization."
+              missing=1
+            fi
+          done
+          test "$missing" -eq 0
 
       - name: Setup Node.js 24
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -33,9 +64,23 @@ jobs:
         run: npx --no-install install-electron
 
       - name: Resolve release channel
+        id: version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          test "$VERSION" = "$(node -p "require('./package.json').version")"
+          VERSION="$(node -p "require('./package.json').version")"
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          TAG="v$VERSION"
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            test "$GITHUB_REF_NAME" = "$TAG"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          TAG_REFS="$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"
+          if [ -n "$TAG_REFS" ]; then
+            TAG_SHA="$(echo "$TAG_REFS" | tail -1 | cut -f1)"
+            if [ "$TAG_SHA" != "$(git rev-parse HEAD)" ]; then
+              echo '::error::Version already belongs to another commit. Bump the patch version and push again.'
+              exit 1
+            fi
+          fi
           MAJOR="${VERSION%%.*}"
           if [ "$MAJOR" -ge 1 ]; then
             echo "Kinex $VERSION is a production release; signing and notarization are required."
@@ -45,20 +90,6 @@ jobs:
 
       - name: Run Verification Suite
         run: npm audit --audit-level=moderate && npm run lint && npm run test:all
-
-      - name: Require signing and notarization configuration
-        env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          test -n "$CSC_LINK"
-          test -n "$CSC_KEY_PASSWORD"
-          test -n "$APPLE_ID"
-          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-          test -n "$APPLE_TEAM_ID"
 
       - name: Package signed and notarized macOS release assets
         env:
@@ -77,13 +108,24 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --prerelease=false --latest
+          # A slower, older run must not replace the current main branch's update feed.
+          MAIN_SHA="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$MAIN_SHA" != "$(git rev-parse HEAD)" ]; then
+            echo '::notice::A newer main commit exists; its successful CI will publish the update.'
+            exit 0
+          fi
+          if IS_DRAFT="$(gh release view "$TAG" --json isDraft --jq .isDraft)"; then
+            if [ "$IS_DRAFT" = false ]; then
+              echo '::notice::This version is already published; preserving immutable update artifacts.'
+              exit 0
+            fi
             gh release upload "$TAG" release/latest-mac.yml release/Kinex-*-mac.zip release/Kinex-*-mac.zip.blockmap --clobber
           else
             gh release create "$TAG" release/latest-mac.yml release/Kinex-*-mac.zip release/Kinex-*-mac.zip.blockmap \
+              --draft --target "$(git rev-parse HEAD)" \
               --title "Kinex Browser $TAG" \
-              --generate-notes --latest
+              --generate-notes
           fi
+          gh release edit "$TAG" --draft=false --prerelease=false --latest

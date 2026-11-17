@@ -1,6 +1,6 @@
 # Build and sign Kinex for macOS
 
-These instructions build Kinex v0.7.3 locally. Signing and distribution are separate from compilation and unsigned package validation. Do not disable Gatekeeper, remove quarantine attributes, or disable Electron security settings to make a build pass.
+These instructions build the version declared in package.json locally. Signing and distribution are separate from compilation and unsigned package validation. Do not disable Gatekeeper, remove quarantine attributes, or disable Electron security settings to make a build pass.
 
 ## Prepare the development environment
 
@@ -109,4 +109,4 @@ The configured update provider uses `latest-mac.yml` and ZIP artifacts. Local fi
 
 A complete signed-update qualification requires two legitimately signed versions, authenticated artifact delivery, and a disposable installed test copy. Verify detection, version ordering, download failure/retry, signature rejection, installation, relaunch, and preserved state. No successful signed installation is established by this task's evidence.
 
-The repository's release workflow publishes on tag push. All published update artifacts require signing and notarization, including the 0.x preview line. The 1.0.0 version remains the first production release. GitHub releases use its Latest feed for compatibility with older clients; the 0.x preview designation is independent of GitHub's prerelease flag. Unsigned local packages remain manual test artifacts. Do not push a release tag or run release publication as part of local verification. All commands above use `--publish never`.
+The repository's release workflow starts after successful main-push CI and also supports explicit version-tag pushes. Each delivery push must increase the package version; see [AGENTS.md](../../AGENTS.md). Publication uses the exact verified commit, rejects reused version tags, and prepares complete assets as a draft before making them Latest. All published update artifacts require signing and notarization, including the 0.x preview line. The 1.0.0 version remains the first production release. GitHub releases use its Latest feed for compatibility with older clients; the 0.x preview designation is independent of GitHub's prerelease flag. Unsigned local packages remain manual test artifacts. Local verification does not require a release tag or publication. Pushing completed work to main starts the authorized CI/publication pipeline; missing signing secrets fail the release job with explicit errors. All commands above use `--publish never`.
