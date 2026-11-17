@@ -24,6 +24,7 @@ const { DownloadManager } = require('../../dist-electron/main/downloadManager');
 const { classifyLoadError, shouldOfferInsecureHttpFallback } = require('../../dist-electron/main/security');
 
 function startTestHttpServer() {
+  let downloadReleased = false;
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       const u = new URL(req.url, 'http://127.0.0.1');
@@ -80,19 +81,22 @@ function startTestHttpServer() {
             'Content-Length': String(total),
           });
         }
-        let sent = start;
         const chunk = Buffer.alloc(16 * 1024, 65);
+        const firstSize = Math.min(chunk.length, total - start);
+        res.write(chunk.subarray(0, firstSize));
+        let sent = start + firstSize;
         const timer = setInterval(() => {
           if (res.destroyed || sent >= total) {
             clearInterval(timer);
             if (!res.destroyed) res.end();
             return;
           }
+          if (!downloadReleased) return;
           const sliceSize = Math.min(chunk.length, total - sent);
           res.write(sliceSize === chunk.length ? chunk : chunk.subarray(0, sliceSize));
           sent += sliceSize;
         }, 35);
-        req.on('close', () => clearInterval(timer));
+        res.on('close', () => clearInterval(timer));
         return;
       }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -102,7 +106,7 @@ function startTestHttpServer() {
     });
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address();
-      resolve({ server, baseUrl: `http://127.0.0.1:${addr.port}` });
+      resolve({ server, baseUrl: `http://127.0.0.1:${addr.port}`, releaseDownload: () => { downloadReleased = true; } });
     });
   });
 }
@@ -127,7 +131,7 @@ async function run() {
     e.preventDefault();
   });
   ensureAppName();
-  const { server, baseUrl } = await startTestHttpServer();
+  const { server, baseUrl, releaseDownload } = await startTestHttpServer();
 
   await app.whenReady();
   registerKinexProtocol(protocol);
@@ -469,21 +473,29 @@ async function run() {
     // 15. Download progress, pause, resume, completion & clear-completed (and private isolation)
     await mgr.handleIntent({ type: 'open-url', url: `${baseUrl}/download-stream`, target: 'new-tab', spaceId: 'space-personal' });
     let activeDl;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 100; i++) {
       activeDl = mgr.getSnapshot().downloads.find((d) => d.filename.startsWith('kinex-test-blob'));
       if (activeDl && activeDl.receivedBytes > 0 && activeDl.state === 'progressing') break;
       await waitMs(40);
     }
     assert.ok(activeDl, 'Stream download must register in DownloadManager');
+    assert.equal(activeDl.state, 'progressing', 'Download must remain unfinished before pause');
+    assert.ok(activeDl.receivedBytes > 0, 'Real download bytes must arrive before pause');
     await mgr.handleIntent({ type: 'pause-download', downloadId: activeDl.id });
-    await waitMs(120);
-    const pausedDl = mgr.getSnapshot().downloads.find((d) => d.id === activeDl.id);
-    assert.equal(pausedDl.isPaused, true, 'Download must enter paused state');
-    if (pausedDl.canResume) {
-      await mgr.handleIntent({ type: 'resume-download', downloadId: activeDl.id });
+    let pausedDl;
+    for (let i = 0; i < 100; i++) {
+      pausedDl = mgr.getSnapshot().downloads.find((d) => d.id === activeDl.id);
+      if (pausedDl && pausedDl.isPaused && pausedDl.canResume) break;
+      await waitMs(40);
     }
+    assert.equal(pausedDl.isPaused, true, 'Download must enter paused state');
+    assert.equal(pausedDl.state, 'progressing', 'Paused download must stay in the in-progress list');
+    assert.ok(pausedDl.receivedBytes < pausedDl.totalBytes, 'Paused download must remain incomplete');
+    releaseDownload();
+    assert.equal(pausedDl.canResume, true, 'Paused stream download must be resumable');
+    await mgr.handleIntent({ type: 'resume-download', downloadId: activeDl.id });
     let doneDl;
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 150; i++) {
       doneDl = mgr.getSnapshot().downloads.find((d) => d.id === activeDl.id && d.state === 'completed');
       if (doneDl) break;
       await waitMs(50);
