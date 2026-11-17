@@ -41,7 +41,7 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
   );
   const focusedBlockedCount = focusedTab ? state.shieldsRuntime.tabStats[focusedTab.id]?.total ?? 0 : 0;
   const activeExtensions = state.extensions.filter(
-    (extension) => extension.enabled && extension.spaceId === state.activeSpaceId && Boolean(extension.actionPopup)
+    (extension) => extension.enabled && extension.spaceId === state.activeSpaceId && (extension.actionPopup || extension.badge?.text)
   );
 
   return (
@@ -334,8 +334,9 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
           data-extension-id={extension.id}
           title={`${extension.name}${extension.error ? ` — ${extension.error}` : ''}`}
           aria-label={`Open ${extension.name} popup`}
-          disabled={!extension.loaded}
+          disabled={!extension.loaded || !extension.actionPopup}
           onClick={(event) => {
+            if (!extension.actionPopup) return;
             const rect = event.currentTarget.getBoundingClientRect();
             dispatch({
               type: 'open-extension-popup',
@@ -348,6 +349,11 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
             <img className="extension-action-icon" src={extension.iconDataUrl} alt="" />
           ) : (
             <Puzzle size={14} />
+          )}
+          {extension.badge?.text && (
+            <span className="extension-action-badge" style={{ backgroundColor: extension.badge.color }} aria-label={`${extension.name} badge ${extension.badge.text}`}>
+              {extension.badge.text}
+            </span>
           )}
         </button>
       ))}

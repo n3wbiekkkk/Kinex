@@ -19,6 +19,9 @@ import {
 } from './extensionSupport';
 import { extractCrxZip, MAX_CRX_BYTES, parseCrx3, verifyCrx3Signature, type ParsedCrx3 } from './crx';
 import { downloadWebStoreCrx } from './webStore';
+import { createBadgeWorker } from './extensionActionBadge';
+
+
 
 export interface ExtensionManagerHost {
   getExtensions: () => InstalledExtension[];
@@ -27,6 +30,7 @@ export interface ExtensionManagerHost {
   showToast: (message: string) => void;
   /** Injectable for deterministic tests; production uses the HTTPS Web Store downloader. */
   downloadWebStoreCrx?: (extensionId: string) => Promise<ParsedCrx3>;
+  getBadge?: (extensionId: string) => import('../shared/types').ExtensionActionBadge | undefined;
 }
 
 const MAX_ICON_BYTES = 64 * 1024;
@@ -71,12 +75,16 @@ export class ExtensionManager {
   }
 
   getViewModels(): ExtensionViewModel[] {
-    return this.host.getExtensions().map((extension) => ({
-      ...extension,
-      loaded: this.loadedByPartition.get(extension.partition)?.has(extension.id) ?? false,
-      ...(this.icons.has(extension.id) ? { iconDataUrl: this.icons.get(extension.id) } : {}),
-      ...(this.errors.has(extension.id) ? { error: this.errors.get(extension.id) } : {}),
-    }));
+    return this.host.getExtensions().map((extension) => {
+      const badge = this.host.getBadge?.(extension.id);
+      return {
+        ...extension,
+        ...(badge ? { badge } : {}),
+        loaded: this.loadedByPartition.get(extension.partition)?.has(extension.id) ?? false,
+        ...(this.icons.has(extension.id) ? { iconDataUrl: this.icons.get(extension.id) } : {}),
+        ...(this.errors.has(extension.id) ? { error: this.errors.get(extension.id) } : {}),
+      };
+    });
   }
 
   /** Called when a regular (persistent) Space session is created. Private sessions never call this. */
@@ -112,11 +120,12 @@ export class ExtensionManager {
     const loaded = this.loadedByPartition.get(extension.partition) ?? new Set<string>();
     this.loadedByPartition.set(extension.partition, loaded);
     if (loaded.has(extension.id)) return true;
-
+    if (loaded.has(extension.id)) return true;
     try {
       const existing = sess.extensions.getAllExtensions().find((item) => item.path === directory);
       const assignedId = existing?.id ?? (await sess.extensions.loadExtension(directory, { allowFileAccess: false })).id;
       if (!RUNTIME_ID_RE.test(assignedId)) throw new Error('Chromium returned an invalid extension id');
+      if (extension.crxId && extension.crxId !== assignedId) throw new Error('CRX id does not match Chromium runtime id');
       loaded.add(extension.id);
       this.errors.delete(extension.id);
       if (extension.runtimeId !== assignedId) {
@@ -130,6 +139,7 @@ export class ExtensionManager {
       return false;
     }
   }
+
 
   private commit(extensions: InstalledExtension[]): void {
     this.host.commitExtensions(extensions);
@@ -233,6 +243,7 @@ export class ExtensionManager {
       consented: false,
       permissions: manifest.permissions,
       hostPermissions: manifest.hostPermissions,
+      ...(manifest.backgroundServiceWorker ? { backgroundServiceWorker: manifest.backgroundServiceWorker } : {}),
       ...(manifest.actionPopup ? { actionPopup: manifest.actionPopup } : {}),
       ...(manifest.actionIcon ? { actionIcon: manifest.actionIcon } : {}),
       installedAt: Date.now(),
@@ -292,6 +303,7 @@ export class ExtensionManager {
     return this.installParsedCrx(parsed, spaceId, partition, 'webstore', item.itemUrl);
   }
 
+
   private installParsedCrx(
     parsed: ParsedCrx3,
     spaceId: string,
@@ -303,6 +315,7 @@ export class ExtensionManager {
     try {
       extractCrxZip(parsed.zip, target);
       const manifest = this.readStagedManifest(target);
+      if (manifest.backgroundServiceWorker) createBadgeWorker(target, manifest.backgroundServiceWorker, parsed.crxId);
       for (const file of allDeclaredExtensionFiles(manifest)) {
         const resolved = resolveInsideRoot(target, file);
         if (!resolved || !fs.statSync(resolved).isFile()) throw new Error(`CRX package is missing ${file}`);

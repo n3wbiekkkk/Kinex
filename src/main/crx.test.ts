@@ -94,9 +94,9 @@ const manifest = {
   action: { default_popup: 'popup.html' },
 };
 
-function extensionZip(overrides: ZipEntry[] = []): Buffer {
+function extensionZip(overrides: ZipEntry[] = [], manifestOverrides: Record<string, unknown> = {}): Buffer {
   return makeZip([
-    { name: 'manifest.json', content: Buffer.from(JSON.stringify(manifest)) },
+    { name: 'manifest.json', content: Buffer.from(JSON.stringify({ ...manifest, ...manifestOverrides })) },
     { name: 'content.js', content: Buffer.from('document.body.dataset.crx = "yes";') },
     { name: 'popup.html', content: Buffer.from('<!doctype html><title>Popup</title>') },
     ...overrides,
@@ -240,3 +240,48 @@ describe('CRX and Web Store installation', () => {
     expect(record.enabled).toBe(false);
   });
 });
+
+  it('preserves the signed worker source and wraps only consented CRX action badges', async () => {
+    const dir = tempDir('kinex-crx-badge-worker-');
+    const workerSource = 'chrome.runtime.onInstalled.addListener(() => {});';
+    const { buffer, crxId } = makeCrx3(extensionZip([], { background: { service_worker: 'worker.js' } }));
+    fs.writeFileSync(path.join(dir, 'badge.crx'), buffer);
+    const decoded = parseCrx3(buffer);
+    fs.writeFileSync(path.join(dir, 'badge.zip'), decoded.zip);
+    const complete = extensionZip([
+      { name: 'worker.js', content: Buffer.from(workerSource) },
+    ], { background: { service_worker: 'worker.js' } });
+    const signed = makeCrx3(complete);
+    fs.writeFileSync(path.join(dir, 'badge.crx'), signed.buffer);
+    let extensions: InstalledExtension[] = [];
+    const manager = new ExtensionManager(dir, {
+      getExtensions: () => extensions,
+      commitExtensions: (next) => { extensions = next; },
+      getSessionForPartition: () => ({ extensions: { getAllExtensions: () => [], loadExtension: vi.fn(), removeExtension: vi.fn() } }) as never,
+      showToast: () => {},
+    });
+    const record = await manager.installFromCrx(path.join(dir, 'badge.crx'), 'space-personal', 'persist:nook-default');
+    const target = path.join(dir, 'Extensions', record.id);
+    const manifest = JSON.parse(fs.readFileSync(path.join(target, 'manifest.json'), 'utf8'));
+    expect(signed.crxId).toBe(record.crxId);
+    expect(manifest.background.service_worker).toBe('__kinex_action_badge_worker.js');
+    expect(fs.readFileSync(path.join(target, 'worker.js.kinex-original'), 'utf8')).toBe(workerSource);
+    const wrapper = fs.readFileSync(path.join(target, '__kinex_action_badge_worker.js'), 'utf8');
+    expect(wrapper).toContain(signed.crxId);
+    const calls: unknown[][] = [];
+    const logs: string[] = [];
+    const chrome = {
+      action: {
+        setBadgeText: (details: { text: string }) => calls.push(details.text),
+        setBadgeBackgroundColor: (details: { color: string }) => calls.push(details.color),
+      },
+    };
+    new Function('chrome', 'console', 'importScripts', wrapper)(chrome, { log: (message: string) => logs.push(message) }, () => {});
+    chrome.action.setBadgeText({ text: '12' });
+    chrome.action.setBadgeBackgroundColor({ color: '#112233' });
+    expect(calls).toEqual(['12', '#112233']);
+    expect(logs).toEqual([
+      `kinex-action:${signed.crxId}:text:12`,
+      `kinex-action:${signed.crxId}:color:#112233`,
+    ]);
+  });

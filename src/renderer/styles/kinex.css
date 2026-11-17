@@ -1604,6 +1604,25 @@ select.text-input {
   object-fit: contain;
 }
 
+.extension-action-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -4px;
+  min-width: 13px;
+  max-width: 28px;
+  height: 13px;
+  padding: 0 3px;
+  border: 1px solid var(--surface-1);
+  border-radius: 7px;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 11px;
+  text-align: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .extension-strip {
   display: flex;
   align-items: center;

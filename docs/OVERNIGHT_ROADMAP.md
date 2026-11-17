@@ -5,7 +5,7 @@ This roadmap contains the 24 numbered milestones in the request. The final verif
 ## Milestones
 
 - [x] 1. Optimize CI and release caching for npm, Electron, and Cargo. Ignore documentation-only changes, cancel stale CI runs, and separate fast checks from heavy Electron and packaging checks.
-- [ ] 2. Install local CRX3 packages with zip-slip protection and an "Install from .crx..." settings action.
+- [x] 2. Install local CRX3 packages with zip-slip protection and an "Install from .crx..." settings action.
 - [ ] 3. Install CRX3 packages from Chrome Web Store URLs after explicit permission consent. Support extension action badge text and colors in the top controls.
 - [ ] 4. Add optional automatic Picture-in-Picture on tab switches, audio indicators, and a sidebar mute toggle.
 - [ ] 5. Add safe inline math, unit conversions with click-to-copy, sleeping-tab badges, and Space-jump badges to the Command Bar.
