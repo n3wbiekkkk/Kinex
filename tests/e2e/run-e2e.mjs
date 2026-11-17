@@ -11,6 +11,24 @@ const require = createRequire(import.meta.url);
 const electronBinary = require('electron');
 const root = path.resolve(import.meta.dirname, '..', '..');
 
+const WATCHDOG_MS = 240000;
+let lastCheckpoint = 'startup';
+let activeApp = null;
+
+function checkpoint(label) {
+  lastCheckpoint = label;
+  console.log(`[e2e] ${label}`);
+}
+
+function installWatchdog() {
+  const timer = setTimeout(() => {
+    console.error(`E2E suite timed out after ${WATCHDOG_MS}ms at checkpoint: ${lastCheckpoint}`);
+    if (activeApp && activeApp.proc.exitCode === null) activeApp.proc.kill('SIGKILL');
+    process.exit(1);
+  }, WATCHDOG_MS);
+  timer.unref();
+}
+
 function getFreePort() {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -75,11 +93,12 @@ function waitMs(ms) {
 }
 
 async function listCdpTargets(port) {
-  const res = await fetch(`http://127.0.0.1:${port}/json/list`);
+  const res = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000) });
   return res.json();
 }
 
 async function waitForTarget(port, predicate, label, timeoutMs = 10000) {
+  checkpoint(`wait-for-target: ${label}`);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -95,6 +114,7 @@ async function waitForTarget(port, predicate, label, timeoutMs = 10000) {
 }
 
 async function waitUntil(fn, label, timeoutMs = 8000) {
+  lastCheckpoint = label;
   const deadline = Date.now() + timeoutMs;
   let lastErr;
   while (Date.now() < deadline) {
@@ -113,14 +133,35 @@ function connectCdp(wsUrl) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     let nextId = 1;
+    let settled = false;
     const pending = new Map();
+    const openTimer = setTimeout(() => {
+      settle(new Error('Timed out waiting for CDP WebSocket to open'));
+    }, 10000);
+    const settle = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(openTimer);
+      for (const { rej } of pending.values()) rej(error);
+      pending.clear();
+      if (error) reject(error);
+    };
 
     ws.addEventListener('open', () => {
+      settled = true;
+      clearTimeout(openTimer);
       resolve({
         call(method, params = {}) {
           const id = nextId++;
           return new Promise((res, rej) => {
-            pending.set(id, { res, rej });
+            const timer = setTimeout(() => {
+              pending.delete(id);
+              rej(new Error(`CDP ${method} timed out`));
+            }, 15000);
+            pending.set(id, {
+              res: (value) => { clearTimeout(timer); res(value); },
+              rej: (error) => { clearTimeout(timer); rej(error); },
+            });
             ws.send(JSON.stringify({ id, method, params }));
           });
         },
@@ -152,11 +193,20 @@ function connectCdp(wsUrl) {
         else res(msg.result);
       }
     });
-    ws.addEventListener('error', (err) => reject(err));
+    const failPending = (error) => {
+      for (const { rej } of pending.values()) rej(error);
+      pending.clear();
+    };
+    ws.addEventListener('close', () => failPending(new Error('CDP WebSocket closed')));
+    ws.addEventListener('error', (err) => {
+      failPending(err instanceof Error ? err : new Error('CDP WebSocket error'));
+      settle(err instanceof Error ? err : new Error('CDP WebSocket error'));
+    });
   });
 }
 
 async function launchKinexApp(userDataDir, cdpPort) {
+  checkpoint(`launch Electron on port ${cdpPort}`);
   const proc = spawn(electronBinary, [root, `--remote-debugging-port=${cdpPort}`], {
     cwd: root,
     env: {
@@ -174,7 +224,7 @@ async function launchKinexApp(userDataDir, cdpPort) {
   proc.stderr.on('data', (d) => {
     logs += d.toString();
   });
-  return {
+  const handle = {
     proc,
     getLogs: () => logs,
     async stop() {
@@ -190,8 +240,11 @@ async function launchKinexApp(userDataDir, cdpPort) {
           resolve();
         });
       });
+      if (activeApp === handle) activeApp = null;
     },
   };
+  activeApp = handle;
+  return handle;
 }
 
 async function openUrlViaCommandBar(shellCdp, overlayCdp, url, targetMode = 'new-tab') {
@@ -224,12 +277,15 @@ async function openUrlViaCommandBar(shellCdp, overlayCdp, url, targetMode = 'new
 }
 
 async function run() {
+  installWatchdog();
+  checkpoint('start local website');
   const { server, baseUrl } = await startLocalWebsite();
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinex-e2e-'));
   let appHandle = null;
 
   try {
     // STEP 1: Launch Kinex
+    checkpoint('STEP 1: launch');
     const port1 = await getFreePort();
     appHandle = await launchKinexApp(userDataDir, port1);
 
@@ -247,6 +303,7 @@ async function run() {
     );
 
     // Phase 7 macOS UI layout & traffic-light spacing verification on live running shell
+    checkpoint('Phase 7: live UI layout');
     const uiLayout = await shellCdp.evalJs(`(() => {
       const aside = document.querySelector('.sidebar');
       const dragTop = document.querySelector('.sidebar-drag-top');
@@ -272,6 +329,7 @@ async function run() {
     assert.equal(uiLayout.urlBarAppRegion, 'no-drag', 'Sidebar URL bar must remain clickable');
 
     // Phase 7b: Collapsed sidebar & TopControls traffic-light clearance + overflow check
+    checkpoint('Phase 7b: collapsed sidebar');
     await shellCdp.evalJs(`document.querySelector('button[aria-label="Toggle Sidebar"]').click()`);
     const collapsedLayout = await waitUntil(
       () =>
@@ -298,6 +356,7 @@ async function run() {
     );
 
     // Phase 7c: Settings modal viewport fit check (also triggers lazy overlay creation)
+    checkpoint('Phase 7c: settings overlay');
     await shellCdp.evalJs(`document.querySelector('button[title="Settings (⌘,)"]').click()`);
     const overlayTarget = await waitForTarget(port1, (t) => t.url.includes('?view=overlay'), 'lazy overlay view');
     const overlayCdp = await connectCdp(overlayTarget.webSocketDebuggerUrl);
@@ -323,6 +382,7 @@ async function run() {
     );
 
     // STEP 2: Open a website (/page1 via Command Bar UI)
+    checkpoint('STEP 2: open page1');
     await openUrlViaCommandBar(shellCdp, overlayCdp, `${baseUrl}/page1`, 'new-tab');
     const page1Target = await waitForTarget(port1, (t) => t.url === `${baseUrl}/page1`, '/page1 target');
     const page1Cdp = await connectCdp(page1Target.webSocketDebuggerUrl);
@@ -339,6 +399,7 @@ async function run() {
     );
 
     // STEP 3: Create a second tab (/counter)
+    checkpoint('STEP 3: open counter');
     await openUrlViaCommandBar(shellCdp, overlayCdp, `${baseUrl}/counter`, 'new-tab');
     const counterTarget = await waitForTarget(port1, (t) => t.url === `${baseUrl}/counter`, '/counter target');
     const counterCdp = await connectCdp(counterTarget.webSocketDebuggerUrl);
@@ -348,6 +409,7 @@ async function run() {
     );
 
     // STEP 4: Switch tabs (click /page2 tab row in Sidebar UI)
+    checkpoint('STEP 4: switch tabs');
     await shellCdp.evalJs(`(() => {
       const rows = Array.from(document.querySelectorAll('.tab-row'));
       const p2 = rows.find((r) => r.textContent.includes('Page Two'));
@@ -364,6 +426,7 @@ async function run() {
     );
 
     // STEP 5: Navigate Backward (to /page1)
+    checkpoint('STEP 5: navigate back');
     await waitUntil(
       () => shellCdp.evalJs(`!document.querySelector('button[title="Back (⌘[)"]').disabled`),
       'Back button enabled'
@@ -379,6 +442,7 @@ async function run() {
     );
 
     // STEP 6: Navigate Forward (to /page2)
+    checkpoint('STEP 6: navigate forward');
     await waitUntil(
       () => shellCdp.evalJs(`!document.querySelector('button[title="Forward (⌘])"]').disabled`),
       'Forward button enabled'
@@ -390,6 +454,7 @@ async function run() {
     );
 
     // STEP 7: Reload (/counter -> Reload Count: 2)
+    checkpoint('STEP 7: reload');
     await shellCdp.evalJs(`(() => {
       const rows = Array.from(document.querySelectorAll('.tab-row'));
       const c = rows.find((r) => r.textContent.includes('Counter'));
@@ -406,6 +471,7 @@ async function run() {
     );
 
     // STEP 8: Open Split View
+    checkpoint('STEP 8: split view');
     await shellCdp.evalJs(`document.querySelector('button[title^="Toggle Split View"]').click()`);
     await waitUntil(
       () => shellCdp.evalJs(`document.querySelectorAll('.pane-pill').length === 2`),
@@ -419,6 +485,7 @@ async function run() {
     );
 
     // STEP 9: Switch Spaces (Personal -> Work -> Personal)
+    checkpoint('STEP 9: switch spaces');
     await shellCdp.evalJs(`(() => {
       const pills = Array.from(document.querySelectorAll('.space-pill'));
       pills.find((p) => p.textContent.includes('Work'))?.click();
@@ -437,6 +504,7 @@ async function run() {
     );
 
     // STEP 10: Open a Private Window & verify private UI + cookie/localStorage isolation
+    checkpoint('STEP 10: private window');
     await shellCdp.evalJs(`document.querySelector('button[title="New Private Window (⌘⇧N)"]').click()`);
     const privHeaderTarget = await waitForTarget(port1, (t) => t.url.includes('?view=private'), 'private header view');
     const privHeaderCdp = await connectCdp(privHeaderTarget.webSocketDebuggerUrl);
@@ -484,6 +552,7 @@ async function run() {
     }, 'private window closed');
 
     // STEP 11: Close Counter tab
+    checkpoint('STEP 11: close counter');
     await shellCdp.evalJs(`(() => {
       const rows = Array.from(document.querySelectorAll('.tab-row'));
       const counterRow = rows.find((r) => r.textContent.includes('Counter'));
@@ -495,6 +564,7 @@ async function run() {
     );
 
     // STEP 12: Restore archived Counter tab via Archive UI
+    checkpoint('STEP 12: restore archived tab');
     await shellCdp.evalJs(`document.querySelector('button[title="Archived Tabs"]').click()`);
     await waitUntil(
       () => overlayCdp.evalJs(`document.body.textContent.includes('Archived Today Tabs') && document.body.textContent.includes('Counter')`),
@@ -511,6 +581,7 @@ async function run() {
     );
 
     // STEP 15a (pre-restart): Security Isolation inside remote webpage + IPC rejection
+    checkpoint('STEP 15a: isolation and IPC');
     await openUrlViaCommandBar(shellCdp, overlayCdp, `${baseUrl}/isolation-check`, 'new-tab');
     const isoTarget = await waitForTarget(port1, (t) => t.url === `${baseUrl}/isolation-check`, 'isolation-check target');
     const isoCdp = await connectCdp(isoTarget.webSocketDebuggerUrl);
@@ -571,11 +642,13 @@ async function run() {
     shellCdp.close();
 
     // STEP 13: Restart the application cleanly
+    checkpoint('STEP 13: restart');
     await appHandle.stop();
     const port2 = await getFreePort();
     appHandle = await launchKinexApp(userDataDir, port2);
 
     // STEP 14: Verify persistence across restart
+    checkpoint('STEP 14: persistence');
     const shell2Target = await waitForTarget(port2, (t) => t.url.includes('?view=shell'), 'restarted shell view');
     const shell2Cdp = await connectCdp(shell2Target.webSocketDebuggerUrl);
     await waitUntil(() => shell2Cdp.evalJs(`Boolean(document.querySelector('.kinex-shell'))`), 'restarted shell hydrated');
