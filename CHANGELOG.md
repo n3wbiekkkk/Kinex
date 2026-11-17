@@ -2,9 +2,9 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
-## [7.0.3] - 2026-11-17
+## [0.7.3] - 2026-11-17
 
-Local implementation. No release has been published. See [verification and remaining gates](docs/quality/v7.0.3-report.md).
+Pre-release. Version numbering was reset from 7.0.3 to 0.7.3: the 0.x line is pre-production, and 1.0.0 is reserved for the production release. This build is unsigned and not notarized. See [verification and remaining gates](docs/quality/v7.0.3-report.md) for evidence recorded during the 7.0.3 implementation.
 
 ### Changed
 

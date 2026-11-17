@@ -1,6 +1,6 @@
 # Build and sign Kinex for macOS
 
-These instructions build Kinex v7.0.3 locally. Signing and distribution are separate from compilation and unsigned package validation. Do not disable Gatekeeper, remove quarantine attributes, or disable Electron security settings to make a build pass.
+These instructions build Kinex v0.7.3 locally. Signing and distribution are separate from compilation and unsigned package validation. Do not disable Gatekeeper, remove quarantine attributes, or disable Electron security settings to make a build pass.
 
 ## Prepare the development environment
 
@@ -109,4 +109,4 @@ The configured update provider uses `latest-mac.yml` and ZIP artifacts. Local fi
 
 A complete signed-update qualification requires two legitimately signed versions, authenticated artifact delivery, and a disposable installed test copy. Verify detection, version ordering, download failure/retry, signature rejection, installation, relaunch, and preserved state. No successful signed installation is established by this task's evidence.
 
-The repository's release workflow publishes only after its tag trigger and signing gates. Do not push a tag or run release publication as part of local verification. All commands above use `--publish never`; this task did not publish a release or deploy an application.
+The repository's release workflow publishes on tag push. Tags from `1.0.0` onward require signing and notarization before publication; pre-1.0 tags are packaged unsigned and published as pre-releases. Do not push a release tag or run release publication as part of local verification. All commands above use `--publish never`.
