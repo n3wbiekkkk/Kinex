@@ -2,6 +2,13 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.16] - 2026-11-17
+
+Pre-production preview. Record multi-window evidence and remaining publication limits.
+
+- Add the two-window cold-start result to the compatibility matrix and register `test:windows` in the test procedures.
+- Record that 0.7.15 published an ad-hoc sealed manual preview without signed automatic installation.
+
 ## [0.7.15] - 2026-11-17
 
 Pre-production preview. Remove a CI-flaky focus probe while keeping the product focus fix.

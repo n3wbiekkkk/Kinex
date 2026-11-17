@@ -34,6 +34,7 @@ The Electron runners use temporary data directories and local HTTP fixtures. The
 | Gate | Observable behavior |
 | --- | --- |
 | `test:integration` | Navigation, profile cookies, private storage and history, real renderer crash recovery, reopen cleanup, Memory Saver, tab restoration, Reader Mode, Find, zoom, PDF output, and download pause/resume |
+| `test:windows` | Two regular windows created with `⌘N`, persisted geometry and Space bindings, cold-start restoration with Split Views, one Space per window, per-window IPC routing, and private-window exclusion |
 | `test:e2e` | Browser UI workflows, IPC rejection, unsafe navigation, session restoration, and layout checks |
 | `test:keyboard` | Native Chromium key events across browser commands, tabs, Spaces, Split View, dialogs, focus, reduced motion, and context menus |
 | `test:experience` | Native focus ownership, split-pane command targets, Profile reassignment, popup shortcuts, fullscreen bounds, and power-event listener cleanup |

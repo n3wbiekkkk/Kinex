@@ -1,6 +1,6 @@
 {
   "name": "kinex-browser",
-  "version": "0.7.15",
+  "version": "0.7.16",
   "description": "Kinex Browser — a fast, private macOS Chromium workspace browser",
   "license": "GPL-3.0-only",
   "repository": {
