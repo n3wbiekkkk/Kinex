@@ -31,4 +31,7 @@ This roadmap contains the 24 numbered milestones in the request. The final verif
 
 ## Verification record
 
+- Milestone 1 passed Node and web type checks, CRX and extension tests, and the workflow policy tests.
+- Milestone 2's local CRX3 signature, zip-boundary, consent, install, uninstall, and IPC tests pass. The native CRX UI was already present before this run.
+
 Milestone checkboxes are marked only after the requested implementation and available targeted checks are complete. Operating-system, signing, network, DRM, WebAuthn, and passkey checks that need unavailable external facilities are recorded here rather than implied by source-level tests.
