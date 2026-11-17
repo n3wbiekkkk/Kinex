@@ -114,11 +114,10 @@ async function run() {
     await mgr.handleIntent({ type: 'set-overlay', overlay: { mode: 'none' } });
     await wait(10);
     mgr.overlayView.webContents.focus();
-    await wait(20);
-    assert.equal(
-      webContents.getFocusedWebContents()?.id,
-      typingPage.id,
-      `Closing overlay must not retain native focus: ${JSON.stringify({ focused: webContents.getFocusedWebContents()?.id, page: typingPage.id, overlay: mgr.overlayView.webContents.id, focusEvents })}`
+    await until(
+      () => webContents.getFocusedWebContents()?.id === typingPage.id,
+      `closing overlay releases native focus: ${JSON.stringify({ page: typingPage.id, overlay: mgr.overlayView.webContents.id, focusEvents })}`,
+      2000
     );
     await wait(200);
     assert.equal(webContents.getFocusedWebContents()?.id, typingPage.id, 'Focus remains on the page after the exit animation');

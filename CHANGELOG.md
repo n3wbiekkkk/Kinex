@@ -2,6 +2,13 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.14] - 2026-11-17
+
+Pre-production preview. Stabilize the native focus regression gate on slower CI runners.
+
+- Bound the closing-overlay focus assertion by the actual focus state instead of a fixed 20 ms sample, while retaining the deliberate refocus race and the post-animation stability check.
+- Verify three consecutive local experience-suite runs before delivery.
+
 ## [0.7.13] - 2026-11-17
 
 Pre-production preview. Restore multiple windows and fix native focus races after closing overlays.
