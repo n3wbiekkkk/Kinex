@@ -2,6 +2,15 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.10] - 2026-11-17
+
+Pre-production preview. Fix the unreliable Figma compatibility result by correcting a browser loading-state defect.
+
+- Report tab loading only for main-frame loads. Electron emits `did-start-loading` for subframe-only loads too, so a page that injects iframes after its document settles (Figma's homepage) flipped the tab back to loading after it had already settled. The compatibility probe then read `isLoading: true` and recorded FAIL while the document was ready and scroll passed.
+- Keep `did-stop-loading` clearing the state only once the main frame is idle, so a real navigation still shows loading.
+- Add a unit regression asserting a subframe-only load start never re-enters loading, and an integration regression driving a local fixture that settles and then injects four iframes. Reverting the fix makes that integration check fail.
+- Figma now passes the public navigation, scroll, and Tab-focus scenario in two independent probe runs. Authenticated editor, OAuth, and MFA remain BLOCKED.
+
 ## [0.7.9] - 2026-11-17
 
 Pre-production packaging fix. The downloaded 0.7.8 app retained an invalid Electron linker signature and failed strict resource-seal validation. Startup smoke tests alone had missed this defect.

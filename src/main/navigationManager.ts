@@ -291,7 +291,13 @@ export class NavigationManager {
     });
 
     wc.on('did-start-loading', () => {
-      if (!wc.isDestroyed()) options.onLoadingChanged?.(true);
+      // Electron also emits did-start-loading when only a subframe starts loading.
+      // Reporting that as tab loading makes a page that keeps injecting iframes
+      // (Figma's homepage) flip the indicator back on after the main frame settled,
+      // so the tab never presents a stable loaded state. Only a main-frame load
+      // may start the loading state; did-stop-loading already clears it only once
+      // the main frame is idle.
+      if (!wc.isDestroyed() && wc.isLoadingMainFrame()) options.onLoadingChanged?.(true);
     });
 
     wc.on('did-stop-loading', () => {
