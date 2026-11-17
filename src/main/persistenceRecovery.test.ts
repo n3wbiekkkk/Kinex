@@ -63,6 +63,51 @@ describe('persistent state recovery and write ordering', () => {
     expect(getActiveSplit(restored).splitRatio).toBe(0.5);
   });
 
+  it('restores window geometry, Space bindings and the focused window', () => {
+    const data = createDefaultPersistedData();
+    const focusedSpace = data.spaces[1].id;
+    const { persistence } = setup({
+      ...data,
+      windows: [
+        { id: 'window-work', bounds: { x: 12, y: 34, width: 1500, height: 920 }, isMaximized: false, spaceId: focusedSpace, isFocused: true },
+        { id: 'window-personal', bounds: { x: -9000, y: 9000, width: 100, height: 100 }, isMaximized: true, spaceId: data.spaces[0].id, isFocused: false },
+      ],
+    });
+    const restored = persistence.load();
+    expect(restored.windows).toEqual([
+      { id: 'window-work', bounds: { x: 12, y: 34, width: 1500, height: 920 }, isMaximized: false, spaceId: focusedSpace, isFocused: true },
+      { id: 'window-personal', bounds: { x: -2048, y: 8192, width: 880, height: 580 }, isMaximized: true, spaceId: data.spaces[0].id, isFocused: false },
+    ]);
+    expect(restored.activeSpaceId).toBe(focusedSpace);
+  });
+
+  it('derives a single window from legacy state without window records', () => {
+    const data = createDefaultPersistedData();
+    const { persistence } = setup({ ...data, windows: undefined, activeSpaceId: data.spaces[1].id });
+    const restored = persistence.load();
+    expect(restored.windows).toEqual([{ ...data.windows[0], spaceId: data.spaces[1].id, isFocused: true }]);
+    expect(restored.activeSpaceId).toBe(data.spaces[1].id);
+  });
+
+  it('recovers invalid window records while keeping one window per Space', () => {
+    const data = createDefaultPersistedData();
+    const { directory, persistence } = setup({
+      ...data,
+      windows: [
+        { id: 'valid', bounds: { x: 10, y: 20, width: 1200, height: 800 }, isMaximized: false, spaceId: data.spaces[0].id, isFocused: false },
+        { id: 'valid', bounds: { x: 0, y: 0, width: 1200, height: 800 }, isMaximized: false, spaceId: data.spaces[1].id, isFocused: false },
+        { id: 'duplicate-space', bounds: { x: 0, y: 0, width: 1200, height: 800 }, isMaximized: false, spaceId: data.spaces[0].id, isFocused: true },
+        { id: 'unknown-space', bounds: { x: 0, y: 0, width: 1200, height: 800 }, isMaximized: false, spaceId: 'missing', isFocused: true },
+      ],
+    });
+    const restored = persistence.load();
+    expect(restored.windows).toHaveLength(1);
+    expect(restored.windows[0].id).toBe('valid');
+    expect(restored.windows[0].isFocused).toBe(true);
+    persistence.save(restored);
+    expect(fs.readdirSync(directory).some((name) => name.includes('.corrupt-'))).toBe(true);
+  });
+
   it('preserves the damaged JSON before writing recovered defaults', () => {
     const { directory, persistence } = setup();
     const damaged = '{interrupted-json';

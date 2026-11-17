@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  AppWindow,
   Archive,
   ArrowLeft,
   ArrowRight,
@@ -486,6 +487,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
             <span>{activeSpace.name}</span>
           </button>
           <div style={{ display: 'flex', gap: 1 }}>
+            <button
+              className="icon-btn"
+              title="New Window (⌘N)"
+              onClick={() => dispatch({ type: 'run-command', commandId: 'new-window' })}
+            >
+              <AppWindow size={13} />
+            </button>
             <button
               className="icon-btn"
               title="New Private Window (⌘⇧N)"

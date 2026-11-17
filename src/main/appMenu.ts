@@ -17,7 +17,7 @@ export function buildAndInstallApplicationMenu(host: AppMenuHost): void {
       { type: 'separator' }, { role: 'services' }, { type: 'separator' },
       { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' },
     ] },
-    { label: 'File', submenu: [command('new-tab'), command('edit-url'), command('open-private-window'), command('little-kinex'),
+    { label: 'File', submenu: [command('new-tab'), command('new-window'), command('edit-url'), command('open-private-window'), command('little-kinex'),
       { type: 'separator' }, command('print-page'), command('save-page-pdf'), command('close-window')] },
     { role: 'editMenu' },
     { label: 'Tabs', submenu: group('Tabs') },

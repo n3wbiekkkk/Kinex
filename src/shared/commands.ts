@@ -40,6 +40,7 @@ const definitions = [
   ['open-shields', 'Open Kinex Shields', 'Tools', 'CmdOrCtrl+Shift+K', 'Inspect blocked items and per-site protection'],
   ['activate-element-picker', 'Pick Element to Block', 'Tools', '', 'Visually select and hide an unwanted page element'],
   ['toggle-boosts', 'Open Boosts Studio', 'Tools', 'CmdOrCtrl+Shift+B', 'Edit per-site CSS, JavaScript and hidden elements'],
+  ['new-window', 'New Window', 'Kinex', 'CmdOrCtrl+N', 'Open a new browser window'],
   ['little-kinex', 'Open Little Kinex', 'Kinex', 'Alt+CmdOrCtrl+N', 'Open a floating browser window'],
   ['open-private-window', 'New Private Window', 'Kinex', 'CmdOrCtrl+Shift+N', 'Open a separate ephemeral browsing session'],
   ['copy-url', 'Copy Clean URL', 'Navigation', 'CmdOrCtrl+Shift+C', 'Copy the page address without tracking parameters'],

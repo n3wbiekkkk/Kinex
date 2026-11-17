@@ -108,6 +108,24 @@ async function run() {
     assert.equal(mgr.getSnapshot().overlay.mode, 'none');
     checks.push('Plain typing reaches the remote document without browser command dispatch');
 
+    await typingPage.executeJavaScript("document.querySelector('#typing').value = ''");
+    await mgr.handleIntent({ type: 'set-overlay', overlay: { mode: 'settings' } });
+    await until(() => mgr.overlayView.webContents.isFocused(), 'Settings focus before the exit race');
+    await mgr.handleIntent({ type: 'set-overlay', overlay: { mode: 'none' } });
+    await wait(10);
+    mgr.overlayView.webContents.focus();
+    await wait(20);
+    assert.equal(
+      webContents.getFocusedWebContents()?.id,
+      typingPage.id,
+      `Closing overlay must not retain native focus: ${JSON.stringify({ focused: webContents.getFocusedWebContents()?.id, page: typingPage.id, overlay: mgr.overlayView.webContents.id, focusEvents })}`
+    );
+    await wait(200);
+    assert.equal(webContents.getFocusedWebContents()?.id, typingPage.id, 'Focus remains on the page after the exit animation');
+    await key(typingPage, 'Y', [], 'y');
+    await until(async () => await typingPage.executeJavaScript("document.querySelector('#typing').value") === 'y', 'typing after overlay close reaches the page');
+    checks.push('A closing overlay cannot steal native focus from the page');
+
     await key(page(), 'F6');
     const shell = mgr.shellView.webContents;
     await until(() => shell.isFocused(), 'F6 shell native focus');

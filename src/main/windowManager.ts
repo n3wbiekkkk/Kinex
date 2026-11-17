@@ -31,8 +31,10 @@ import type {
   LittleKinexInfo,
   OverlayState,
   PersistedKinexData,
+  PersistedWindowState,
   TabItem,
   UpdateStatus,
+  Space,
 } from '../shared/types';
 import { extractArticleFromWebContents, renderReaderHtml, type ReaderDocument } from './readerMode';
 import { buildAndInstallApplicationMenu } from './appMenu';
@@ -61,6 +63,7 @@ import { KinexShieldsEngine } from './shields/engine';
 import { TabManager } from './tabManager';
 import { KinexAutoUpdater } from './updater';
 import { ViewLayoutManager } from './viewLayoutManager';
+import { WindowSessionRegistry } from './windowRegistry';
 
 export function ensureAppName(): void {
   if (app.getName() !== 'Kinex') {
@@ -68,10 +71,26 @@ export function ensureAppName(): void {
   }
 }
 
+interface BrowserWindowContext {
+  state: PersistedWindowState;
+  win: BrowserWindow;
+  shellView: WebContentsView;
+  overlayView: WebContentsView | null;
+  overlay: OverlayState;
+  duplicatePrompt: DuplicateTabPrompt | null;
+  htmlFullscreenTabId: string | null;
+  overlayOrigin: 'shell' | 'content';
+  shellRegion: FocusRegion;
+  focusOnWindowActivation: boolean;
+  overlayClosing: boolean;
+  overlayCloseTimer: NodeJS.Timeout | null;
+}
+
 export class KinexWindowManager {
   private readonly persistence: KinexPersistence;
   private persisted: PersistedKinexData;
   private overlay: OverlayState = { mode: 'none' };
+  private overlayGeneration = 0;
   private toastMessage: string | null = null;
   private updateStatus: UpdateStatus = { state: 'idle' };
   private startupUrl: string | undefined;
@@ -105,6 +124,10 @@ export class KinexWindowManager {
   private overlayCloseTimer: NodeJS.Timeout | null = null;
   private htmlFullscreenTabId: string | null = null;
   private enforcingOverlayFocus = false;
+  private pendingFocus: { target: () => WebContents | null; remaining: number } | null = null;
+  private focusRetryTimer: NodeJS.Timeout | null = null;
+  private focusOnWindowActivation = false;
+  private overlayFocusRedirects = 0;
 
   private mainWindow: BrowserWindow | null = null;
   private shellView: WebContentsView | null = null;
@@ -126,6 +149,13 @@ export class KinexWindowManager {
   private readonly navigationManager: NavigationManager;
   private readonly tabManager: TabManager;
   private readonly layoutManager = new ViewLayoutManager();
+  private readonly windowRegistry = new WindowSessionRegistry();
+  private readonly contexts = new Map<string, BrowserWindowContext>();
+  private readonly windowIdBySenderId = new Map<number, string>();
+  private readonly tabOwnerByTabId = new Map<string, string>();
+  private currentWindowId = 'window-default';
+  private restoredAtStartup = false;
+  private runtimeListenersActive = false;
   private readonly auxiliaryWindows: AuxiliaryWindowManager;
   private readonly updater: KinexAutoUpdater;
 
@@ -309,6 +339,9 @@ export class KinexWindowManager {
         onSpaceMismatchCheck: (tabId, url) => this.handleAirTrafficRouting(tabId, url),
         onHtmlFullscreenChanged: (tabId, isFullscreen) => {
           if (this.disposed) return;
+          const tab = this.persisted.tabs.find((item) => item.id === tabId);
+          const fullscreenContext = [...this.contexts.values()].find((context) => context.state.spaceId === tab?.spaceId);
+          if (fullscreenContext) fullscreenContext.htmlFullscreenTabId = isFullscreen ? tabId : null;
           if (isFullscreen) {
             this.htmlFullscreenTabId = tabId;
             this.layoutViews();
@@ -367,15 +400,81 @@ export class KinexWindowManager {
   }
 
   hasWindow(): boolean {
-    return Boolean(this.mainWindow && !this.mainWindow.isDestroyed());
+    return [...this.contexts.values()].some((context) => !context.win.isDestroyed());
+  }
+
+  getWindowCount(): number {
+    return [...this.contexts.values()].filter((context) => !context.win.isDestroyed()).length;
+  }
+
+  private getActiveContext(): BrowserWindowContext | null {
+    return this.contexts.get(this.currentWindowId) ?? null;
+  }
+
+  private saveActiveContext(): void {
+    const context = this.contexts.get(this.currentWindowId);
+    if (!context) return;
+    context.overlay = this.overlay;
+    context.duplicatePrompt = this.duplicatePrompt;
+    context.htmlFullscreenTabId = this.htmlFullscreenTabId;
+    context.overlayOrigin = this.overlayOrigin;
+    context.shellRegion = this.shellRegion;
+    context.focusOnWindowActivation = this.focusOnWindowActivation;
+    context.overlayClosing = this.overlayClosing;
+    context.overlayCloseTimer = this.overlayCloseTimer;
+    context.overlayView = this.overlayView;
+    if (this.shellView) context.shellView = this.shellView;
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) context.win = this.mainWindow;
+  }
+
+  private activateContext(id: string): void {
+    if (this.currentWindowId === id && this.mainWindow && !this.mainWindow.isDestroyed()) return;
+    this.saveActiveContext();
+    const context = this.contexts.get(id);
+    if (!context || context.win.isDestroyed()) return;
+    this.cancelPendingFocus();
+    for (const [tabId] of this.tabManager.getAllViews()) {
+      if (this.tabOwnerByTabId.get(tabId) !== id) {
+        this.tabManager.destroyTabView(tabId);
+        this.tabOwnerByTabId.delete(tabId);
+      }
+    }
+    this.currentWindowId = id;
+    this.mainWindow = context.win;
+    this.shellView = context.shellView;
+    this.overlayView = context.overlayView;
+    this.overlay = context.overlay;
+    this.duplicatePrompt = context.duplicatePrompt;
+    this.htmlFullscreenTabId = context.htmlFullscreenTabId;
+    this.overlayOrigin = context.overlayOrigin;
+    this.shellRegion = context.shellRegion;
+    this.overlayClosing = context.overlayClosing;
+    this.overlayCloseTimer = context.overlayCloseTimer;
+    this.focusOnWindowActivation = context.focusOnWindowActivation;
+    this.persisted = { ...this.persisted, activeSpaceId: context.state.spaceId };
+    this.ensureActiveViewsLoaded();
+    this.layoutViews();
+  }
+
+  private contextForSender(senderId?: number): BrowserWindowContext | null {
+    if (senderId !== undefined) {
+      const id = this.windowIdBySenderId.get(senderId);
+      if (id && id !== this.currentWindowId) this.activateContext(id);
+    }
+    return this.getActiveContext();
+  }
+
+  private claimedSpaceIds(): Set<string> {
+    return new Set([...this.contexts.values()].map((context) => context.state.spaceId));
   }
 
   focusMainWindow(): void {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      if (this.mainWindow.isMinimized()) this.mainWindow.restore();
-      this.mainWindow.show();
-      this.mainWindow.focus();
-    }
+    const context = this.getActiveContext() ?? [...this.contexts.values()][0];
+    if (!context || context.win.isDestroyed()) return;
+    this.activateContext(context.state.id);
+    if (context.win.isMinimized()) context.win.restore();
+    context.win.show();
+    context.win.focus();
   }
 
   getPersistenceFilePath(): string {
@@ -399,11 +498,38 @@ export class KinexWindowManager {
   }
 
   createWindow(): BrowserWindow {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+    if (this.hasWindow()) {
       this.focusMainWindow();
-      return this.mainWindow;
+      return this.mainWindow!;
     }
 
+    this.startRuntime();
+    const states = this.persisted.windows.length > 0
+      ? this.persisted.windows.slice(0, 16)
+      : [this.defaultWindowState()];
+    if (!this.restoredAtStartup) {
+      this.restoredAtStartup = true;
+      for (const state of states) this.createWindowForState(state, state.isFocused);
+      this.activateContext(states.find((state) => state.isFocused)?.id ?? states[0].id);
+    } else {
+      this.createWindowForState(states[0], true);
+    }
+    return this.mainWindow!;
+  }
+
+  private defaultWindowState(): PersistedWindowState {
+    return {
+      id: 'window-default',
+      bounds: { x: 100, y: 80, width: 1380, height: 880 },
+      isMaximized: false,
+      spaceId: this.persisted.activeSpaceId,
+      isFocused: true,
+    };
+  }
+
+  private startRuntime(): void {
+    if (this.runtimeListenersActive) return;
+    this.runtimeListenersActive = true;
     this.disposed = false;
     this.onThermalState({ state: powerMonitor.getCurrentThermalState() });
     powerMonitor.on('speed-limit-change', this.onSpeedLimit);
@@ -412,9 +538,80 @@ export class KinexWindowManager {
     this.auxiliaryWindows.resetForNewWindow();
     this.downloadManager.resetForNewWindow();
 
+    this.memorySaverTimer = setInterval(() => {
+      if (!this.disposed) void this.runMemorySaverSweep();
+    }, 60_000);
+    this.memorySaverTimer.unref?.();
+
+    if (!process.env.KINEX_DISABLE_AUTO_UPDATER) {
+      this.startupUpdateTimer = setTimeout(() => {
+        if (!this.disposed) void this.updater.checkForUpdates(true);
+      }, 8000);
+      this.periodicUpdateTimer = setInterval(() => {
+        if (!this.disposed) void this.updater.checkForUpdates(true);
+      }, 4 * 60 * 60 * 1000);
+    }
+  }
+
+  private allocateSpaceForWindow(): Space {
+    const claimed = this.claimedSpaceIds();
+    const free = this.persisted.spaces.find((space) => !claimed.has(space.id));
+    if (free) return free;
+
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const id = `space-window-${suffix}`;
+    const partition = `persist:kinex-window-${suffix}`;
+    const welcomeTab: TabItem = {
+      id: `tab-${suffix}-w`,
+      spaceId: id,
+      location: 'unpinned',
+      url: 'kinex://newtab',
+      title: 'New Tab — Kinex',
+      isLoading: false,
+      canGoBack: false,
+      canGoForward: false,
+      isMuted: false,
+      isAudible: false,
+      securityState: 'internal',
+      lastActiveAt: Date.now(),
+    };
+    this.persisted = {
+      ...this.persisted,
+      spaces: [...this.persisted.spaces, {
+        id,
+        name: `Space ${this.persisted.spaces.length + 1}`,
+        icon: '✦',
+        theme: { ...this.persisted.spaces[0].theme },
+        profilePartition: partition,
+      }],
+      profiles: [...this.persisted.profiles, { id: `prof-${id}`, name: `Window ${this.persisted.spaces.length + 1}`, partition }],
+      tabs: [...this.persisted.tabs, welcomeTab],
+      splitsBySpace: { ...this.persisted.splitsBySpace, [id]: { tabIds: [welcomeTab.id], focusedIndex: 0, splitRatio: 0.5 } },
+    };
+    return this.persisted.spaces.find((space) => space.id === id)!;
+  }
+
+  private createWindowForState(rawState: PersistedWindowState, isFocused = false): BrowserWindowContext {
+    const claimed = this.claimedSpaceIds();
+    const spaceId =
+      rawState.spaceId && this.persisted.spaces.some((space) => space.id === rawState.spaceId) && !claimed.has(rawState.spaceId)
+        ? rawState.spaceId
+        : this.allocateSpaceForWindow().id;
+    const state: PersistedWindowState = { ...rawState, spaceId, isFocused: isFocused || this.contexts.size === 0 };
+    const exists = this.persisted.windows.some((window) => window.id === state.id);
+    this.persisted = {
+      ...this.persisted,
+      windows: exists
+        ? this.persisted.windows.map((window) => window.id === state.id ? state : window)
+        : [...this.persisted.windows, state],
+    };
+
+    const id = state.id;
     const win = new BrowserWindow({
-      width: 1380,
-      height: 880,
+      x: state.bounds.x,
+      y: state.bounds.y,
+      width: state.bounds.width,
+      height: state.bounds.height,
       minWidth: 880,
       minHeight: 580,
       titleBarStyle: 'hiddenInset',
@@ -426,8 +623,8 @@ export class KinexWindowManager {
       show: false,
       title: 'Kinex',
     });
-
-    this.mainWindow = win;
+    if (state.isMaximized) win.maximize();
+    this.windowRegistry.register(id, win, state);
 
     const shellView = new WebContentsView({
       webPreferences: {
@@ -444,16 +641,31 @@ export class KinexWindowManager {
       },
     });
     shellView.setBackgroundColor('#00000000');
-    this.shellView = shellView;
     win.contentView.addChildView(shellView);
     this.ipcRegistry.register(shellView.webContents.id, 'shell');
+    this.windowIdBySenderId.set(shellView.webContents.id, id);
     this.hardenInternalView(shellView, 'shell');
     this.attachKeyboard(shellView.webContents);
     this.attachOverlayFocusGuard(shellView.webContents);
 
-    // Start shell load + active tab view immediately; overlayView is created lazily on first open
-    void shellView.webContents.loadURL(this.getRendererUrl('shell'));
+    const context: BrowserWindowContext = {
+      state,
+      win,
+      shellView,
+      overlayView: null,
+      overlay: { mode: 'none' },
+      duplicatePrompt: null,
+      htmlFullscreenTabId: null,
+      overlayOrigin: 'content',
+      shellRegion: 'sidebar',
+      focusOnWindowActivation: false,
+      overlayClosing: false,
+      overlayCloseTimer: null,
+    };
+    this.contexts.set(id, context);
+    this.activateContext(id);
 
+    void shellView.webContents.loadURL(this.getRendererUrl('shell'));
     this.ensureActiveViewsLoaded();
     this.layoutViews();
     this.syncBackgroundThrottling();
@@ -462,8 +674,11 @@ export class KinexWindowManager {
     const presentWindow = () => {
       if (presented || win.isDestroyed()) return;
       presented = true;
+      this.activateContext(id);
       win.show();
-      this.focusActiveTabView();
+      context.focusOnWindowActivation = true;
+      this.focusOnWindowActivation = true;
+      this.requestNativeFocus(() => this.getFocusedTabWebContents(), 8);
       this.installApplicationMenu();
       setTimeout(() => {
         if (!this.disposed) this.refreshDefaultBrowserFlag(false);
@@ -476,11 +691,19 @@ export class KinexWindowManager {
     win.once('ready-to-show', presentWindow);
     shellView.webContents.once('did-finish-load', presentWindow);
 
-    win.on('resize', () => this.layoutViews());
-    win.on('enter-full-screen', () => this.layoutViews());
+    win.on('resize', () => {
+      this.layoutContext(context);
+      this.syncWindowGeometry(id);
+    });
+    win.on('move', () => this.syncWindowGeometry(id));
+    win.on('maximize', () => this.syncWindowGeometry(id));
+    win.on('unmaximize', () => this.syncWindowGeometry(id));
+    win.on('close', () => this.syncWindowGeometry(id));
+    win.on('enter-full-screen', () => this.layoutContext(context));
     win.on('leave-full-screen', () => {
-      this.htmlFullscreenTabId = null;
-      this.layoutViews();
+      context.htmlFullscreenTabId = null;
+      if (this.currentWindowId === id) this.htmlFullscreenTabId = null;
+      this.layoutContext(context);
     });
     win.on('minimize', () => {
       this.isWindowOccluded = true;
@@ -499,37 +722,77 @@ export class KinexWindowManager {
       this.syncBackgroundThrottling();
     });
     win.on('focus', () => {
+      this.activateContext(id);
       if (this.isWindowOccluded) {
         this.isWindowOccluded = false;
         this.syncBackgroundThrottling();
       }
-    });
-
-    win.on('closed', () => {
-      this.cleanupWindowResources();
-    });
-
-    this.memorySaverTimer = setInterval(() => {
-      if (!this.disposed) {
-        void this.runMemorySaverSweep();
+      if (context.focusOnWindowActivation) {
+        context.focusOnWindowActivation = false;
+        this.focusOnWindowActivation = false;
+        this.requestNativeFocus(() => this.getFocusedTabWebContents(), 4);
       }
-    }, 60_000);
-    this.memorySaverTimer.unref?.();
+      this.syncWindowState();
+      this.persistence.scheduleSave(this.persisted);
+    });
+    win.on('closed', () => this.closeWindowContext(id));
 
-    if (!process.env.KINEX_DISABLE_AUTO_UPDATER) {
-      this.startupUpdateTimer = setTimeout(() => {
-        if (!this.disposed) {
-          void this.updater.checkForUpdates(true);
-        }
-      }, 8000);
-      this.periodicUpdateTimer = setInterval(() => {
-        if (!this.disposed) {
-          void this.updater.checkForUpdates(true);
-        }
-      }, 4 * 60 * 60 * 1000);
+    return context;
+  }
+
+  private openNewWindow(): void {
+    if (this.disposed) return;
+    const space = this.allocateSpaceForWindow();
+    const bounds = this.defaultWindowState().bounds;
+    const offset = (this.contexts.size % 4) * 28;
+    const state: PersistedWindowState = {
+      id: `window-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      bounds: { ...bounds, x: bounds.x + offset, y: bounds.y + offset },
+      isMaximized: false,
+      spaceId: space.id,
+      isFocused: true,
+    };
+    for (const existing of this.persisted.windows) {
+      this.windowRegistry.update(existing.id, { isFocused: false });
+      const existingContext = this.contexts.get(existing.id);
+      if (existingContext) existingContext.state = { ...existingContext.state, isFocused: false };
     }
+    this.persisted = {
+      ...this.persisted,
+      windows: [...this.persisted.windows.map((window) => ({ ...window, isFocused: false })), state],
+    };
+    const context = this.createWindowForState(state, true);
+    this.activateContext(context.state.id);
+    this.persistAndBroadcast();
+  }
 
-    return win;
+  private closeWindowContext(id: string): void {
+    const context = this.contexts.get(id);
+    if (!context) return;
+    if (context.overlayCloseTimer) clearTimeout(context.overlayCloseTimer);
+    const shellId = context.shellView.webContents.id;
+    this.ipcRegistry.unregister(shellId);
+    this.windowIdBySenderId.delete(shellId);
+    if (context.overlayView && !context.overlayView.webContents.isDestroyed()) {
+      const overlayId = context.overlayView.webContents.id;
+      this.ipcRegistry.unregister(overlayId);
+      this.windowIdBySenderId.delete(overlayId);
+      context.overlayView.webContents.close();
+    }
+    this.contexts.delete(id);
+    this.windowRegistry.unregister(id);
+    this.persisted = {
+      ...this.persisted,
+      windows: this.persisted.windows.map((window) => window.id === id ? { ...window, isFocused: false } : window),
+    };
+    const remaining = [...this.contexts.values()].find((item) => !item.win.isDestroyed());
+    if (remaining) {
+      this.activateContext(remaining.state.id);
+      this.layoutViews();
+      this.persistAndBroadcast(false);
+    } else {
+      this.cleanupWindowResources();
+    }
   }
 
   private hardenInternalView(view: WebContentsView, mode: 'shell' | 'overlay'): void {
@@ -605,10 +868,14 @@ export class KinexWindowManager {
     overlayView.setBackgroundColor('#00000000');
     overlayView.setVisible(false);
     this.overlayView = overlayView;
+    const activeContext = this.getActiveContext();
+    if (activeContext) activeContext.overlayView = overlayView;
     this.mainWindow.contentView.addChildView(overlayView);
     this.ipcRegistry.register(overlayView.webContents.id, 'overlay');
+    this.windowIdBySenderId.set(overlayView.webContents.id, this.currentWindowId);
     this.hardenInternalView(overlayView, 'overlay');
     this.attachKeyboard(overlayView.webContents);
+    this.attachOverlayFocusGuard(overlayView.webContents);
     void overlayView.webContents.loadURL(this.getRendererUrl('overlay'));
     return overlayView;
   }
@@ -626,11 +893,14 @@ export class KinexWindowManager {
     }
   }
 
-  getSnapshot(): KinexStateSnapshot {
+  private buildSnapshot(context: BrowserWindowContext | null): KinexStateSnapshot {
+    const isActive = context?.state.id === this.currentWindowId;
     return {
       ...this.persisted,
+      activeSpaceId: context?.state.spaceId ?? this.persisted.activeSpaceId,
       reducedEffects: this.speedLimited || this.thermalLimited,
-      overlay: this.overlay,
+      overlayGeneration: this.overlayGeneration,
+      overlay: isActive ? this.overlay : context?.overlay ?? this.overlay,
       downloads: this.downloadManager.getDownloads(),
       blockedRequestsCount: this.shieldsCoordinator.getTotalBlockedCount(),
       shieldsRuntime: {
@@ -648,13 +918,48 @@ export class KinexWindowManager {
       appVersion: app.getVersion(),
       updateStatus: this.updateStatus,
       findStatus: this.findStatus,
-      duplicatePrompt: this.duplicatePrompt,
+      duplicatePrompt: isActive ? this.duplicatePrompt : context?.duplicatePrompt ?? this.duplicatePrompt,
       readerTabIds: Array.from(this.readerDocsByTabId.keys()),
     };
   }
 
+  getSnapshot(senderId?: number): KinexStateSnapshot {
+    return this.buildSnapshot(this.contextForSender(senderId));
+  }
+
+  private syncWindowState(): void {
+    const context = this.getActiveContext();
+    if (!context || context.win.isDestroyed()) return;
+    const otherOwner = [...this.contexts.values()].find((item) =>
+      item.state.id !== context.state.id && item.state.spaceId === this.persisted.activeSpaceId
+    );
+    if (otherOwner) {
+      this.persisted = { ...this.persisted, activeSpaceId: context.state.spaceId };
+    }
+    for (const other of this.contexts.values()) {
+      const focused = other.state.id === context.state.id && other.win.isFocused();
+      this.windowRegistry.update(other.state.id, { isFocused: focused });
+      other.state = { ...other.state, isFocused: focused };
+    }
+    this.windowRegistry.update(context.state.id, {
+      spaceId: this.persisted.activeSpaceId,
+      isFocused: context.win.isFocused(),
+    });
+    context.state = { ...context.state, spaceId: this.persisted.activeSpaceId };
+    this.persisted = { ...this.persisted, windows: this.windowRegistry.states() };
+  }
+
+  private syncWindowGeometry(id = this.currentWindowId): void {
+    const record = this.windowRegistry.get(id);
+    if (!record || record.win.isDestroyed()) return;
+    this.windowRegistry.capture(id);
+    this.persisted = { ...this.persisted, windows: this.windowRegistry.states() };
+    this.persistence.scheduleSave(this.persisted);
+  }
+
   private persistAndBroadcast(immediateBroadcast = true): void {
     if (this.disposed) return;
+    this.syncWindowState();
     this.persistence.scheduleSave(this.persisted);
     if (immediateBroadcast) {
       this.broadcastState();
@@ -678,20 +983,25 @@ export class KinexWindowManager {
       clearTimeout(this.broadcastTimer);
       this.broadcastTimer = null;
     }
-    const snapshot = this.getSnapshot();
-    if (this.shellView && !this.shellView.webContents.isDestroyed()) {
-      this.shellView.webContents.send('kinex:state-updated', snapshot);
+    for (const context of this.contexts.values()) {
+      if (context.win.isDestroyed()) continue;
+      const snapshot = this.buildSnapshot(context);
+      if (!context.shellView.webContents.isDestroyed()) {
+        context.shellView.webContents.send('kinex:state-updated', snapshot);
+      }
+      const overlayState = context.state.id === this.currentWindowId ? this.overlay : context.overlay;
+      const prompt = context.state.id === this.currentWindowId ? this.duplicatePrompt : context.duplicatePrompt;
+      const shouldUpdateOverlay =
+        overlayState.mode !== 'none' || Boolean(prompt) || this.overlayNeedsCloseSync;
+      if (shouldUpdateOverlay && context.overlayView && !context.overlayView.webContents.isDestroyed()) {
+        context.overlayView.webContents.send('kinex:state-updated', snapshot);
+      }
     }
-    const shouldUpdateOverlay =
-      this.overlay.mode !== 'none' || Boolean(this.duplicatePrompt) || this.overlayNeedsCloseSync;
-    if (
-      shouldUpdateOverlay &&
-      this.overlayView &&
-      !this.overlayView.webContents.isDestroyed()
-    ) {
-      this.overlayView.webContents.send('kinex:state-updated', snapshot);
-      this.overlayNeedsCloseSync = this.overlay.mode !== 'none' || Boolean(this.duplicatePrompt);
-    }
+    this.overlayNeedsCloseSync = this.overlay.mode !== 'none' || Boolean(this.duplicatePrompt) ||
+      [...this.contexts.values()].some(
+        (context) => context.state.id !== this.currentWindowId &&
+          (context.overlay.mode !== 'none' || Boolean(context.duplicatePrompt))
+      );
   }
 
   private syncBackgroundThrottling(): void {
@@ -771,32 +1081,91 @@ export class KinexWindowManager {
     }
   }
 
+  private cancelPendingFocus(): void {
+    if (this.focusRetryTimer) {
+      clearTimeout(this.focusRetryTimer);
+      this.focusRetryTimer = null;
+    }
+    this.pendingFocus = null;
+  }
+
+  private requestNativeFocus(target: () => WebContents | null, attempts = 4): void {
+    if (this.disposed) return;
+    this.cancelPendingFocus();
+    this.pendingFocus = { target, remaining: attempts };
+    this.applyPendingFocus();
+  }
+
+  private applyPendingFocus(): void {
+    this.focusRetryTimer = null;
+    const request = this.pendingFocus;
+    if (!request || this.disposed) return;
+    const win = this.mainWindow;
+    if (!win || win.isDestroyed()) {
+      this.pendingFocus = null;
+      return;
+    }
+    if (this.overlay.mode !== 'none' && !this.overlayClosing) {
+      this.pendingFocus = null;
+      return;
+    }
+    const wc = request.target();
+    if (wc && !wc.isDestroyed() && win.isFocused() && !wc.isFocused()) {
+      wc.focus();
+    }
+    if (wc && !wc.isDestroyed() && wc.isFocused()) {
+      this.pendingFocus = null;
+      return;
+    }
+    if (request.remaining <= 0) {
+      this.pendingFocus = null;
+      return;
+    }
+    request.remaining -= 1;
+    this.focusRetryTimer = setTimeout(() => this.applyPendingFocus(), 25);
+    this.focusRetryTimer.unref?.();
+  }
+
+  private getFocusedTabWebContents(): WebContents | null {
+    const focused = getFocusedTab(this.persisted);
+    const view = focused && this.tabManager.getView(focused.id);
+    return view && !view.webContents.isDestroyed() ? view.webContents : null;
+  }
+
   private focusActiveTabView(explicitTabId?: string): void {
     if (this.disposed || this.overlay.mode !== 'none' || Boolean(this.duplicatePrompt)) return;
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
-    const focused = explicitTabId
-      ? this.persisted.tabs.find((t) => t.id === explicitTabId)
-      : getFocusedTab(this.persisted);
-    if (!focused) return;
-    const view = this.tabManager.getView(focused.id);
-    if (view && !view.webContents.isDestroyed()) {
-      view.webContents.focus();
-    }
+    const tabId = explicitTabId ?? getFocusedTab(this.persisted)?.id;
+    if (!tabId) return;
+    this.requestNativeFocus(() => {
+      const view = this.tabManager.getView(tabId);
+      return view && !view.webContents.isDestroyed() ? view.webContents : null;
+    });
   }
 
   private ensureActiveViewsLoaded(): void {
-    const split = getActiveSplit(this.persisted);
+    const context = this.getActiveContext();
+    const spaceId = this.currentWindowId === context?.state.id ? this.persisted.activeSpaceId : context?.state.spaceId;
+    const split = getActiveSplit(this.persisted, spaceId ?? this.persisted.activeSpaceId);
     for (const tabId of split.tabIds) {
-      this.tabManager.ensureTabView(tabId);
+      const view = this.tabManager.ensureTabView(tabId);
+      if (view && context) this.tabOwnerByTabId.set(tabId, context.state.id);
     }
   }
 
-  private layoutViews(): void {
-    const split = getActiveSplit(this.persisted);
-    const focused = getFocusedTab(this.persisted);
-    if (this.htmlFullscreenTabId && !split.tabIds.includes(this.htmlFullscreenTabId)) {
-      const staleId = this.htmlFullscreenTabId;
-      this.htmlFullscreenTabId = null;
+  private layoutContext(context: BrowserWindowContext): void {
+    const isActive = context.state.id === this.currentWindowId;
+    const htmlFullscreenTabId = isActive ? this.htmlFullscreenTabId : context.htmlFullscreenTabId;
+    const overlayState = isActive ? this.overlay : context.overlay;
+    const prompt = isActive ? this.duplicatePrompt : context.duplicatePrompt;
+    const closing = isActive ? this.overlayClosing : context.overlayClosing;
+    const split = getActiveSplit(this.persisted, context.state.spaceId);
+    const focusedId = split.tabIds[split.focusedIndex] ?? split.tabIds[0];
+    const focused = this.persisted.tabs.find((tab) => tab.id === focusedId);
+    if (htmlFullscreenTabId && !split.tabIds.includes(htmlFullscreenTabId)) {
+      const staleId = htmlFullscreenTabId;
+      context.htmlFullscreenTabId = null;
+      if (isActive) this.htmlFullscreenTabId = null;
       const staleView = this.tabManager.getView(staleId);
       if (staleView && !staleView.webContents.isDestroyed()) {
         void staleView.webContents
@@ -804,19 +1173,31 @@ export class KinexWindowManager {
           .catch(() => {});
       }
     }
+    const spaceTabIds = new Set(
+      this.persisted.tabs.filter((tab) => tab.spaceId === context.state.spaceId).map((tab) => tab.id)
+    );
+    const tabViews = new Map(
+      [...this.tabManager.getAllViews()].filter(([tabId]) => spaceTabIds.has(tabId))
+    );
     this.layoutManager.applyLayout({
-      mainWindow: this.mainWindow,
-      shellView: this.shellView,
-      overlayView: this.overlayView,
-      allTabViews: this.tabManager.getAllViews(),
+      mainWindow: context.win,
+      shellView: context.shellView,
+      overlayView: context.overlayView,
+      allTabViews: tabViews,
       activeTabIds: split.tabIds,
       sidebarOpen: this.persisted.sidebarOpen,
       sidebarWidth: this.persisted.sidebarWidth,
       splitRatio: split.splitRatio || 0.5,
       toolbarVisible: Boolean(focused && (this.readerDocsByTabId.has(focused.id) || (focused.zoomFactor ?? 1) !== 1)),
-      hasOverlay: this.overlay.mode !== 'none' || Boolean(this.duplicatePrompt) || this.overlayClosing,
-      htmlFullscreenTabId: this.htmlFullscreenTabId,
+      hasOverlay: overlayState.mode !== 'none' || Boolean(prompt) || closing,
+      htmlFullscreenTabId,
     });
+  }
+
+  private layoutViews(): void {
+    const context = this.getActiveContext();
+    if (!context) return;
+    this.layoutContext(context);
     this.syncBackgroundThrottling();
   }
 
@@ -983,11 +1364,16 @@ export class KinexWindowManager {
     this.persistAndBroadcast();
   }
 
-  async handleIntent(intent: KinexIntent): Promise<void> {
+  async handleIntent(intent: KinexIntent, senderId?: number): Promise<void> {
     if (this.disposed) return;
+    this.contextForSender(senderId);
 
     switch (intent.type) {
       case 'run-command':
+        if (intent.commandId === 'new-window') {
+          this.openNewWindow();
+          return;
+        }
         await this.executeCommand(intent.commandId);
         return;
       case 'focus-region':
@@ -998,6 +1384,17 @@ export class KinexWindowManager {
         if (!this.persisted.spaces.some((s) => s.id === intent.spaceId)) return;
         const now = Date.now();
         const nextSplitIds = new Set(getActiveSplit(this.persisted, intent.spaceId).tabIds);
+        const owningWindow = [...this.contexts.values()].find((context) => context.state.spaceId === intent.spaceId);
+        if (owningWindow && owningWindow.state.id !== this.currentWindowId) {
+          this.activateContext(owningWindow.state.id);
+          owningWindow.win.focus();
+          return;
+        }
+        const currentContext = this.getActiveContext();
+        if (currentContext) {
+          this.windowRegistry.update(currentContext.state.id, { spaceId: intent.spaceId });
+          this.persisted = { ...this.persisted, windows: this.windowRegistry.states() };
+        }
         this.persisted = {
           ...this.persisted,
           activeSpaceId: intent.spaceId,
@@ -1619,7 +2016,10 @@ export class KinexWindowManager {
       }
 
       case 'set-overlay': {
-        if (intent.overlay.mode !== 'none') this.captureOverlayOrigin();
+        if (intent.overlay.mode !== 'none') {
+          this.captureOverlayOrigin();
+          this.overlayGeneration += 1;
+        }
         const wasOpen = this.overlay.mode !== 'none';
         this.overlay = intent.overlay;
         if (this.overlayCloseTimer) clearTimeout(this.overlayCloseTimer);
@@ -1630,12 +2030,16 @@ export class KinexWindowManager {
           if (this.overlay.mode === 'settings') this.refreshDefaultBrowserFlag(false);
         } else if (wasOpen) {
           this.overlayClosing = true;
+          this.overlayFocusRedirects = 0;
           this.overlayCloseTimer = setTimeout(() => {
             this.overlayCloseTimer = null;
             this.overlayClosing = false;
             if (!this.disposed) {
               this.layoutViews();
-              if (this.mainWindow?.isFocused() && !webContents.getFocusedWebContents()) this.restoreOverlayFocus();
+              const focused = webContents.getFocusedWebContents();
+              if (this.mainWindow?.isFocused() && (!focused || focused.id === this.overlayView?.webContents.id)) {
+                this.restoreOverlayFocus();
+              }
             }
           }, systemPreferences.getAnimationSettings().prefersReducedMotion || this.speedLimited || this.thermalLimited ? 0 : 140);
         }
@@ -2552,8 +2956,20 @@ export class KinexWindowManager {
   private attachOverlayFocusGuard(wc: WebContents): void {
     wc.on('focus', () => {
       if (this.enforcingOverlayFocus || this.disposed) return;
+      if (this.overlayClosing) {
+        if (wc.id !== this.overlayView?.webContents.id) return;
+        if (!this.mainWindow || this.mainWindow.isDestroyed() || !this.mainWindow.isFocused()) return;
+        if (this.overlayFocusRedirects >= 3) return;
+        this.overlayFocusRedirects += 1;
+        this.enforcingOverlayFocus = true;
+        try {
+          this.restoreOverlayFocus();
+        } finally {
+          this.enforcingOverlayFocus = false;
+        }
+        return;
+      }
       if (this.overlay.mode === 'none' && !this.duplicatePrompt) return;
-      if (this.overlayClosing) return;
       if (!this.mainWindow || this.mainWindow.isDestroyed() || !this.mainWindow.isFocused()) return;
       const overlayWc = this.overlayView?.webContents;
       if (!overlayWc || overlayWc.isDestroyed() || overlayWc.id === wc.id || overlayWc.isFocused()) return;
@@ -2574,8 +2990,8 @@ export class KinexWindowManager {
 
   private restoreOverlayFocus(): void {
     if (this.overlayOrigin === 'shell' && this.shellView && !this.shellView.webContents.isDestroyed()) {
-      this.shellView.webContents.focus();
       this.shellView.webContents.send('kinex:focus-requested', 'restore');
+      this.requestNativeFocus(() => this.shellView?.webContents ?? null);
     } else this.focusActiveTabView();
   }
 
@@ -2592,8 +3008,8 @@ export class KinexWindowManager {
     this.shellRegion = region;
     const wc = this.shellView?.webContents;
     if (wc && !wc.isDestroyed()) {
-      wc.focus();
       wc.send('kinex:focus-requested', region);
+      this.requestNativeFocus(() => this.shellView?.webContents ?? null);
     }
   }
 
@@ -2720,6 +3136,9 @@ export class KinexWindowManager {
   cleanupWindowResources(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.cancelPendingFocus();
+    this.focusOnWindowActivation = false;
+    this.runtimeListenersActive = false;
     powerMonitor.removeListener('speed-limit-change', this.onSpeedLimit);
     powerMonitor.removeListener('thermal-state-change', this.onThermalState);
     if (this.overlayCloseTimer) clearTimeout(this.overlayCloseTimer);
@@ -2751,6 +3170,13 @@ export class KinexWindowManager {
 
     this.tabManager.disposeAll();
     this.auxiliaryWindows.disposeAll();
+    this.tabOwnerByTabId.clear();
+    this.windowIdBySenderId.clear();
+    for (const context of this.contexts.values()) {
+      if (context.overlayCloseTimer) clearTimeout(context.overlayCloseTimer);
+    }
+    this.contexts.clear();
+    this.windowRegistry.list().forEach((record) => this.windowRegistry.unregister(record.id));
     this.tabIdByWcId.clear();
     this.needsReloadByTabId.clear();
     this.pickerActiveTabId = null;

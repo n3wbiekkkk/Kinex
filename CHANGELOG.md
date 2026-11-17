@@ -2,6 +2,16 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.13] - 2026-11-17
+
+Pre-production preview. Restore multiple windows and fix native focus races after closing overlays.
+
+- Add `⌘N` New Window (menu and Sidebar) and a per-window session registry. Each regular window owns one Space; selecting a Space already claimed by another window focuses its owner.
+- Persist non-private window geometry, maximized state, Space binding and focused window. Cold start restores each window with its Space and Split View; private and Little Kinex windows are never restored.
+- Route IPC state and intents to the sending window. Each shell view receives a snapshot for its own Space while Spaces, Profiles, tabs and settings stay shared.
+- Replace one-shot focus calls with a bounded native focus request. A closing overlay can no longer retain focus and swallow keystrokes; overlay close restores focus to the remembered origin and retries until the target owns focus.
+- Add regression coverage: explicit overlay-close focus check in the experience suite, window persistence recovery tests, and a real Electron multi-window cold-start suite (`npm run test:windows`).
+
 ## [0.7.12] - 2026-11-17
 
 Pre-production preview. Simplify the Updates & About settings view and add GitHub Release fallback for unsigned 0.x preview update checks.

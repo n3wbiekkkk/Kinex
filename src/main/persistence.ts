@@ -21,6 +21,7 @@ import type {
   Space,
   TabItem,
   SplitLayout,
+  PersistedWindowState,
   SitePermissionDecision,
 } from '../shared/types';
 import { classifySecurityState, isLocalHostname, isSafeNavigationUrl, isSafeUpdateFeedUrl } from './security';
@@ -325,9 +326,47 @@ export class KinexPersistence {
         };
       }
 
-      const activeSpaceId = normalizedSpaces.some((s) => s.id === parsed.activeSpaceId)
+      const parsedActiveSpaceId = normalizedSpaces.some((s) => s.id === parsed.activeSpaceId)
         ? String(parsed.activeSpaceId)
         : normalizedSpaces[0].id;
+      const rawWindows = records(parsed.windows);
+      const windowIds = new Set<string>();
+      const windowSpaceIds = new Set<string>();
+      const windows: PersistedWindowState[] = [];
+      for (const rawWindow of rawWindows.slice(0, 16)) {
+        const bounds = isRecord(rawWindow.bounds) ? rawWindow.bounds : {};
+        const spaceId = typeof rawWindow.spaceId === 'string' ? rawWindow.spaceId : '';
+        if (
+          !isId(rawWindow.id) || windowIds.has(String(rawWindow.id)) ||
+          !spaceIds.has(spaceId) || windowSpaceIds.has(spaceId) ||
+          !isRecord(rawWindow.bounds)
+        ) {
+          damaged = true;
+          continue;
+        }
+        windowIds.add(String(rawWindow.id));
+        windowSpaceIds.add(spaceId);
+        windows.push({
+          id: String(rawWindow.id),
+          bounds: {
+            x: Math.min(8192, Math.max(-2048, Math.trunc(finiteNumber(bounds.x, 100)))),
+            y: Math.min(8192, Math.max(-2048, Math.trunc(finiteNumber(bounds.y, 80)))),
+            width: Math.min(4096, Math.max(880, Math.trunc(finiteNumber(bounds.width, 1380)))),
+            height: Math.min(2160, Math.max(580, Math.trunc(finiteNumber(bounds.height, 880)))),
+          },
+          isMaximized: rawWindow.isMaximized === true,
+          spaceId,
+          isFocused: rawWindow.isFocused === true,
+        });
+      }
+      if (windows.length === 0) {
+        windows.push({ ...defaults.windows[0], bounds: { ...defaults.windows[0].bounds }, spaceId: parsedActiveSpaceId, isFocused: true });
+        if (rawWindows.length > 0) damaged = true;
+      } else if (!windows.some((window) => window.isFocused)) {
+        windows[0].isFocused = true;
+      }
+      if (rawWindows.length > 16) damaged = true;
+      const activeSpaceId = windows.find((window) => window.isFocused)?.spaceId ?? parsedActiveSpaceId;
 
       const rawSidebarWidth = typeof parsed.sidebarWidth === 'number' && Number.isFinite(parsed.sidebarWidth)
         ? parsed.sidebarWidth
@@ -372,6 +411,7 @@ export class KinexPersistence {
         folders,
         tabs: migratedTabs,
         splitsBySpace,
+        windows,
         boosts,
         history: records(parsed.history).filter((h) => typeof h.url === 'string' && isSafeNavigationUrl(h.url)).map((h) => ({
           url: sanitizePersistedUrl(h.url), title: optionalString(h.title) || optionalString(h.url) || 'New Tab',

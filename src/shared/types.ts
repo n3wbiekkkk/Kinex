@@ -145,6 +145,14 @@ export interface SplitLayout {
   splitRatio: number;
 }
 
+export interface PersistedWindowState {
+  id: string;
+  bounds: { x: number; y: number; width: number; height: number };
+  isMaximized: boolean;
+  spaceId: string;
+  isFocused: boolean;
+}
+
 export interface BoostRule {
   id: string;
   name: string;
@@ -271,6 +279,7 @@ export interface PersistedKinexData {
   activeSpaceId: string;
   tabs: TabItem[];
   splitsBySpace: Record<string, SplitLayout>;
+  windows: PersistedWindowState[];
   boosts: BoostRule[];
   history: HistoryEntry[];
   archivedTabs: ArchivedTab[];
@@ -294,6 +303,7 @@ export interface PersistedKinexData {
 
 export interface KinexStateSnapshot extends PersistedKinexData {
   reducedEffects: boolean;
+  overlayGeneration: number;
   overlay: OverlayState;
   downloads: DownloadItem[];
   blockedRequestsCount: number;

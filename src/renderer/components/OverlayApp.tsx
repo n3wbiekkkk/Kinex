@@ -115,14 +115,14 @@ export const OverlayApp: React.FC<OverlayAppProps> = ({ state, dispatch }) => {
   useLayoutEffect(() => {
     if (open) {
       setPresent(true);
-      return;
+      return undefined;
     }
     const delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches || state.reducedEffects ? 0 : 140;
     const timer = window.setTimeout(() => setPresent(false), delay);
     return () => window.clearTimeout(timer);
-  }, [open]);
+  }, [open, state.reducedEffects]);
   if (!open && !present) return null;
-  return <OverlayContent state={open ? state : retained.current} dispatch={dispatch} active={open} />;
+  return <OverlayContent key={state.overlayGeneration} state={open ? state : retained.current} dispatch={dispatch} active={open} />;
 };
 
 const OverlayContent: React.FC<OverlayAppProps & { active: boolean }> = ({ state, dispatch, active }) => {

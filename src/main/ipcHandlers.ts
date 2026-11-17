@@ -16,7 +16,7 @@ export function registerKinexIpcHandlers(
     if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame || !mgr.ipcRegistry.isTrusted(event.sender.id, event.senderFrame?.url, ['shell', 'overlay'])) {
       throw new Error('Untrusted IPC sender for kinex:get-state');
     }
-    return mgr.getSnapshot();
+    return mgr.getSnapshot(event.sender.id);
   });
 
   ipc.handle('kinex:dispatch', (event, rawIntent: unknown) => {
@@ -29,7 +29,7 @@ export function registerKinexIpcHandlers(
     if (!parsed.ok) {
       throw new Error(`Invalid IPC intent: ${parsed.error}`);
     }
-    return mgr.handleIntent(parsed.value);
+    return mgr.handleIntent(parsed.value, event.sender.id);
   });
 
   ipc.handle('kinex:tab-context-menu', (event, rawTabId: unknown) => {

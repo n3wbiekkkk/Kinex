@@ -409,6 +409,13 @@ export function createDefaultPersistedData(): PersistedNookData {
       [personalSpace.id]: { tabIds: ['tab-today-welcome'], focusedIndex: 0, splitRatio: 0.5 },
       [workSpace.id]: { tabIds: ['tab-work-mdn'], focusedIndex: 0, splitRatio: 0.5 },
     },
+    windows: [{
+      id: 'window-default',
+      bounds: { x: 100, y: 80, width: 1380, height: 880 },
+      isMaximized: false,
+      spaceId: personalSpace.id,
+      isFocused: true,
+    }],
     boosts: [],
     history: [],
     archivedTabs: [],
