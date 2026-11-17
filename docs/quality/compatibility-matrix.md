@@ -26,6 +26,7 @@ Statuses: PASS, FAIL, PARTIAL, BLOCKED, NOT TESTED. BLOCKED means the account, p
 | Category | Result | Evidence and limits |
 | --- | --- | --- |
 | Local navigation, back/forward, reload, tab lifecycle, new windows and downloads | PASS | Main integration and 15 browser E2E workflows. These fixtures do not establish every provider workflow. |
+| Unexpected shutdown recovery (single window) | PASS | `tests/integration/crash-recovery.mjs` runs the real app on a disposable profile, builds state across two Spaces with pinned and regular tabs, kills the process with SIGKILL, restarts, and verifies Spaces, per-Space tab placement, ordering, pinning, active Space, no duplicates, private-window exclusion, and corrupt-state fallback. Ten consecutive runs passed. |
 | Split View, Reader Mode, native keyboard commands and reduced motion | PASS | 25 keyboard assertions and focus/window integration. Failed earlier combined runs remain in the release report. |
 | Profile cookies, local storage, IndexedDB, CacheStorage and service workers | PASS | Actual isolated Electron sessions in security integration. |
 | Local Canvas, WebGL2 and file input upload | PASS | Actual canvas pixel readback, WebGL2 context, and temporary file input in security integration. Native file chooser UI was not automated. |
