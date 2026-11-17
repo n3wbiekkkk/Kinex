@@ -2,6 +2,14 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.12] - 2026-11-17
+
+Pre-production preview. Simplify the Updates & About settings view and add GitHub Release fallback for unsigned 0.x preview update checks.
+
+- Remove the Update Feed URL/folder input and buttons from `Settings -> Updates & About`, leaving a single browser update row (`Check for Updates` / `Restart & Update`).
+- Format updater status and error messages without exposing manifest filenames (`latest-mac.yml`), feed URLs, or internal cache paths.
+- When `latest-mac.yml` is absent on the unsigned 0.x preview channel, resolve the latest GitHub Release (`api.github.com` with `/releases/latest` redirect fallback), report `up-to-date` when the installed version is current, and download and verify newer release archives (SHA-256 + `hdiutil verify`) before opening the installer.
+
 ## [0.7.11] - 2026-11-17
 
 Pre-production preview. Fix intermittent CDP timeout failures in the website compatibility probe.

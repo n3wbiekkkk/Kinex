@@ -1,5 +1,5 @@
 import { BROWSER_COMMANDS, formatShortcut } from '../../shared/commands';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ArrowUpCircle,
   Download,
@@ -12,7 +12,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { DEFAULT_UPDATE_FEED_URL, SEARCH_ENGINES } from '../../shared/domain';
+import { SEARCH_ENGINES } from '../../shared/domain';
 import kinexLogo from '../assets/kinex-logo.png';
 import type {
   KinexIntent,
@@ -37,10 +37,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   dispatch,
 }) => {
   const [section, setSection] = useState<SettingsSection>(initialSection);
-  const [feedUrl, setFeedUrl] = useState(state.updateFeedUrl);
-  useEffect(() => {
-    setFeedUrl(state.updateFeedUrl);
-  }, [state.updateFeedUrl]);
   const [newProfileName, setNewProfileName] = useState('');
   const [rulePattern, setRulePattern] = useState('');
   const [ruleSpaceId, setRuleSpaceId] = useState(state.spaces[0]?.id ?? '');
@@ -807,40 +803,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 ) : (
                   <button
                     className="btn-primary"
-                    disabled={up.state === 'checking' || up.state === 'downloading'}
+                    disabled={up.state === 'checking' || up.state === 'downloading' || up.state === 'available'}
                     onClick={() => dispatch({ type: 'check-for-updates' })}
                   >
                     Check for Updates
                   </button>
                 )}
-              </div>
-              <div>
-                <label className="field-label" htmlFor="update-feed">Update Feed (HTTPS URL or local release folder)</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    className="text-input"
-                    id="update-feed"
-                    value={feedUrl}
-                    onChange={(e) => setFeedUrl(e.target.value)}
-                  />
-                  <button
-                    className="btn-secondary"
-                    onClick={() => dispatch({ type: 'set-update-feed-url', url: feedUrl })}
-                  >
-                    Save Feed
-                  </button>
-                  {feedUrl !== DEFAULT_UPDATE_FEED_URL && (
-                    <button
-                      className="btn-secondary"
-                      onClick={() => {
-                        setFeedUrl(DEFAULT_UPDATE_FEED_URL);
-                        dispatch({ type: 'set-update-feed-url', url: DEFAULT_UPDATE_FEED_URL });
-                      }}
-                    >
-                      Use GitHub Releases
-                    </button>
-                  )}
-                </div>
               </div>
             </div>
           )}

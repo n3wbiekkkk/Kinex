@@ -1,6 +1,6 @@
 # Releases and update compatibility
 
-Kinex 0.7.9 is a pre-production preview. The owner prefers free distribution without Apple Developer membership. Version 1.0.0 remains reserved for production.
+Kinex 0.7.12 is a pre-production preview. The owner prefers free distribution without Apple Developer membership. Version 1.0.0 remains reserved for production.
 
 ## Free preview Releases
 
@@ -67,3 +67,10 @@ The user's downloaded 0.7.8 DMG was mounted at `/Volumes/Kinex 0.7.8-arm64`. Bot
 The new packaged integrity gate reproduced that failure before the packaging fix. Explicit ad-hoc signing sealed the bundle, but the first strict-profile probe then failed loading Electron Framework because ad-hoc code has no matching Apple Team ID. A dedicated preview entitlement profile adds the documented library-validation exception while retaining hardened runtime. The production profile remains unchanged. The corrected 0.7.9 image passes strict deep codesign verification, has identifier com.kinex.browser and the runtime flag, and launches the real mounted app with 145405 Shields rules and sandboxed navigation. Typecheck, lint, 112 tests, actionlint, and entitlement plist validation passed locally.
 
 syspolicy_check no longer reports the damaged resource seal, but still reports an ad-hoc publisher and missing notarization ticket; spctl still rejects distribution. Thus default Gatekeeper acceptance is not claimed. No quarantine flags were removed and no system security policy was changed. Use the corrected archive rather than overriding an invalid signature in 0.7.8. A user who elects to trust an intact, unnotarized app can follow Apple's per-app approval procedure; that approval remains a user decision, not an automatic release or test action.
+
+
+### 0.7.12 update check and fallback for unsigned 0.x previews
+
+In 0.7.9 through 0.7.11, `Settings -> Updates & About` exposed the update feed URL/folder text input and reported `No release manifest (latest-mac.yml) published at this update feed yet` whenever `latest-mac.yml` returned HTTP 404 on unsigned 0.x preview releases.
+
+Version 0.7.12 removes the update feed URL/folder controls from `SettingsView.tsx` and resolves the latest GitHub Release (`api.github.com/repos/n3wbiekkkk/Kinex/releases/latest`, with `HEAD /releases/latest` redirect fallback) when `latest-mac.yml` is absent on the GitHub feed. If the installed version is current or the remote tag is an incompatible legacy 7.0.x build, the updater reports `up-to-date`. If a newer compatible version is available, the updater downloads the release archive over HTTPS, verifies its SHA-256 digest (and `hdiutil verify` for `.dmg` images), reports `downloaded`, and opens the verified installer via `shell.openPath` on `Restart & Update` before quitting. Signed automatic replacement via `Squirrel.Mac` remains gated on Developer ID credentials.
