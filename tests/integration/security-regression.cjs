@@ -112,7 +112,12 @@ async function run() {
     assert.ok(await a.executeJavaScript(`document.getElementById('clock').textContent.length > 0`), 'nonce-authorized clock must run');
     await a.executeJavaScript(`(() => { const script = document.createElement('script'); script.textContent='window.__injected=true'; document.body.append(script); })()`);
     assert.equal(await a.executeJavaScript(`window.__injected`), undefined, 'CSP must block scripts without a nonce');
-    await a.executeJavaScript(`document.getElementById('q').value=${JSON.stringify(origin + '/search-target')}; document.querySelector('form').requestSubmit();`);
+    await a
+      .executeJavaScript(`document.getElementById('q').value=${JSON.stringify(origin + '/search-target')}; document.querySelector('form').requestSubmit();`)
+      .catch((error) => {
+        // requestSubmit() starts a navigation, which can dispose the frame before the script result is delivered.
+        if (!/Render frame was disposed|Execution context was destroyed|navigat/i.test(String(error && error.message ? error.message : error))) throw error;
+      });
     const deadline = Date.now() + 5000;
     while (a.getURL() !== origin + '/search-target' && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 30));
     assert.equal(a.getURL(), origin + '/search-target', 'new tab search must work under strict CSP');
