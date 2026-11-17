@@ -530,6 +530,7 @@ export class KinexPersistence {
             ? (parsed.searchEngine as SearchEngineId)
             : defaults.searchEngine,
         updateFeedUrl: resolvedFeedUrl,
+        autoPictureInPicture: typeof parsed.autoPictureInPicture === 'boolean' ? parsed.autoPictureInPicture : defaults.autoPictureInPicture,
         memorySaverTimeout:
           typeof parsed.memorySaverTimeout === 'string' &&
           VALID_MEMORY_SAVER.has(parsed.memorySaverTimeout as MemorySaverTimeout)

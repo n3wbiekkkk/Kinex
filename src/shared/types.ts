@@ -256,7 +256,9 @@ export type UpdateStatus =
   | { state: 'checking' }
   | { state: 'available'; version: string }
   | { state: 'downloading'; version: string; percent: number }
-  | { state: 'downloaded'; version: string }
+  | { state: 'preparing'; version: string }
+  | { state: 'downloaded'; version: string; installation?: 'in-app' | 'manual'; releaseUrl?: string }
+  | { state: 'installing'; version: string }
   | { state: 'up-to-date'; version: string }
   | { state: 'error'; message: string };
 
@@ -295,12 +297,19 @@ export interface InstalledExtension {
   consented: boolean;
   permissions: string[];
   hostPermissions: string[];
+  backgroundServiceWorker?: string;
   actionPopup?: string;
   actionIcon?: string;
   installedAt: number;
 }
 
+export interface ExtensionActionBadge {
+  text: string;
+  color: string;
+}
+
 export interface ExtensionViewModel extends InstalledExtension {
+  badge?: ExtensionActionBadge;
   iconDataUrl?: string;
   loaded: boolean;
   error?: string;
@@ -331,6 +340,7 @@ export interface PersistedKinexData {
   airTrafficRules: AirTrafficRule[];
   searchEngine: SearchEngineId;
   updateFeedUrl: string;
+  autoPictureInPicture: boolean;
   memorySaverTimeout: MemorySaverTimeout;
   memorySaverExemptPinned: boolean;
   newTabConfig: NewTabConfig;
@@ -367,7 +377,8 @@ export type CommandBarItemKind =
   | 'domain'
   | 'search'
   | 'action'
-  | 'settings';
+  | 'settings'
+  | 'calculation';
 
 export interface CommandBarResult {
   id: string;
@@ -379,6 +390,8 @@ export interface CommandBarResult {
   spaceId?: string;
   spaceLabel?: string;
   settingsSection?: SettingsSection;
+  isSleeping?: boolean;
+  copyText?: string;
   isAlreadyOpen?: boolean;
   actionId?: CommandId;
   intent?: KinexIntent;
@@ -406,6 +419,7 @@ export type KinexIntent =
   | { type: 'move-tab-to-folder'; tabId: string; folderId?: string }
   | { type: 'move-tab-to-space'; tabId: string; spaceId: string }
   | { type: 'reorder-tab'; sourceTabId: string; targetTabId: string }
+  | { type: 'copy-text'; text: string }
   | { type: 'select-tab'; tabId: string; paneIndex?: number }
   | { type: 'duplicate-tab'; tabId: string }
   | {
@@ -485,6 +499,8 @@ export type KinexIntent =
   | { type: 'check-for-updates' }
   | { type: 'download-update' }
   | { type: 'install-update' }
+  | { type: 'open-update-release' }
+  | { type: 'set-auto-picture-in-picture'; enabled: boolean }
   | { type: 'set-memory-saver-timeout'; timeout: MemorySaverTimeout }
   | { type: 'set-memory-saver-exempt-pinned'; exempt: boolean }
   | { type: 'discard-tab'; tabId: string }

@@ -43,6 +43,8 @@ export function registerDefaultAppProtocols(protocolObj: Protocol): void {
 export class SessionManager {
   private privateCounter = 0;
 
+  private readonly regularSessions = new Set<Session>();
+
   constructor(
     private readonly permissionManager: PermissionManager,
     private readonly downloadManager: DownloadManager,
@@ -60,7 +62,12 @@ export class SessionManager {
     sess.setDisplayMediaRequestHandler((_request, callback) => callback({}), { useSystemPicker: true });
     this.downloadManager.attachRegularSession(sess);
     this.onRegularSessionReady?.(safePartition, sess);
+    this.regularSessions.add(sess);
     return sess;
+  }
+
+  getAllRegularSessions(): Session[] {
+    return [...this.regularSessions];
   }
 
   createPrivateSession(): { partition: string; sess: Session } {

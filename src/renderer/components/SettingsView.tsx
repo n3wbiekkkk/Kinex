@@ -63,8 +63,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         return `Found Kinex v${up.version}, downloading...`;
       case 'downloading':
         return `Downloading v${up.version} (${up.percent}%)`;
+      case 'preparing':
+        return `Verifying and preparing Kinex v${up.version}...`;
       case 'downloaded':
-        return `Kinex v${up.version} is ready to install`;
+        return up.installation === 'manual'
+          ? `Download verified. Open Kinex v${up.version} to install it`
+          : `Kinex v${up.version} is ready to install. Kinex will quit, replace the app, and relaunch`;
+      case 'installing':
+        return `Restarting to install Kinex v${up.version}...`;
       case 'up-to-date':
         return `You are running the latest version (v${up.version})`;
       case 'error':
@@ -197,6 +203,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <option value="30m">After 30 minutes</option>
                     <option value="60m">After 60 minutes</option>
                   </select>
+                </div>
+                <div className="settings-row">
+                  <div>
+                    <div className="settings-row-title">Auto Picture-in-Picture</div>
+                    <div className="settings-row-desc">Keep supported video playing in Picture-in-Picture when you switch tabs. Availability depends on the website.</div>
+                  </div>
+                  <input type="checkbox" aria-label="Auto Picture-in-Picture" checked={state.autoPictureInPicture} onChange={(e) => dispatch({ type: 'set-auto-picture-in-picture', enabled: e.target.checked })} />
                 </div>
                 <div className="settings-row">
                   <div>
@@ -954,22 +967,45 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
                 {up.state === 'downloaded' ? (
-                  <button
-                    className="btn-primary"
-                    onClick={() => dispatch({ type: 'install-update' })}
-                  >
-                    Restart &amp; Update
-                  </button>
+                  up.installation === 'manual' ? (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {up.releaseUrl && (
+                        <button className="btn-secondary" onClick={() => dispatch({ type: 'open-update-release' })}>
+                          GitHub Release
+                        </button>
+                      )}
+                      <button className="btn-primary" onClick={() => dispatch({ type: 'install-update' })}>
+                        Open DMG &amp; Install
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="btn-primary"
+                      aria-label="Restart to Update"
+                      onClick={() => dispatch({ type: 'install-update' })}
+                    >
+                      Restart to Update
+                    </button>
+                  )
                 ) : (
                   <button
                     className="btn-primary"
-                    disabled={up.state === 'checking' || up.state === 'downloading' || up.state === 'available'}
+                    disabled={['checking', 'downloading', 'available', 'preparing', 'installing'].includes(up.state)}
                     onClick={() => dispatch({ type: 'check-for-updates' })}
                   >
-                    Check for Updates
+                    {up.state === 'installing' ? 'Restarting...' : 'Check for Updates'}
                   </button>
                 )}
               </div>
+              {up.state === 'downloading' && (
+                <progress aria-label={`Downloading Kinex ${up.version}`} max={100} value={up.percent} style={{ width: '100%' }} />
+              )}
+              {(up.state === 'preparing' || up.state === 'installing') && (
+                <progress aria-label="Preparing update" style={{ width: '100%' }} />
+              )}
+              {up.state === 'idle' && (
+                <div className="settings-row-desc">Kinex checks for updates automatically. Ad-hoc previews verify a release ZIP before replacing the app.</div>
+              )}
             </div>
           )}
         </div>
