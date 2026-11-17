@@ -1,6 +1,6 @@
 # Releases and update compatibility
 
-Kinex 0.7.6 is a pre-production preview. The owner prefers free distribution without Apple Developer membership. Version 1.0.0 remains reserved for production.
+Kinex 0.7.7 is a pre-production preview. The owner prefers free distribution without Apple Developer membership. Version 1.0.0 remains reserved for production.
 
 ## Free preview Releases
 
@@ -38,3 +38,13 @@ The release-mode regression failed before the fix because a credential-free 0.x 
 Typecheck, compiler lint, production build, 110 tests across 20 files, and actionlint passed. The corrected experience integration passed all ten groups locally. Unsigned arm64 packaging produced `Kinex-0.7.6-arm64.dmg` and `Kinex-0.7.6-arm64-mac.zip`. The DMG checksum verification, read-only mount, and mounted application smoke test passed: version 0.7.6, arm64 executable/addon, 145405 real Shields rules, sandboxed navigation, and shutdown persistence. Evidence remains in `artifacts/ci/dmg.json` locally; CI retains the equivalent artifact.
 
 These local results do not establish completed GitHub CI/publication, Gatekeeper acceptance of an internet download, or signed automatic installation. hdiutil on the local OS emitted a detach deprecation warning but unmounted the image successfully.
+
+
+### Subsequent CI and release verification
+
+The 0.7.6 main CI passed every gate, including mounted DMG startup (run 44031436005). Release run 44032071242 then failed its separate E2E verification during private-window operations with `CDP WebSocket error`; no 0.7.6 release was published by that workflow.
+
+The private header's close IPC destroys the requesting WebContents. The E2E driver previously required a reply from that destroyed sender. Version 0.7.7 accepts only the specific CDP transport-closure errors at this intentional close operation, then independently requires both private header and private page targets to disappear. All other errors and cookie/storage/IPC isolation assertions remain active. Additional checkpoints distinguish storage verification from intentional closure; other private-target transport failures must still fail verification.
+
+
+A controlled real-Electron regression kept the private close RPC pending until renderer destruction. The old driver failed with `CDP WebSocket error`; the fixed E2E suite passed the same forced-close condition and retains that condition in its normal run. Local normal E2E, 110 tests, production build, actionlint, and mounted 0.7.7 DMG startup passed. The 0.7.7 image again loaded 145405 real Shields rules. Signing/Gatekeeper acceptance remains unverified; updated remote CI and Release results must be inspected independently.

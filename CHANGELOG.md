@@ -2,6 +2,10 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.7] - 2026-11-17
+
+Pre-production preview with DMG/ZIP downloads. Correct the E2E driver's handling of intentional private-window destruction: its IPC sender may close before the CDP reply arrives. Require both private header and page targets to disappear; retain all isolation assertions and reject unrelated errors. The 0.7.6 main CI passed, but its subsequent release verification failed during private-window operations and did not publish.
+
 ## [0.7.6] - 2026-11-17
 
 Pre-production preview. Restore free GitHub Releases without requiring an Apple Developer membership.

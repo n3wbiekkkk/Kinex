@@ -538,6 +538,7 @@ async function run() {
       (t) => t.url === `${baseUrl}/cookie-set?val=e2e_secret`,
       'private page loaded'
     );
+    checkpoint('private: verify cookie and localStorage');
     await waitUntil(
       () => privPageCdp.evalJs(`document.readyState === 'complete' && localStorage.getItem('kinex_e2e_ls') === 'e2e_secret'`),
       'private page committed cookie & localStorage'
@@ -552,12 +553,18 @@ async function run() {
     assert.equal(leakedPromote, false, 'Private window must never promote or record URLs into regular state');
 
     // Close Private Window
-    await privHeaderCdp.evalJs(`window.kinexAPI.littleKinexAction('close')`);
+    checkpoint('private: close window through its header IPC');
+    // Keep the reply pending to exercise destruction before the close RPC can complete.
+    try {
+      await privHeaderCdp.evalJs(`window.kinexAPI.littleKinexAction('close').then(() => new Promise(() => {}))`);
+    } catch (error) {
+      if (!/^CDP WebSocket (closed|error)$/.test(error.message)) throw error;
+    }
     privHeaderCdp.close();
     privPageCdp.close();
     await waitUntil(async () => {
       const targets = await listCdpTargets(port1);
-      return !targets.some((t) => t.url.includes('?view=private'));
+      return !targets.some((t) => t.url.includes('?view=private') || t.url === `${baseUrl}/cookie-set?val=e2e_secret`);
     }, 'private window closed');
 
     // STEP 11: Close Counter tab
