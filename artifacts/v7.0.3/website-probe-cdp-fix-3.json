@@ -1,0 +1,1270 @@
+[
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Wikipedia",
+    "requestedUrl": "https://en.wikipedia.org/wiki/Chromium_(web_browser)",
+    "finalUrl": "https://en.wikipedia.org/wiki/Chromium_(web_browser)",
+    "title": "Chromium (web browser) - Wikipedia",
+    "loaded": true,
+    "loadMs": 636,
+    "probeMs": 1022,
+    "scrollOk": true,
+    "verdict": "public-checks-passed",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908510778-h4jp",
+    "targetId": "749029A71638F8E91F99B2E2AF15C8D5",
+    "redirected": false,
+    "checks": {
+      "scroll": {
+        "status": "passed",
+        "ok": true,
+        "before": {
+          "top": 0,
+          "maxScroll": 7759,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 240,
+          "maxScroll": 7755,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "BODY",
+          "id": "",
+          "text": "Jump to content\n\n\t\n\t\t\n\t\t\t\n\t\t\t\t\n\n\t\n\t\n\nMain menu\n\t\n\t\n\n\n\t\t\t\t\n\t\t\n\n\t\n\tMain menu\n\tmove to sidebar\n\thide\n\n\n"
+        },
+        "after": {
+          "tag": "A",
+          "id": "",
+          "text": "Jump to content"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "not-tested",
+        "reason": "No visible public search field"
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://en.wikipedia.org/wiki/Chromium_(web_browser)",
+      "title": "Chromium (web browser) - Wikipedia",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": false,
+      "textLength": 66670,
+      "links": 2341,
+      "forms": 5,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 887.8,
+    "rendererCount": 4,
+    "processCount": 7,
+    "totalCpuPercent": 29.7
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "GitHub",
+    "requestedUrl": "https://github.com/n3wbiekkkk/Kinex",
+    "finalUrl": "https://github.com/n3wbiekkkk/Kinex",
+    "title": "GitHub - n3wbiekkkk/Kinex · GitHub",
+    "loaded": true,
+    "loadMs": 1094,
+    "probeMs": 1457,
+    "scrollOk": true,
+    "verdict": "public-checks-passed",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908511799-vl0u",
+    "targetId": "CD2080FFF9949C8DE9B193F8A7E635D0",
+    "redirected": false,
+    "checks": {
+      "scroll": {
+        "status": "passed",
+        "ok": true,
+        "before": {
+          "top": 0,
+          "maxScroll": 6117,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 240,
+          "maxScroll": 6117,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "BODY",
+          "id": "",
+          "text": "Skip to content\n\n      \n    \n      \n      \n\n\n\n\n  \n  {\"props\":{\"docsUrl\":\"https://docs.github.com/get"
+        },
+        "after": {
+          "tag": "A",
+          "id": "",
+          "text": "Skip to content"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "passed",
+        "input": "CDP insertText",
+        "submitted": false
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://github.com/n3wbiekkkk/Kinex",
+      "title": "GitHub - n3wbiekkkk/Kinex · GitHub",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": false,
+      "textLength": 72653,
+      "links": 200,
+      "forms": 0,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 1177.8,
+    "rendererCount": 5,
+    "processCount": 8,
+    "totalCpuPercent": 102.6
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Google Search",
+    "requestedUrl": "https://www.google.com/search?q=electron+browser",
+    "finalUrl": "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Delectron%2Bbrowser%26sei%3DYSH8arCMFfGVwcsP9_zhmA8&q=EhAkA2IAiGIQ6Z08InZcmlFXGOHC8NcGIjCxry558ft70WJWtjZTOok3kPcVqL9t4VHQVr27UdQd2F92rWGIO7yLgNb85qGcev0yAnJSWgFDYIvo04KApc_izgE",
+    "title": "https://www.google.com/search?q=electron+browser&sei=YSH8arCMFfGVwcsP9_zhmA8",
+    "loaded": true,
+    "loadMs": 1052,
+    "probeMs": 1099,
+    "scrollOk": null,
+    "verdict": "blocked-by-site",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908513256-4jdz",
+    "targetId": "F8A80E18D90C263AB92D9EC943973BCB",
+    "redirected": true,
+    "checks": {
+      "scroll": {
+        "status": "inconclusive",
+        "ok": null,
+        "reason": "Document not ready"
+      },
+      "keyboard": {
+        "status": "not-tested"
+      },
+      "searchInput": {
+        "status": "not-tested"
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Delectron%2Bbrowser%26sei%3DYSH8arCMFfGVwcsP9_zhmA8&q=EhAkA2IAiGIQ6Z08InZcmlFXGOHC8NcGIjCxry558ft70WJWtjZTOok3kPcVqL9t4VHQVr27UdQd2F92rWGIO7yLgNb85qGcev0yAnJSWgFDYIvo04KApc_izgE",
+      "title": "https://www.google.com/search?q=electron+browser&sei=YSH8arCMFfGVwcsP9_zhmA8",
+      "ready": true,
+      "errorPage": false,
+      "blocked": true,
+      "authWall": false,
+      "textLength": 1270,
+      "links": 3,
+      "forms": 1,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 1310.7,
+    "rendererCount": 6,
+    "processCount": 9,
+    "totalCpuPercent": 22.3
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "YouTube",
+    "requestedUrl": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+    "finalUrl": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+    "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film - YouTube",
+    "loaded": true,
+    "loadMs": 1110,
+    "probeMs": 4440,
+    "scrollOk": true,
+    "verdict": "public-checks-passed",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908514354-qg1b",
+    "targetId": "8AACDB378D18F3F4882362787F8CE34A",
+    "redirected": false,
+    "checks": {
+      "scroll": {
+        "status": "passed",
+        "ok": true,
+        "before": {
+          "top": 0,
+          "maxScroll": 1948,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 240,
+          "maxScroll": 1948,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "DIV",
+          "id": "movie_player",
+          "text": "YouTube Video Player"
+        },
+        "after": {
+          "tag": "BUTTON",
+          "id": "",
+          "text": ""
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "passed",
+        "input": "CDP insertText",
+        "submitted": false
+      },
+      "media": {
+        "status": "passed",
+        "before": [
+          {
+            "kind": "video",
+            "readyState": 4,
+            "paused": false,
+            "currentTime": 1.362673,
+            "muted": false,
+            "errorCode": null,
+            "videoWidth": 1280,
+            "videoHeight": 720,
+            "frames": 88,
+            "droppedFrames": 0
+          }
+        ],
+        "after": [
+          {
+            "kind": "video",
+            "readyState": 4,
+            "paused": false,
+            "currentTime": 2.367276,
+            "muted": false,
+            "errorCode": null,
+            "videoWidth": 1280,
+            "videoHeight": 720,
+            "frames": 148,
+            "droppedFrames": 0
+          }
+        ],
+        "reason": "Observed playback clock progression; audio output/fullscreen/PiP not exercised"
+      }
+    },
+    "page": {
+      "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+      "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film - YouTube",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": false,
+      "textLength": 548476,
+      "links": 127,
+      "forms": 1,
+      "fileInputs": 1,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": [
+        {
+          "kind": "video",
+          "readyState": 4,
+          "paused": false,
+          "currentTime": 2.369,
+          "muted": false,
+          "errorCode": null,
+          "videoWidth": 1280,
+          "videoHeight": 720,
+          "frames": 148,
+          "droppedFrames": 0
+        }
+      ]
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 2198,
+    "rendererCount": 7,
+    "processCount": 11,
+    "totalCpuPercent": 95.3
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Reddit",
+    "requestedUrl": "https://www.reddit.com/r/mac/",
+    "finalUrl": "https://www.reddit.com/r/mac/?solution=88801379be1e2ffa88801379be1e2ffa&js_challenge=1&jsc_token=2824be10929bdc604753c70a67a1c33137059eba7b74eb4e994b10ff16026390&jsc_orig_r=",
+    "title": "Mac",
+    "loaded": true,
+    "loadMs": 1714,
+    "probeMs": 2069,
+    "scrollOk": true,
+    "verdict": "public-checks-passed",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908518795-meoy",
+    "targetId": "FE4617C17E5029B0B1F658A1CCC5E490",
+    "redirected": true,
+    "checks": {
+      "scroll": {
+        "status": "passed",
+        "ok": true,
+        "before": {
+          "top": 0,
+          "maxScroll": 1383,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 240,
+          "maxScroll": 1383,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "BODY",
+          "id": "",
+          "text": "Skip to main content\n    \n    \n        \n    (() => {\nwindow.hasTabBeenBackgrounded = document.hidden"
+        },
+        "after": {
+          "tag": "A",
+          "id": "shreddit-skip-link",
+          "text": "Skip to main content"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "not-tested",
+        "reason": "No visible public search field"
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://www.reddit.com/r/mac/?solution=88801379be1e2ffa88801379be1e2ffa&js_challenge=1&jsc_token=2824be10929bdc604753c70a67a1c33137059eba7b74eb4e994b10ff16026390&jsc_orig_r=",
+      "title": "Mac",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": false,
+      "textLength": 55939,
+      "links": 79,
+      "forms": 1,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 2492,
+    "rendererCount": 8,
+    "processCount": 12,
+    "totalCpuPercent": 72
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Google Docs (landing)",
+    "requestedUrl": "https://docs.google.com/",
+    "finalUrl": "https://accounts.google.com/v3/signin/identifier?continue=https://docs.google.com/&emr=1&followup=https://docs.google.com/&osid=1&passive=1209600&flowName=WebLiteSignIn&flowEntry=ServiceLogin&dsh=S-1054691357:1794908521260205",
+    "title": "Sign in - Google Accounts",
+    "loaded": true,
+    "loadMs": 786,
+    "probeMs": 4387,
+    "scrollOk": null,
+    "verdict": "partial",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908520863-x9fi",
+    "targetId": "1EF99C22E290F99264E5E0174587767A",
+    "redirected": true,
+    "checks": {
+      "scroll": {
+        "status": "not-scrollable",
+        "ok": null,
+        "before": {
+          "top": 0,
+          "maxScroll": 0,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 0,
+          "maxScroll": 0,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "INPUT",
+          "id": "identifierId",
+          "text": ""
+        },
+        "after": {
+          "tag": "A",
+          "id": "",
+          "text": "Forgot email?"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "not-tested",
+        "reason": "No visible public search field"
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://accounts.google.com/v3/signin/identifier?continue=https://docs.google.com/&emr=1&followup=https://docs.google.com/&osid=1&passive=1209600&flowName=WebLiteSignIn&flowEntry=ServiceLogin&dsh=S-1054691357:1794908521260205",
+      "title": "Sign in - Google Accounts",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": true,
+      "textLength": 144555,
+      "links": 6,
+      "forms": 2,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 2643.6,
+    "rendererCount": 9,
+    "processCount": 13,
+    "totalCpuPercent": 23
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Gmail (landing)",
+    "requestedUrl": "https://mail.google.com/",
+    "finalUrl": "https://workspace.google.com/intl/en-US/gmail/",
+    "title": "Gmail: Secure, AI-Powered Email for Everyone | Google Workspace",
+    "loaded": true,
+    "loadMs": 2483,
+    "probeMs": 2841,
+    "scrollOk": true,
+    "verdict": "public-checks-passed",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908525250-su7x",
+    "targetId": "FBBC2E32CA2E1707881C62CAE1E6B0EC",
+    "redirected": true,
+    "checks": {
+      "scroll": {
+        "status": "passed",
+        "ok": true,
+        "before": {
+          "top": 0,
+          "maxScroll": 5874,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 240,
+          "maxScroll": 5874,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "BODY",
+          "id": "",
+          "text": "(function() {\n          var d = document,\n            r = d.documentElement,\n            p = 0,\n    "
+        },
+        "after": {
+          "tag": "A",
+          "id": "",
+          "text": "Open the Google Gmail page"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "not-tested",
+        "reason": "No visible public search field"
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://workspace.google.com/intl/en-US/gmail/",
+      "title": "Gmail: Secure, AI-Powered Email for Everyone | Google Workspace",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": false,
+      "textLength": 20952,
+      "links": 87,
+      "forms": 0,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 2870.8,
+    "rendererCount": 10,
+    "processCount": 14,
+    "totalCpuPercent": 47.9
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Google Drive",
+    "requestedUrl": "https://drive.google.com/",
+    "finalUrl": "https://workspace.google.com/intl/en-US/products/drive/",
+    "title": "Google Drive: Share Files Online with Secure Cloud Storage | Google Workspace",
+    "loaded": true,
+    "loadMs": 1090,
+    "probeMs": 1457,
+    "scrollOk": true,
+    "verdict": "public-checks-passed",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908528092-imad",
+    "targetId": "861530D348414B39C3BF695DAE8A2324",
+    "redirected": true,
+    "checks": {
+      "scroll": {
+        "status": "passed",
+        "ok": true,
+        "before": {
+          "top": 0,
+          "maxScroll": 9159,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 240,
+          "maxScroll": 9159,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "BODY",
+          "id": "",
+          "text": "(function() {\n          var d = document,\n            r = d.documentElement,\n            p = 0,\n    "
+        },
+        "after": {
+          "tag": "A",
+          "id": "",
+          "text": "Open the Google Workspace page"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "passed",
+        "input": "CDP insertText",
+        "submitted": false
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://workspace.google.com/intl/en-US/products/drive/",
+      "title": "Google Drive: Share Files Online with Secure Cloud Storage | Google Workspace",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": false,
+      "textLength": 161174,
+      "links": 736,
+      "forms": 2,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 3169.3,
+    "rendererCount": 11,
+    "processCount": 15,
+    "totalCpuPercent": 75.9
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Discord",
+    "requestedUrl": "https://discord.com/app",
+    "finalUrl": "https://discord.com/login",
+    "title": "Discord",
+    "loaded": true,
+    "loadMs": 715,
+    "probeMs": 4397,
+    "scrollOk": null,
+    "verdict": "partial",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908529548-a29z",
+    "targetId": "C205F9BA6E3207627A77A505725A0C0C",
+    "redirected": true,
+    "checks": {
+      "scroll": {
+        "status": "not-scrollable",
+        "ok": null,
+        "before": {
+          "top": 0,
+          "maxScroll": 0,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 0,
+          "maxScroll": 0,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "INPUT",
+          "id": "uid_10",
+          "text": "Email or Phone Number"
+        },
+        "after": {
+          "tag": "INPUT",
+          "id": "uid_12",
+          "text": "Password"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "not-tested",
+        "reason": "No visible public search field"
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://discord.com/login",
+      "title": "Discord",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": true,
+      "textLength": 1593,
+      "links": 0,
+      "forms": 1,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 3503.8,
+    "rendererCount": 12,
+    "processCount": 17,
+    "totalCpuPercent": 26
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Twitch",
+    "requestedUrl": "https://www.twitch.tv/",
+    "finalUrl": "https://www.twitch.tv/",
+    "title": "Twitch",
+    "loaded": true,
+    "loadMs": 481,
+    "probeMs": 843,
+    "scrollOk": true,
+    "verdict": "public-checks-passed",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908533946-zo2t",
+    "targetId": "E7BA1A71EF547DAD5D790AE546CB07A3",
+    "redirected": false,
+    "checks": {
+      "scroll": {
+        "status": "passed",
+        "ok": true,
+        "before": {
+          "top": 0,
+          "maxScroll": 802,
+          "kind": "nested",
+          "x": 582,
+          "y": 455
+        },
+        "after": {
+          "top": 240,
+          "maxScroll": 802,
+          "kind": "nested",
+          "x": 582,
+          "y": 455
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "BODY",
+          "id": "",
+          "text": "performance.mark(\"html:body\")Skip to...⌥PBrowseLog InSign Upwindow.__twilightApproximatedFirstPaint="
+        },
+        "after": {
+          "tag": "BUTTON",
+          "id": "",
+          "text": "Skip to...⌥P"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "passed",
+        "input": "CDP insertText",
+        "submitted": false
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://www.twitch.tv/",
+      "title": "Twitch",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": false,
+      "textLength": 199755,
+      "links": 2,
+      "forms": 1,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 3696.5,
+    "rendererCount": 13,
+    "processCount": 18,
+    "totalCpuPercent": 92.7
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Google Meet",
+    "requestedUrl": "https://meet.google.com/",
+    "finalUrl": "https://workspace.google.com/products/meet/",
+    "title": "Google Meet: การประชุมผ่านเว็บและการประชุมทางวิดีโอออนไลน์ | Google Workspace",
+    "loaded": true,
+    "loadMs": 789,
+    "probeMs": 1135,
+    "scrollOk": true,
+    "verdict": "public-checks-passed",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908534788-4n15",
+    "targetId": "BF924CD5C2DA54D0B2ACBB6F0AED23FB",
+    "redirected": true,
+    "checks": {
+      "scroll": {
+        "status": "passed",
+        "ok": true,
+        "before": {
+          "top": 0,
+          "maxScroll": 7703,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 240,
+          "maxScroll": 7703,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "BODY",
+          "id": "",
+          "text": "(function() {\n          var d = document,\n            r = d.documentElement,\n            p = 0,\n    "
+        },
+        "after": {
+          "tag": "A",
+          "id": "",
+          "text": "เปิด Google Workspace หน้า"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "passed",
+        "input": "CDP insertText",
+        "submitted": false
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://workspace.google.com/products/meet/",
+      "title": "Google Meet: การประชุมผ่านเว็บและการประชุมทางวิดีโอออนไลน์ | Google Workspace",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": false,
+      "textLength": 108392,
+      "links": 677,
+      "forms": 1,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 3829.6,
+    "rendererCount": 15,
+    "processCount": 20,
+    "totalCpuPercent": 122
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Figma",
+    "requestedUrl": "https://www.figma.com/",
+    "finalUrl": "https://www.figma.com/",
+    "title": "Figma: The collaborative canvas for design, code, and AI",
+    "loaded": true,
+    "loadMs": 479,
+    "probeMs": 865,
+    "scrollOk": true,
+    "verdict": "public-checks-passed",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908535923-41vy",
+    "targetId": "3143274ADB99CA1F1963AD4D43A82117",
+    "redirected": false,
+    "checks": {
+      "scroll": {
+        "status": "passed",
+        "ok": true,
+        "before": {
+          "top": 0,
+          "maxScroll": 7536,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 240,
+          "maxScroll": 7536,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "BODY",
+          "id": "",
+          "text": "Skip to main contentProductsWhat you can do in figmaDesign and exploreBuild and ship productsFigma A"
+        },
+        "after": {
+          "tag": "A",
+          "id": "",
+          "text": "Skip to main content"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "not-tested",
+        "reason": "No visible public search field"
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://www.figma.com/",
+      "title": "Figma: The collaborative canvas for design, code, and AI",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": false,
+      "textLength": 1580328,
+      "links": 154,
+      "forms": 0,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 3883.6,
+    "rendererCount": 17,
+    "processCount": 22,
+    "totalCpuPercent": 171.9
+  },
+  {
+    "environment": {
+      "timestamp": "2026-11-17T09:41:50.775Z",
+      "electron": "45.3.3",
+      "chromium": "156.0.8078.100",
+      "node": "24.22.3",
+      "os": "Darwin 27.2.0",
+      "arch": "arm64"
+    },
+    "site": "Netflix",
+    "requestedUrl": "https://www.netflix.com/",
+    "finalUrl": "https://www.netflix.com/th-en/",
+    "title": "Netflix Thailand - Watch TV Shows Online, Watch Movies Online",
+    "loaded": true,
+    "loadMs": 2514,
+    "probeMs": 2885,
+    "scrollOk": true,
+    "verdict": "public-checks-passed",
+    "error": null,
+    "failureClass": null,
+    "visibility": {
+      "visibilityState": "visible",
+      "hidden": false
+    },
+    "tabId": "tab-1794908536789-pf8q",
+    "targetId": "8EDAF06070FF05F562FE99E8C22530F6",
+    "redirected": true,
+    "checks": {
+      "scroll": {
+        "status": "passed",
+        "ok": true,
+        "before": {
+          "top": 0,
+          "maxScroll": 2098,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "after": {
+          "top": 240,
+          "maxScroll": 2098,
+          "kind": "document",
+          "x": 557,
+          "y": 430
+        },
+        "input": "CDP mouseWheel"
+      },
+      "keyboard": {
+        "status": "passed",
+        "before": {
+          "tag": "BODY",
+          "id": "",
+          "text": "NetflixSelect LanguageไทยEnglishSign InUnlimited movies, TV shows, and moreStarts at THB 99. Cancel "
+        },
+        "after": {
+          "tag": "SELECT",
+          "id": "_R_2l6lalalal996_",
+          "text": "ไทยEnglish"
+        },
+        "input": "CDP Tab keyDown/keyUp"
+      },
+      "searchInput": {
+        "status": "not-tested",
+        "reason": "No visible public search field"
+      },
+      "media": {
+        "status": "not-tested",
+        "reason": "No playable media observed"
+      }
+    },
+    "page": {
+      "url": "https://www.netflix.com/th-en/",
+      "title": "Netflix Thailand - Watch TV Shows Online, Watch Movies Online",
+      "ready": true,
+      "errorPage": false,
+      "blocked": false,
+      "authWall": false,
+      "textLength": 357204,
+      "links": 26,
+      "forms": 2,
+      "fileInputs": 0,
+      "fullscreenSupported": true,
+      "pictureInPictureSupported": true,
+      "media": []
+    },
+    "limitations": [
+      "Fresh disposable profile; no account login or authenticated workflows attempted",
+      "Search input is typed and restored without submission",
+      "Uploads, downloads, clipboard, OAuth popups, audio output, fullscreen, PiP and permission prompts require separate controlled tests",
+      "Navigation time is a single network-dependent observation, not a performance benchmark"
+    ],
+    "totalRssMB": 4018.7,
+    "rendererCount": 19,
+    "processCount": 24,
+    "totalCpuPercent": 63.7
+  }
+]

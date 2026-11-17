@@ -41,8 +41,38 @@ export function readScrollSurface() {
   };
 }
 
-export async function waitForPaint() {
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+// Await two animation frames so the wheel/keyboard checks observe the same scroller.
+// A hidden tab never fires requestAnimationFrame, so an unbounded wait hangs the
+// calling Runtime.evaluate until the CDP timeout and reports a browser failure that
+// never happened. Resolve on a timer instead of hanging, and report whether frames
+// actually ran so callers can tell "painted" from "could not paint".
+export async function waitForPaint(timeoutMs = 1000) {
+  const painted = await new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    if (typeof requestAnimationFrame !== 'function') {
+      finish(false);
+      return;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
+  });
+  return { painted, visibility: typeof document === 'undefined' ? 'unknown' : document.visibilityState };
+}
+
+// A backgrounded tab cannot be scrolled or painted through CDP: the compositor stops
+// producing frames and Input.dispatchMouseEvent never acknowledges. Readiness checks
+// must name that condition instead of timing out and blaming the website.
+export function readProbeVisibility() {
+  return {
+    visibilityState: typeof document === 'undefined' ? 'unknown' : document.visibilityState,
+    hidden: typeof document === 'undefined' ? null : Boolean(document.hidden),
+  };
 }
 
 export function publicPageInfo() {

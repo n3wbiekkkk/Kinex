@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import vm from 'node:vm';
-import { findScrollSurface, publicPageInfo, selectProbeTarget, summarizeScroll, waitForPaint } from './compatibilityProbe.mjs';
+import { findScrollSurface, publicPageInfo, readProbeVisibility, selectProbeTarget, summarizeScroll, waitForPaint } from './compatibilityProbe.mjs';
 
 test('binds a new page across Gmail redirects without matching the requested hostname', () => {
   const previous = new Set(['shell', 'old-google']);
@@ -80,6 +80,62 @@ test('paint wait does not resolve until both requested animation frames have run
     if (original) globalThis.requestAnimationFrame = original;
     else delete globalThis.requestAnimationFrame;
   }
+});
+
+test('paint wait reports painted only when frames actually ran', async () => {
+  const original = globalThis.requestAnimationFrame;
+  const callbacks = [];
+  globalThis.requestAnimationFrame = (callback) => callbacks.push(callback);
+  try {
+    const pending = waitForPaint();
+    callbacks.shift()();
+    callbacks.shift()();
+    assert.equal((await pending).painted, true);
+  } finally {
+    if (original) globalThis.requestAnimationFrame = original;
+    else delete globalThis.requestAnimationFrame;
+  }
+});
+
+// The defect: a hidden tab never fires requestAnimationFrame, so the old unbounded
+// wait hung the calling Runtime.evaluate until the CDP timeout and the probe recorded
+// a website failure that never happened. The wait must settle and say it did not paint.
+test('paint wait settles without painting when animation frames never fire', async () => {
+  const original = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = () => {};
+  try {
+    const started = Date.now();
+    const result = await waitForPaint(120);
+    const elapsed = Date.now() - started;
+    assert.equal(result.painted, false, 'must report that no frame was painted');
+    assert.ok(elapsed >= 100, `must wait for the bounded timeout, saw ${elapsed}ms`);
+    assert.ok(elapsed < 2000, `must not hang past the timeout, saw ${elapsed}ms`);
+  } finally {
+    if (original) globalThis.requestAnimationFrame = original;
+    else delete globalThis.requestAnimationFrame;
+  }
+});
+
+test('paint wait settles when requestAnimationFrame is unavailable', async () => {
+  const original = globalThis.requestAnimationFrame;
+  delete globalThis.requestAnimationFrame;
+  try {
+    const started = Date.now();
+    const result = await waitForPaint(5000);
+    assert.equal(result.painted, false);
+    assert.ok(Date.now() - started < 1000, 'must not wait for the timeout when rAF is missing');
+  } finally {
+    if (original) globalThis.requestAnimationFrame = original;
+  }
+});
+
+test('visibility probe reports the state that blocks scroll and paint checks', () => {
+  const visible = vm.runInNewContext(`(${readProbeVisibility})()`, { document: { visibilityState: 'visible', hidden: false } });
+  assert.equal(visible.visibilityState, 'visible');
+  assert.equal(visible.hidden, false);
+  const hidden = vm.runInNewContext(`(${readProbeVisibility})()`, { document: { visibilityState: 'hidden', hidden: true } });
+  assert.equal(hidden.visibilityState, 'hidden');
+  assert.equal(hidden.hidden, true);
 });
 
 

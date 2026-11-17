@@ -2,6 +2,16 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.11] - 2026-11-17
+
+Pre-production preview. Fix intermittent CDP timeout failures in the website compatibility probe.
+
+- Stop blaming websites for a probe infrastructure defect. The probe opened each site in a new tab, which backgrounded the previous one; a backgrounded tab produces no compositor frames, so `requestAnimationFrame` never fires and `Input.dispatchMouseEvent` is never acknowledged. The unbounded paint wait inside `Runtime.evaluate` then hung until the 5s CDP timeout.
+- Make `waitForPaint()` bounded and return `{ painted, visibility }` instead of hanging, so a missing frame is reported rather than surfacing as a timeout.
+- Select the tab under test before driving it, record the observed `visibilityState`, and classify CDP timeouts and an un-focusable tab as `failureClass: probe-infrastructure` with verdict `inconclusive`. A probe limitation is never reported as a website PASS or FAIL.
+- Add regression coverage for the bounded paint wait and the visibility probe. Reverting `waitForPaint` to the unbounded form makes the hidden-tab check hang 5003ms and fail.
+- Four consecutive probe runs, 52 site checks, zero timeouts. Probe wall time fell from about 72s to about 33s because runs no longer wait out timeouts.
+
 ## [0.7.10] - 2026-11-17
 
 Pre-production preview. Fix the unreliable Figma compatibility result by correcting a browser loading-state defect.

@@ -2,7 +2,7 @@
 
 Test date: 2026-11-17. macOS 27.2.1, Darwin 27.2.0, Apple M5 arm64, 16 GB RAM. Electron 45.3.3, Chromium 156.0.8078.100, embedded Node 24.22.3. Fresh disposable profile, default Standard Shields.
 
-Evidence: [final public probe](../../artifacts/v7.0.3/website-probe-final.json), [earlier probe](../../artifacts/v7.0.3/website-probe.json), [Figma fix probe](../../artifacts/v7.0.3/website-probe-figma-fix.json), [Figma fix probe rerun](../../artifacts/v7.0.3/website-probe-figma-fix-2.json), and [local security integration](../../artifacts/v7.0.3/security-integration.txt). The Figma fix probe owns the Figma row; the final probe owns the rest. A public-page pass is limited to that scenario and does not certify an authenticated application.
+Evidence: [final public probe](../../artifacts/v7.0.3/website-probe-final.json), [earlier probe](../../artifacts/v7.0.3/website-probe.json), [Figma fix probe](../../artifacts/v7.0.3/website-probe-figma-fix.json), [Figma fix probe rerun](../../artifacts/v7.0.3/website-probe-figma-fix-2.json), [CDP fix probe](../../artifacts/v7.0.3/website-probe-cdp-fix.json), [CDP fix probe rerun](../../artifacts/v7.0.3/website-probe-cdp-fix-2.json), and [local security integration](../../artifacts/v7.0.3/security-integration.txt). The Figma fix probe owns the Figma row; the CDP fix probes own the probe-reliability rows; the final probe owns the rest. A public-page pass is limited to that scenario and does not certify an authenticated application.
 
 Statuses: PASS, FAIL, PARTIAL, BLOCKED, NOT TESTED. BLOCKED means the account, provider, signing, or hardware prerequisite was unavailable. A missing scroll range is PARTIAL, not a scrolling pass.
 
@@ -40,13 +40,25 @@ Statuses: PASS, FAIL, PARTIAL, BLOCKED, NOT TESTED. BLOCKED means the account, p
 
 ## Reproduce automated checks
 
-Run `npm run build`, then `node tests/perf/run-live-probe.mjs --out=artifacts/compatibility.json`. The runner retains requested/final URLs, runtime, native target identity, checks, and limitations. It does not enter credentials. Google anti-bot outcomes and per-site network timing can vary; retain each run rather than replacing a failure with an unrelated pass.
+Run `npm run build`, then `node tests/perf/run-live-probe.mjs --out=artifacts/compatibility.json`. The runner retains requested/final URLs, runtime, native target identity, checks, and limitations. It does not enter credentials. Google anti-bot outcomes and per-site network timing can vary; retain each run rather than replacing a failure with an unrelated pass. A result with `failureClass: probe-infrastructure` is a probe limitation, not a website verdict.
 
 For the recorded Figma failure, open the public homepage through the probe, let its scroll and Tab checks run, and compare `page.ready` with the final application tab loading state. The document was ready and scroll passed, while `loaded` was false. This was a browser loading-state defect, not a Figma or editor failure.
 
 Root cause: Electron emits `did-start-loading` for a subframe-only load as well as for a main-frame load. `NavigationManager` reported every `did-start-loading` as tab loading, so a page that keeps injecting iframes after its document settles (Figma's homepage) flipped the tab back to loading after the probe had already seen it idle. The probe's `loaded` check then read `isLoading: true` and recorded FAIL. The fix reports loading only when `webContents.isLoadingMainFrame()` is true; `did-stop-loading` already clears it only once the main frame is idle.
 
 Regression coverage: `src/main/navigationBoundaries.test.ts` asserts a subframe-only `did-start-loading` never re-enters loading, and `tests/integration/electron-integration.cjs` drives a local `/late-subframes` fixture that settles and then injects four iframes, sampling the tab state for two seconds. Reverting the fix makes that integration check fail with the tab flipping to loading.
+
+## Probe reliability: CDP timeouts
+
+Intermittent `CDP Input.dispatchMouseEvent timed out` and `CDP Runtime.evaluate timed out` results on GitHub, Google Search, YouTube, and Twitch were a probe infrastructure defect, not a browser or website defect.
+
+Root cause: the probe opened each site in a new tab, which backgrounded the previous one. A backgrounded tab stops producing compositor frames, so `requestAnimationFrame` never fires and `Input.dispatchMouseEvent` is never acknowledged. The probe's `waitForPaint()` awaited two animation frames inside a `Runtime.evaluate` with `awaitPromise: true`, so on a hidden tab that call hung until the 5s CDP timeout and the site was recorded as a failure. Measured directly: a hidden tab fires zero animation frames, `Runtime.evaluate` without a promise still answers in 1ms, `Input.dispatchKeyEvent` still answers in 1ms, and both the paint wait and `Input.dispatchMouseEvent` time out at 5001ms. `Page.bringToFront` does not help because the tab is hidden by native view visibility, not CDP tab order; selecting the tab in the application does.
+
+Fix: `waitForPaint()` is now bounded and returns `{ painted, visibility }` instead of hanging, and the probe selects the tab under test before driving it, records the observed `visibilityState`, and classifies CDP timeouts and an un-focusable tab as `failureClass: 'probe-infrastructure'` with verdict `inconclusive`. A website is never reported as PASS or FAIL from a probe limitation.
+
+Regression coverage: `tests/perf/compatibilityProbe.test.mjs` asserts the paint wait settles and reports `painted: false` when frames never fire, settles immediately when `requestAnimationFrame` is unavailable, and reports visibility state. Reverting `waitForPaint` to the unbounded form makes those checks fail, with the hidden-tab case hanging 5003ms.
+
+Result: four consecutive probe runs, 52 site checks, zero timeouts, and probe wall time dropped from about 72s to about 33s because runs no longer wait out 5s timeouts.
 
 ## Verify remaining workflows manually
 

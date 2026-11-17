@@ -7,6 +7,7 @@ import path from 'node:path';
 import {
   findScrollSurface,
   publicPageInfo,
+  readProbeVisibility,
   readScrollSurface,
   selectProbeTarget,
   summarizeScroll,
@@ -148,7 +149,6 @@ async function checkScroll(cdp) {
     await cdp.call('Runtime.releaseObject', { objectId }).catch(() => {});
   }
 }
-
 async function checkKeyboard(cdp) {
   const describeFocus = `(() => {
     const el = document.activeElement;
@@ -255,6 +255,7 @@ async function run() {
       let keyboard = { status: 'not-tested' };
       let searchInput = { status: 'not-tested' };
       let media = { status: 'not-tested', reason: 'No playable media observed' };
+      let visibility = { visibilityState: 'unknown', hidden: null };
       const deadline = Date.now() + 20000;
       try {
         await shellCdp.evalJs(`window.kinexAPI.dispatch({ type: 'open-url', url: ${JSON.stringify(site.url)}, target: 'new-tab' })`);
@@ -274,7 +275,24 @@ async function run() {
         if (!pageTarget || !pageCdp) throw new Error('Could not identify a unique new page target');
         if (!page?.ready || tab.isLoading || page.url !== tab.url) throw new Error('Page did not settle at the application tab URL before deadline');
         loadMs = Math.round(performance.now() - t0);
-        if (!page.errorPage && !page.blocked) {
+
+        // A backgrounded tab stops producing compositor frames, so wheel input and
+        // animation-frame waits never complete and surface as CDP timeouts. Focus the
+        // tab under test before driving it, and record the visibility we actually got
+        // so an infrastructure limitation is never reported as a website failure.
+        await shellCdp.evalJs(`window.kinexAPI.dispatch({ type: 'select-tab', tabId: ${JSON.stringify(tab.id)} })`);
+        const visibilityDeadline = Date.now() + 3000;
+        while (Date.now() < visibilityDeadline) {
+          visibility = await pageCdp.evalJs(`(${readProbeVisibility.toString()})()`).catch(() => visibility);
+          if (visibility.visibilityState === 'visible') break;
+          await waitMs(100);
+        }
+        const probeFocused = visibility.visibilityState === 'visible';
+
+        if (!page.errorPage && !page.blocked && !probeFocused) {
+          // Not a browser or website defect: the probe could not drive a hidden tab.
+          error = `Probe could not focus the tab under test (visibilityState=${visibility.visibilityState}); scroll and paint checks cannot run on a backgrounded tab`;
+        } else if (!page.errorPage && !page.blocked) {
           const scrollDeadline = Date.now() + 3500;
           do {
             scroll = await checkScroll(pageCdp);
@@ -307,6 +325,15 @@ async function run() {
       if (tab) tab = await shellCdp.evalJs(`window.kinexAPI.getState().then(state => state.tabs.find(tab => tab.id === ${JSON.stringify(tab.id)}))`);
       const tree = sampleProcessTree(proc.pid);
       const loaded = Boolean(page?.ready && !page.errorPage && tab && !tab.isLoading && page.url === tab.url);
+      // Separate a probe infrastructure limitation from a browser or website defect.
+      // A CDP timeout or an un-focusable tab says nothing about the site's compatibility.
+      // Keep every error inconclusive rather than failed: an unverified site is not a
+      // proven failure, and failureClass carries the distinction.
+      const infrastructureFailure = Boolean(error) && (
+        /^CDP .* timed out/.test(error) ||
+        /^CDP socket (closed|error)/.test(error) ||
+        /Probe could not focus the tab under test/.test(error)
+      );
       const verdict = error ? 'inconclusive'
         : page?.blocked ? 'blocked-by-site'
           : !loaded || scroll.status === 'failed' || searchInput.status === 'failed' || media.status === 'failed' ? 'failed'
@@ -323,6 +350,8 @@ async function run() {
         scrollOk: scroll.ok,
         verdict,
         error,
+        failureClass: error ? (infrastructureFailure ? 'probe-infrastructure' : 'browser-or-site') : null,
+        visibility,
         tabId: tab?.id ?? null,
         targetId: pageTarget?.id ?? null,
         redirected: Boolean(page?.url && page.url !== site.url),
