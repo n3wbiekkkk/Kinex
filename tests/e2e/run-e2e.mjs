@@ -205,6 +205,21 @@ function connectCdp(wsUrl) {
   });
 }
 
+async function connectToTarget(port, predicate, label, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr;
+  while (Date.now() < deadline) {
+    try {
+      const target = await waitForTarget(port, predicate, label, Math.max(1000, deadline - Date.now()));
+      return await connectCdp(target.webSocketDebuggerUrl);
+    } catch (error) {
+      lastErr = error;
+      await waitMs(100);
+    }
+  }
+  throw new Error(`Failed to connect to CDP target "${label}"${lastErr ? `: ${lastErr.message}` : ''}`);
+}
+
 async function launchKinexApp(userDataDir, cdpPort) {
   checkpoint(`launch Electron on port ${cdpPort}`);
   const proc = spawn(electronBinary, [root, `--remote-debugging-port=${cdpPort}`], {
@@ -289,8 +304,7 @@ async function run() {
     const port1 = await getFreePort();
     appHandle = await launchKinexApp(userDataDir, port1);
 
-    const shellTarget = await waitForTarget(port1, (t) => t.url.includes('?view=shell'), 'shell view');
-    const shellCdp = await connectCdp(shellTarget.webSocketDebuggerUrl);
+    const shellCdp = await connectToTarget(port1, (t) => t.url.includes('?view=shell'), 'shell view');
 
     await waitUntil(() => shellCdp.evalJs(`Boolean(document.querySelector('.kinex-shell'))`), 'shell hydrated');
 
@@ -358,8 +372,7 @@ async function run() {
     // Phase 7c: Settings modal viewport fit check (also triggers lazy overlay creation)
     checkpoint('Phase 7c: settings overlay');
     await shellCdp.evalJs(`document.querySelector('button[title="Settings (⌘,)"]').click()`);
-    const overlayTarget = await waitForTarget(port1, (t) => t.url.includes('?view=overlay'), 'lazy overlay view');
-    const overlayCdp = await connectCdp(overlayTarget.webSocketDebuggerUrl);
+    const overlayCdp = await connectToTarget(port1, (t) => t.url.includes('?view=overlay'), 'lazy overlay view');
     const settingsLayout = await waitUntil(
       () =>
         overlayCdp.evalJs(`(() => {
@@ -384,8 +397,7 @@ async function run() {
     // STEP 2: Open a website (/page1 via Command Bar UI)
     checkpoint('STEP 2: open page1');
     await openUrlViaCommandBar(shellCdp, overlayCdp, `${baseUrl}/page1`, 'new-tab');
-    const page1Target = await waitForTarget(port1, (t) => t.url === `${baseUrl}/page1`, '/page1 target');
-    const page1Cdp = await connectCdp(page1Target.webSocketDebuggerUrl);
+    const page1Cdp = await connectToTarget(port1, (t) => t.url === `${baseUrl}/page1`, '/page1 target');
     await waitUntil(
       async () => (await page1Cdp.evalJs(`document.querySelector('h1')?.textContent`)) === 'Page One',
       'Page One loaded'
@@ -401,8 +413,7 @@ async function run() {
     // STEP 3: Create a second tab (/counter)
     checkpoint('STEP 3: open counter');
     await openUrlViaCommandBar(shellCdp, overlayCdp, `${baseUrl}/counter`, 'new-tab');
-    const counterTarget = await waitForTarget(port1, (t) => t.url === `${baseUrl}/counter`, '/counter target');
-    const counterCdp = await connectCdp(counterTarget.webSocketDebuggerUrl);
+    const counterCdp = await connectToTarget(port1, (t) => t.url === `${baseUrl}/counter`, '/counter target');
     await waitUntil(
       async () => (await counterCdp.evalJs(`document.getElementById('count')?.textContent`)) === 'Reload Count: 1',
       'Counter initial load = 1'
@@ -506,8 +517,7 @@ async function run() {
     // STEP 10: Open a Private Window & verify private UI + cookie/localStorage isolation
     checkpoint('STEP 10: private window');
     await shellCdp.evalJs(`document.querySelector('button[title="New Private Window (⌘⇧N)"]').click()`);
-    const privHeaderTarget = await waitForTarget(port1, (t) => t.url.includes('?view=private'), 'private header view');
-    const privHeaderCdp = await connectCdp(privHeaderTarget.webSocketDebuggerUrl);
+    const privHeaderCdp = await connectToTarget(port1, (t) => t.url.includes('?view=private'), 'private header view');
     await waitUntil(
       () => privHeaderCdp.evalJs(`Boolean(document.querySelector('.private-badge'))`),
       'Private header badge rendered'
@@ -523,12 +533,11 @@ async function run() {
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     })()`);
-    const privPageTarget = await waitForTarget(
+    const privPageCdp = await connectToTarget(
       port1,
       (t) => t.url === `${baseUrl}/cookie-set?val=e2e_secret`,
       'private page loaded'
     );
-    const privPageCdp = await connectCdp(privPageTarget.webSocketDebuggerUrl);
     await waitUntil(
       () => privPageCdp.evalJs(`document.readyState === 'complete' && localStorage.getItem('kinex_e2e_ls') === 'e2e_secret'`),
       'private page committed cookie & localStorage'
@@ -583,8 +592,7 @@ async function run() {
     // STEP 15a (pre-restart): Security Isolation inside remote webpage + IPC rejection
     checkpoint('STEP 15a: isolation and IPC');
     await openUrlViaCommandBar(shellCdp, overlayCdp, `${baseUrl}/isolation-check`, 'new-tab');
-    const isoTarget = await waitForTarget(port1, (t) => t.url === `${baseUrl}/isolation-check`, 'isolation-check target');
-    const isoCdp = await connectCdp(isoTarget.webSocketDebuggerUrl);
+    const isoCdp = await connectToTarget(port1, (t) => t.url === `${baseUrl}/isolation-check`, 'isolation-check target');
     const isoResult = await waitUntil(async () => {
       const txt = await isoCdp.evalJs(`document.getElementById('iso')?.textContent`);
       return txt ? JSON.parse(txt) : null;
@@ -649,8 +657,7 @@ async function run() {
 
     // STEP 14: Verify persistence across restart
     checkpoint('STEP 14: persistence');
-    const shell2Target = await waitForTarget(port2, (t) => t.url.includes('?view=shell'), 'restarted shell view');
-    const shell2Cdp = await connectCdp(shell2Target.webSocketDebuggerUrl);
+    const shell2Cdp = await connectToTarget(port2, (t) => t.url.includes('?view=shell'), 'restarted shell view');
     await waitUntil(() => shell2Cdp.evalJs(`Boolean(document.querySelector('.kinex-shell'))`), 'restarted shell hydrated');
 
     const persistedSummary = await shell2Cdp.evalJs(`(async () => {
