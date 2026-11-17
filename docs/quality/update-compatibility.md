@@ -1,6 +1,6 @@
 # Releases and update compatibility
 
-Kinex 0.7.7 is a pre-production preview. The owner prefers free distribution without Apple Developer membership. Version 1.0.0 remains reserved for production.
+Kinex 0.7.8 is a pre-production preview. The owner prefers free distribution without Apple Developer membership. Version 1.0.0 remains reserved for production.
 
 ## Free preview Releases
 
@@ -48,3 +48,13 @@ The private header's close IPC destroys the requesting WebContents. The E2E driv
 
 
 A controlled real-Electron regression kept the private close RPC pending until renderer destruction. The old driver failed with `CDP WebSocket error`; the fixed E2E suite passed the same forced-close condition and retains that condition in its normal run. Local normal E2E, 110 tests, production build, actionlint, and mounted 0.7.7 DMG startup passed. The 0.7.7 image again loaded 145405 real Shields rules. Signing/Gatekeeper acceptance remains unverified; updated remote CI and Release results must be inspected independently.
+
+
+### Native fullscreen transition ordering
+
+The 0.7.7 CI passed the repaired private-close E2E but failed waiting for fullscreen exit in experience integration (run 44033764785). A local real-Electron probe disproved the premise that DOM fullscreen/layout readiness means native macOS entry is complete: it recorded `nativeEntered=false` and `win.isFullScreen()=false` at DOM readiness. A second probe waited for the real `enter-full-screen` event and recorded both true, then completed the suite. This matches [Electron's documented asynchronous macOS fullscreen contract](https://www.electronjs.org/docs/latest/api/browser-window#winsetfullscreenflag).
+
+The 0.7.8 regression now observes native enter/leave events before issuing the opposite operation and retains all native bounds, DOM, shell visibility, and existing timeout assertions. Previous failed runs remain failed evidence; this is not a retry-to-green policy.
+
+
+Local 0.7.8 validation passed all ten experience groups with native enter/leave assertions, 110 unit/regression tests, production compilation, and DMG verification with real mounted-app startup and Shields initialization. The same arm64 DMG/ZIP targets are retained. Remote CI and publication are separate pending qualifications.

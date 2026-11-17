@@ -215,18 +215,24 @@ async function run() {
     const fsView = mgr.tabManager.getView(fsTab.id);
     const fsBefore = fsView.getBounds();
     assert.ok(fsBefore.x >= 200, 'Normal layout reserves sidebar inset before HTML5 fullscreen');
+    let nativeEntered = false;
+    let nativeLeft = false;
+    win.once('enter-full-screen', () => { nativeEntered = true; });
+    win.once('leave-full-screen', () => { nativeLeft = true; });
     win.focus();
     fsView.webContents.focus();
     await until(() => win.isFocused() && fsView.webContents.isFocused(), 'fullscreen native focus after private window close');
     // Observe the real transition below instead of awaiting an unbounded page API promise over IPC.
     await fsView.webContents.executeJavaScript('void document.documentElement.requestFullscreen()', true);
-    await until(async () => !mgr.shellView.getVisible() && await fsView.webContents.executeJavaScript('Boolean(document.fullscreenElement)'), 'real HTML5 fullscreen entry');
+    await until(async () => nativeEntered && !mgr.shellView.getVisible() && await fsView.webContents.executeJavaScript('Boolean(document.fullscreenElement)'), 'real HTML5 fullscreen entry');
+    assert.equal(win.isFullScreen(), true);
     assert.equal(await fsView.webContents.executeJavaScript('Boolean(document.fullscreenElement)'), true);
     const contentBounds = win.getContentBounds();
     assert.deepEqual(fsView.getBounds(), { x: 0, y: 0, width: contentBounds.width, height: contentBounds.height });
     assert.equal(mgr.shellView.getVisible(), false);
     await fsView.webContents.executeJavaScript('void document.exitFullscreen()');
-    await until(async () => mgr.shellView.getVisible() && await fsView.webContents.executeJavaScript('!document.fullscreenElement'), 'real HTML5 fullscreen exit');
+    await until(async () => nativeLeft && mgr.shellView.getVisible() && await fsView.webContents.executeJavaScript('!document.fullscreenElement'), 'real HTML5 fullscreen exit');
+    assert.equal(win.isFullScreen(), false);
     assert.equal(await fsView.webContents.executeJavaScript('Boolean(document.fullscreenElement)'), false);
     assert.equal(mgr.shellView.getVisible(), true);
     assert.ok(fsView.getBounds().x >= 200, 'Leaving HTML5 fullscreen restores sidebar inset layout');
