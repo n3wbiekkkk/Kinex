@@ -1,4 +1,5 @@
 import { BROWSER_COMMANDS, formatShortcut } from './commands';
+import { evaluateCommandCalculation } from './calculator';
 import type {
   ClosedTabItem,
   CommandBarResult,
@@ -424,6 +425,8 @@ export function createDefaultPersistedData(): PersistedNookData {
     zoomByHost: {},
     readerOptions: { fontSize: 17, theme: 'dark' },
     sidebarOpen: true,
+    sidebarCollapsed: false,
+    hoverPeek: false,
     sidebarWidth: 256,
     adBlockEnabled: true,
     shields: createDefaultShieldsSettings(),
@@ -433,6 +436,7 @@ export function createDefaultPersistedData(): PersistedNookData {
     airTrafficRules: [],
     searchEngine: 'google',
     updateFeedUrl: DEFAULT_UPDATE_FEED_URL,
+    autoPictureInPicture: false,
     memorySaverTimeout: '30m',
     memorySaverExemptPinned: true,
     newTabConfig: {
@@ -948,6 +952,10 @@ export function buildCommandBarResults(query: string, data: PersistedNookData): 
   const q = query.trim();
   const qLower = q.toLowerCase();
   const scored: Array<{ score: number; item: CommandBarResult }> = [];
+  const calculation = evaluateCommandCalculation(q);
+  if (calculation) {
+    return [{ id: 'calculation', kind: 'calculation', title: calculation.result, subtitle: `${calculation.expression} · Click to copy`, copyText: calculation.copyText }];
+  }
   const seenKeys = new Set<string>();
 
   const makeDedupKey = (url: string, title: string): string => {
@@ -996,6 +1004,7 @@ export function buildCommandBarResults(query: string, data: PersistedNookData): 
           spaceId: tab.spaceId,
           spaceLabel: tab.location === 'topApp' ? `${sp ? sp.icon + ' ' : ''}Favorite` : sp ? `${sp.icon} ${sp.name}` : undefined,
           favicon: tab.favicon,
+          isSleeping: tab.isDiscarded === true,
         },
       });
     }

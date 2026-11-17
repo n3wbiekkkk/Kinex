@@ -43,6 +43,22 @@ describe('permission trust boundaries', () => {
     expect(personal.check(null, 'notifications', 'https://example.com', {})).toBe(false);
   });
 
+  it.each(['mediaKeySystem', 'protectedMediaIdentifier'])('requires explicit HTTPS per-profile consent for %s', async (permission) => {
+    prompt.mockResolvedValueOnce({ response: 1 });
+    const { attach, wc, recordDecision } = setup();
+    const personal = attach('persist:personal');
+    const work = attach('persist:work');
+    const reply = vi.fn();
+    await personal.request(wc, permission, reply, { requestingUrl: 'https://example.com/watch' });
+    expect(reply).toHaveBeenCalledWith(true);
+    expect(recordDecision).toHaveBeenCalledWith('persist:personal', 'https://example.com', permission, 'allow');
+    expect(personal.check(wc, permission, 'https://example.com', {})).toBe(true);
+    expect(work.check(wc, permission, 'https://example.com', {})).toBe(false);
+    expect(evaluateStaticPermissionPolicy(permission, 'http://example.com/watch', false)).toBe('deny');
+    expect(evaluateStaticPermissionPolicy(permission, 'http://localhost:3000', false)).toBe('deny');
+    expect(evaluateStaticPermissionPolicy(permission, 'https://example.com/watch', true)).toBe('deny');
+  });
+
   it('grants microphone without also granting camera and denies ambiguous media checks', async () => {
     prompt.mockResolvedValueOnce({ response: 1 });
     const { attach, wc, recordDecision } = setup();

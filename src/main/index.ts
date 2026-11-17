@@ -1,7 +1,8 @@
 import path from 'node:path';
-import { app, ipcMain, protocol } from 'electron';
+import { app, components, ipcMain, protocol } from 'electron';
 import { registerKinexIpcHandlers } from './ipcHandlers';
 import { ensureAppName, KinexWindowManager, registerKinexProtocol } from './windowManager';
+import { initializeMediaComponents } from './mediaComponents';
 
 if (process.env.KINEX_USER_DATA_DIR) {
   app.setPath('userData', path.resolve(process.env.KINEX_USER_DATA_DIR));
@@ -73,7 +74,8 @@ if (!gotLock) {
     }
   });
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
+    await initializeMediaComponents(components, (message) => console.info(message));
     registerKinexProtocol(protocol);
     if (!ipcRegistered) {
       ipcRegistered = true;

@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
+  Calculator,
   Clock,
   Globe,
   Search,
@@ -48,6 +49,7 @@ const ResultIcon: React.FC<{ item: CommandBarResult }> = ({ item }) => {
       />
     );
   }
+  if (item.kind === 'calculation') return <Calculator size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />;
   if (item.kind === 'search') return <Search size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />;
   if (item.kind === 'action') return <Sparkles size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />;
   if (item.kind === 'settings') return <Settings size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />;
@@ -68,6 +70,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({
 }) => {
   const [query, setQuery] = useState(initialQuery);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [copied, setCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useLayoutEffect(() => {
@@ -89,6 +92,12 @@ export const CommandBar: React.FC<CommandBarProps> = ({
     item: CommandBarResult,
     modifier: 'default' | 'split' | 'little' | 'force-duplicate'
   ) => {
+    if (item.kind === 'calculation' && item.copyText) {
+      dispatch({ type: 'copy-text', text: item.copyText });
+      setCopied(true);
+      return;
+   }
+
     if (item.kind === 'settings' && item.settingsSection) {
       dispatch({ type: 'set-overlay', overlay: { mode: 'settings', section: item.settingsSection } });
       return;
@@ -155,6 +164,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({
   };
 
   const renderKindLabel = (kind: CommandBarResult['kind']) => {
+    if (copied && kind === 'calculation') return 'Copied';
     switch (kind) {
       case 'open-tab':
         return 'Tab';
@@ -243,6 +253,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({
                   <HighlightMatch text={item.subtitle} query={query} />
                 </div>
               </div>
+              {item.isSleeping && <span className="command-kind-tag">Sleeping</span>}
               {item.isAlreadyOpen && (
                 <span className="command-kind-tag" style={{ color: 'var(--accent)', borderColor: 'var(--accent-border)' }}>
                   Already Open

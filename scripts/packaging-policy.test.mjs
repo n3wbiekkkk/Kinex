@@ -23,7 +23,7 @@ it('limits the library-validation exception to the explicit ad-hoc preview profi
 it('uses the sealed preview package in both CI and manual-preview releases', () => {
   const ci = yaml.load(read('../.github/workflows/ci.yml'));
   const release = yaml.load(read('../.github/workflows/release.yml'));
-  expect(ci.jobs['verify-and-package-mac'].steps.some(step => step.run === 'npm run package:mac')).toBe(true);
+  expect(ci.jobs['package'].steps.some(step => step.run === 'npm run package:mac')).toBe(true);
   const steps = release.jobs['release-mac'].steps;
   const manual = steps.find(step => step.if === "steps.signing.outputs.signed == 'false'");
   expect(manual.run).toContain('npm run package:mac');

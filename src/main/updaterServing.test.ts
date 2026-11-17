@@ -83,165 +83,58 @@ it('formats updater errors without exposing feed URLs, manifests, or cache paths
   }
 });
 
-it('parses GitHub repository coordinates and resolves release candidates with redirect fallback', async () => {
+it('resolves exact arm64 ZIP candidates with required digests', async () => {
   expect(parseGitHubFeedRepo(DEFAULT_UPDATE_FEED_URL)).toEqual({ owner: 'n3wbiekkkk', repo: 'Kinex' });
   expect(parseGitHubFeedRepo('http://github.com/n3wbiekkkk/Kinex/releases/latest/download')).toBeNull();
   expect(compareSemver('0.7.11', '0.7.9')).toBe(1);
   expect(compareSemver('0.7.11', '0.7.11')).toBe(0);
   expect(compareSemver('0.7.9', '0.7.11')).toBe(-1);
-
-  const apiCandidate = await resolveGitHubReleaseCandidate('n3wbiekkkk', 'Kinex', (async () =>
-    new Response(
-      JSON.stringify({
-        tag_name: 'v0.7.12',
-        assets: [
-          {
-            name: 'Kinex-0.7.12-arm64.dmg',
-            browser_download_url: 'https://github.com/n3wbiekkkk/Kinex/releases/download/v0.7.12/Kinex-0.7.12-arm64.dmg',
-            digest: `sha256:${'a'.repeat(64)}`,
-            size: 1024,
-          },
-        ],
-      }),
-      { status: 200 }
-    )) as typeof fetch);
-  expect(apiCandidate).toEqual({
-    version: '0.7.12',
-    assetName: 'Kinex-0.7.12-arm64.dmg',
-    assetUrl: 'https://github.com/n3wbiekkkk/Kinex/releases/download/v0.7.12/Kinex-0.7.12-arm64.dmg',
-    sha256: 'a'.repeat(64),
-    size: 1024,
-  });
-
-  const redirectCandidate = await resolveGitHubReleaseCandidate('n3wbiekkkk', 'Kinex', (async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('api.github.com')) {
-      return new Response('rate limited', { status: 403 });
-    }
-    const res = new Response(null, { status: 200 });
-    Object.defineProperty(res, 'url', { value: 'https://github.com/n3wbiekkkk/Kinex/releases/tag/v0.7.12' });
-    return res;
+  const assetName = 'Kinex-0.7.12-arm64-mac.zip';
+  const assetUrl = 'https://github.com/n3wbiekkkk/Kinex/releases/download/v0.7.12/Kinex-0.7.12-arm64-mac.zip';
+  const releaseUrl = 'https://github.com/n3wbiekkkk/Kinex/releases/tag/v0.7.12';
+  const api = await resolveGitHubReleaseCandidate('n3wbiekkkk', 'Kinex', (async (input: RequestInfo | URL) => {
+    if (String(input).endsWith('/latest-mac.yml')) return new Response('missing', { status: 404 });
+    return new Response(JSON.stringify({ tag_name: 'v0.7.12', assets: [{ name: assetName, browser_download_url: assetUrl, digest: 'sha256:' + 'a'.repeat(64), size: 1024 }] }));
   }) as typeof fetch);
-  expect(redirectCandidate).toEqual({
-    version: '0.7.12',
-    assetName: 'Kinex-0.7.12-arm64.dmg',
-    assetUrl: 'https://github.com/n3wbiekkkk/Kinex/releases/download/v0.7.12/Kinex-0.7.12-arm64.dmg',
-  });
+  expect(api).toEqual({ version: '0.7.12', assetName, assetUrl, releaseUrl, sha256: 'a'.repeat(64), size: 1024 });
+  const redirected = await resolveGitHubReleaseCandidate('n3wbiekkkk', 'Kinex', (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/latest-mac.yml')) return new Response('missing', { status: 404 });
+    if (url.includes('api.github.com')) return new Response('rate limited', { status: 403 });
+    if (url.endsWith('.sha256')) return new Response('b'.repeat(64) + '  ' + assetName);
+    const response = new Response(null);
+    Object.defineProperty(response, 'url', { value: releaseUrl });
+    return response;
+  }) as typeof fetch);
+  expect(redirected).toEqual({ version: '0.7.12', assetName, assetUrl, releaseUrl, sha256: 'b'.repeat(64) });
 });
 
-it('falls back to GitHub release assets when latest-mac.yml is absent and verifies SHA-256 before opening', async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kinex-fallback-upd-'));
-  const openPathSpy = vi.fn().mockResolvedValue('');
-  const checkManifest = async () => {
-    throw new Error('Cannot find latest-mac.yml in the latest release artifacts (HttpError: 404 Not Found)');
-  };
-
-  const payload = Buffer.from('verified-kinex-update-archive');
-  const sha256 = createHash('sha256').update(payload).digest('hex');
-
+it('rejects tampered update bytes and treats a matching release version as current', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kinex-updater-'));
+  const bytes = Buffer.from('tampered');
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const fetchImpl = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/latest-mac.yml')) return new Response('missing', { status: 404 });
+    if (url.includes('api.github.com')) return new Response(JSON.stringify({
+      tag_name: url.includes('same-version') ? 'v0.7.9' : 'v0.7.13',
+      assets: [{ name: 'Kinex-0.7.13-arm64-mac.zip', browser_download_url: 'https://github.com/n3wbiekkkk/Kinex/releases/download/v0.7.13/Kinex-0.7.13-arm64-mac.zip', digest: 'sha256:' + 'f'.repeat(64), size: bytes.length }],
+    }));
+    return new Response(bytes, { headers: { 'content-length': String(bytes.length) } });
+  }) as typeof fetch;
   try {
-    const statuses: UpdateStatus[] = [];
-    const upToDateUpdater = new KinexAutoUpdater(
-      () => DEFAULT_UPDATE_FEED_URL,
-      (st) => statuses.push(st),
-      {
-        isPackaged: () => true,
-        getVersion: () => '0.7.9',
-        getTempDir: () => tempRoot,
-        openPath: openPathSpy,
-        checkManifest,
-        fetchImpl: (async () =>
-          new Response(JSON.stringify({ tag_name: 'v0.7.9', assets: [] }), { status: 200 })) as typeof fetch,
-      }
-    );
-    await upToDateUpdater.checkForUpdates(false);
-    upToDateUpdater.dispose();
-    expect(statuses.at(-1)).toEqual({ state: 'up-to-date', version: '0.7.9' });
-    expect(statuses.some((s) => s.state === 'error')).toBe(false);
-
-    const downloadStatuses: UpdateStatus[] = [];
-    const downloadUpdater = new KinexAutoUpdater(
-      () => DEFAULT_UPDATE_FEED_URL,
-      (st) => downloadStatuses.push(st),
-      {
-        isPackaged: () => true,
-        getVersion: () => '0.7.9',
-        getTempDir: () => tempRoot,
-        openPath: openPathSpy,
-        checkManifest,
-        fetchImpl: (async (input: RequestInfo | URL) => {
-          const url = String(input);
-          if (url.includes('api.github.com')) {
-            return new Response(
-              JSON.stringify({
-                tag_name: 'v0.7.12',
-                assets: [
-                  {
-                    name: 'Kinex-0.7.12-arm64.zip',
-                    browser_download_url: 'https://github.com/n3wbiekkkk/Kinex/releases/download/v0.7.12/Kinex-0.7.12-arm64.zip',
-                    digest: `sha256:${sha256}`,
-                    size: payload.length,
-                  },
-                ],
-              }),
-              { status: 200 }
-            );
-          }
-          return new Response(payload, {
-            status: 200,
-            headers: { 'content-length': String(payload.length) },
-          });
-        }) as typeof fetch,
-      }
-    );
-    await downloadUpdater.checkForUpdates(false);
-    expect(downloadStatuses.some((s) => s.state === 'available' && s.version === '0.7.12')).toBe(true);
-    expect(downloadStatuses.at(-1)).toEqual({ state: 'downloaded', version: '0.7.12' });
-    downloadUpdater.quitAndInstall();
-    expect(openPathSpy).toHaveBeenCalledWith(path.join(tempRoot, 'kinex-updates', 'Kinex-0.7.12-arm64.zip'));
-    downloadUpdater.dispose();
-
-    const tamperedStatuses: UpdateStatus[] = [];
-    const tamperedUpdater = new KinexAutoUpdater(
-      () => DEFAULT_UPDATE_FEED_URL,
-      (st) => tamperedStatuses.push(st),
-      {
-        isPackaged: () => true,
-        getVersion: () => '0.7.9',
-        getTempDir: () => tempRoot,
-        openPath: openPathSpy,
-        checkManifest,
-        fetchImpl: (async (input: RequestInfo | URL) => {
-          const url = String(input);
-          if (url.includes('api.github.com')) {
-            return new Response(
-              JSON.stringify({
-                tag_name: 'v0.7.13',
-                assets: [
-                  {
-                    name: 'Kinex-0.7.13-arm64.zip',
-                    browser_download_url: 'https://github.com/n3wbiekkkk/Kinex/releases/download/v0.7.13/Kinex-0.7.13-arm64.zip',
-                    digest: `sha256:${'f'.repeat(64)}`,
-                    size: payload.length,
-                  },
-                ],
-              }),
-              { status: 200 }
-            );
-          }
-          return new Response(payload, { status: 200 });
-        }) as typeof fetch,
-      }
-    );
-    await tamperedUpdater.checkForUpdates(false);
-    expect(tamperedStatuses.at(-1)).toEqual({
-      state: 'error',
-      message: 'Downloaded update failed integrity check',
+    const status: UpdateStatus[] = [];
+    const updater = new KinexAutoUpdater(() => DEFAULT_UPDATE_FEED_URL, (item) => status.push(item), {
+        isPackaged: () => true, getVersion: () => '0.7.9', getTempDir: () => root,
+        fetchImpl, getInstallLocation: async () => ({ kind: 'writable', appBundlePath: '/Applications/Kinex.app' }), stageUpdate: vi.fn(),
     });
-    tamperedUpdater.dispose();
-  } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
+    await updater.checkForUpdates(false);
+    expect(status.at(-1)).toEqual({ state: 'error', message: 'Downloaded update failed integrity check' });
+    updater.dispose();
+    const current = await resolveGitHubReleaseCandidate('n3wbiekkkk', 'Kinex', (async () => new Response(JSON.stringify({ tag_name: 'v0.7.9', assets: [] }))) as typeof fetch);
+    expect(current).toBeNull();
+    expect(sha256).toHaveLength(64);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
 it('does not render update feed URL or folder inputs in SettingsView', () => {

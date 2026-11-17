@@ -67,6 +67,15 @@ import { WindowSessionRegistry } from './windowRegistry';
 import { ExtensionManager } from './extensionManager';
 import { RUNTIME_ID_RE, parseWebStoreUrl } from './extensionSupport';
 import { downloadWebStoreCrx } from './webStore';
+import { ExtensionActionBridge } from './extensionActionBridge';
+import { AutoPictureInPicture } from './mediaController';
+import { isMac } from './platformSupport';
+import {
+  collectPerformanceSnapshot,
+  summarizeShieldsBlockCounts,
+} from './performanceTelemetry';
+import { createBackup, exportSyncFile, importSyncFile } from './syncManager';
+import type { BackupResult, PerformanceSnapshot, SyncSnapshot } from '../shared/types';
 
 export function ensureAppName(): void {
   if (app.getName() !== 'Kinex') {
@@ -154,6 +163,9 @@ export class KinexWindowManager {
   private readonly shieldsCoordinator: KinexShieldsCoordinator;
   private readonly sessionManager: SessionManager;
   private readonly extensionManager: ExtensionManager;
+  private readonly extensionActionBridge: ExtensionActionBridge;
+  private readonly autoPictureInPicture = new AutoPictureInPicture();
+  private sidebarPeeking = false;
   private readonly navigationManager: NavigationManager;
   private readonly tabManager: TabManager;
   private readonly layoutManager = new ViewLayoutManager();
@@ -235,6 +247,14 @@ export class KinexWindowManager {
       },
     });
 
+    this.extensionActionBridge = new ExtensionActionBridge({
+      getExtension: (id) => this.persisted.extensions.find((item) => item.id === id),
+      findByRuntimeUrl: (url) => this.persisted.extensions.find((item) => {
+        if (!item.runtimeId) return false;
+        try { return new URL(url).hostname === item.runtimeId; } catch { return false; }
+      }),
+      saveBadge: (id, badge) => { void badge; this.persisted.extensions.some((item) => item.id === id) && this.broadcastState(); },
+    });
     this.extensionManager = new ExtensionManager(userDataDir, {
       getExtensions: () => this.persisted.extensions,
       commitExtensions: (extensions) => {
@@ -244,6 +264,7 @@ export class KinexWindowManager {
       getSessionForPartition: (partition) => this.sessionManager.getRegularSession(partition),
       showToast: (message) => this.showToast(message),
       downloadWebStoreCrx,
+      getBadge: (id) => this.extensionActionBridge.getBadge(id),
     });
 
     this.sessionManager = new SessionManager(
@@ -251,7 +272,10 @@ export class KinexWindowManager {
       this.downloadManager,
       this.shieldsCoordinator,
       () => this.buildNewTabContext(),
-      (partition, sess) => this.extensionManager.attachSession(partition, sess)
+      (partition, sess) => {
+        this.extensionManager.attachSession(partition, sess);
+        this.extensionActionBridge.attachSession(partition, sess);
+      }
     );
 
     this.navigationManager = new NavigationManager({
@@ -360,9 +384,9 @@ export class KinexWindowManager {
         onWebStoreNavigation: (url) => {
           const item = parseWebStoreUrl(url);
           if (!item || !url.startsWith('https://')) return false;
-          void this.handleIntent({ type: 'install-extension-webstore', url: item.itemUrl });
-          void this.handleIntent({ type: 'set-overlay', overlay: { mode: 'settings', section: 'extensions' } });
-          return true;
+          // Navigation is not consent: guide the user to the explicit install action.
+          this.showToast('Review this extension in Settings → Extensions before installing.');
+          return false;
         },
         onHtmlFullscreenChanged: (tabId, isFullscreen) => {
           if (this.disposed) return;
@@ -508,6 +532,45 @@ export class KinexWindowManager {
     return this.persistence.getStateFilePath();
   }
 
+  private async setAutoPictureInPicture(enabled: boolean): Promise<void> {
+    this.persisted = { ...this.persisted, autoPictureInPicture: enabled };
+    if (!enabled) await this.autoPictureInPicture.clear((id) => this.tabManager.getView(id)?.webContents);
+    else {
+      const focused = getFocusedTab(this.persisted);
+      await this.autoPictureInPicture.select(focused?.id, (id) => this.tabManager.getView(id)?.webContents);
+    }
+    this.persistAndBroadcast();
+  }
+
+  /** Privacy-safe counters rendered by `kinex://performance`. */
+  getPerformanceSnapshot(): PerformanceSnapshot {
+    return collectPerformanceSnapshot({
+      getTabCount: () => this.persisted.tabs.length,
+      getActiveViewCount: () =>
+        this.persisted.tabs.filter((tab) => !tab.isDiscarded && this.tabManager.getView(tab.id)).length,
+      getSleepingTabCount: () => this.persisted.tabs.filter((tab) => tab.isDiscarded === true).length,
+      getShieldsBlockCounts: () => summarizeShieldsBlockCounts(this.shieldsCoordinator.getTabStatsMap()),
+    });
+  }
+
+  /** Exports a sanitized, encrypted `.kinex-sync` snapshot to a dialog-chosen path. */
+  async syncExport(filePath: string, passphrase: string): Promise<SyncSnapshot> {
+    return exportSyncFile(filePath, this.persisted, passphrase);
+  }
+
+  /** Decrypts and validates a `.kinex-sync` file chosen through a native dialog. */
+  async syncImport(filePath: string, passphrase: string): Promise<SyncSnapshot> {
+    return importSyncFile(filePath, passphrase);
+  }
+
+  /** Writes a rotated encrypted backup into the app's private backup folder. */
+  async syncBackup(passphrase: string): Promise<BackupResult> {
+    return createBackup(this.persisted, passphrase, {
+      directory: path.join(app.getPath('userData'), 'kinex-sync-backups'),
+      keepLast: 5,
+    });
+  }
+
   getMetricsSnapshot(): {
     tabCount: number;
     activeViewCount: number;
@@ -570,7 +633,7 @@ export class KinexWindowManager {
     }, 60_000);
     this.memorySaverTimer.unref?.();
 
-    if (!process.env.KINEX_DISABLE_AUTO_UPDATER) {
+    if (isMac() && !process.env.KINEX_DISABLE_AUTO_UPDATER) {
       this.startupUpdateTimer = setTimeout(() => {
         if (!this.disposed) void this.updater.checkForUpdates(true);
       }, 8000);
@@ -641,12 +704,16 @@ export class KinexWindowManager {
       height: state.bounds.height,
       minWidth: 880,
       minHeight: 580,
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 16, y: 16 },
-      vibrancy: 'under-window',
-      visualEffectState: 'active',
-      backgroundColor: '#00000000',
-      transparent: process.platform === 'darwin',
+      ...(isMac()
+        ? {
+            titleBarStyle: 'hiddenInset' as const,
+            trafficLightPosition: { x: 16, y: 16 },
+            vibrancy: 'under-window' as const,
+            visualEffectState: 'active' as const,
+            backgroundColor: '#00000000',
+            transparent: true,
+          }
+        : { backgroundColor: '#ffffff', transparent: false }),
       show: false,
       title: 'Kinex',
     });
@@ -930,6 +997,7 @@ export class KinexWindowManager {
       extensions: this.extensionManager.getViewModels(),
       activeSpaceId: context?.state.spaceId ?? this.persisted.activeSpaceId,
       reducedEffects: this.speedLimited || this.thermalLimited,
+      sidebarPeeking: this.sidebarPeeking,
       overlayGeneration: this.overlayGeneration,
       overlay: isActive ? this.overlay : context?.overlay ?? this.overlay,
       downloads: this.downloadManager.getDownloads(),
@@ -1658,6 +1726,7 @@ export class KinexWindowManager {
       case 'select-tab': {
         const tab = this.persisted.tabs.find((t) => t.id === intent.tabId);
         if (!tab) return;
+        const previousId = getActiveSplit(this.persisted).tabIds[getActiveSplit(this.persisted).focusedIndex];
         const targetSpaceId = tab.spaceId;
         const split = getActiveSplit(this.persisted, targetSpaceId);
         let nextIds = split.tabIds;
@@ -1690,6 +1759,13 @@ export class KinexWindowManager {
         this.layoutViews();
         this.focusActiveTabView(tab.id);
         this.persistAndBroadcast();
+        if (this.persisted.autoPictureInPicture && previousId !== tab.id) void this.autoPictureInPicture.select(tab.id, (id) => this.tabManager.getView(id)?.webContents);
+        return;
+      }
+
+      case 'copy-text': {
+        if (!intent.text.includes('://')) await clipboard.writeText(intent.text);
+        this.showToast('Copied to clipboard');
         return;
       }
 
@@ -2039,6 +2115,29 @@ export class KinexWindowManager {
         };
         this.layoutViews();
         this.persistAndBroadcast();
+        return;
+      }
+
+      case 'toggle-sidebar-collapse': {
+        const collapsed = intent.collapsed ?? !this.persisted.sidebarCollapsed;
+        this.persisted = { ...this.persisted, sidebarCollapsed: collapsed };
+        if (!collapsed) this.sidebarPeeking = false;
+        this.layoutViews();
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'set-hover-peek': {
+        this.persisted = { ...this.persisted, hoverPeek: intent.enabled };
+        if (!intent.enabled) this.sidebarPeeking = false;
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'set-sidebar-peeking': {
+        if (this.sidebarPeeking === intent.peeking) return;
+        this.sidebarPeeking = intent.peeking;
+        this.broadcastState();
         return;
       }
 
@@ -2672,9 +2771,18 @@ export class KinexWindowManager {
       }
 
       case 'install-update': {
-        this.updater.quitAndInstall();
+        await this.updater.quitAndInstall();
         return;
       }
+
+      case 'open-update-release': {
+        await this.updater.openReleasePage();
+        return;
+      }
+
+      case 'set-auto-picture-in-picture':
+        await this.setAutoPictureInPicture(intent.enabled);
+        return;
 
       case 'set-memory-saver-timeout': {
         this.persisted = { ...this.persisted, memorySaverTimeout: intent.timeout };
@@ -2747,7 +2855,8 @@ export class KinexWindowManager {
           await this.extensionManager.installFromWebStore(
             intent.url,
             context.state.spaceId,
-            this.getPartitionForSpace(context.state.spaceId)
+            this.getPartitionForSpace(context.state.spaceId),
+            intent.consent
           );
         } catch (error) {
           this.showToast(error instanceof Error ? error.message : 'Web Store installation failed');
@@ -2870,6 +2979,7 @@ export class KinexWindowManager {
       config: this.persisted.newTabConfig,
       favorites,
       frequent,
+      performanceSnapshot: this.getPerformanceSnapshot(),
       getReaderHtml: (readerUrl: string) => {
         try {
           const parsed = new URL(readerUrl);
@@ -3332,6 +3442,8 @@ export class KinexWindowManager {
       case 'save-page-pdf': await this.handleIntent({ type: 'save-page-pdf' }); break;
       case 'toggle-reader-mode': await this.handleIntent({ type: 'toggle-reader-mode' }); break;
       case 'toggle-sidebar': await this.handleIntent({ type: 'toggle-sidebar' }); break;
+      case 'toggle-sidebar-collapse': await this.handleIntent({ type: 'toggle-sidebar-collapse' }); break;
+      case 'toggle-hover-peek': await this.handleIntent({ type: 'set-hover-peek', enabled: !this.persisted.hoverPeek }); break;
       case 'new-split': await this.handleIntent({ type: 'toggle-split' }); break;
       case 'next-pane': await this.handleIntent({ type: 'focus-pane', paneIndex: (split.focusedIndex + 1) % split.tabIds.length }); break;
       case 'toggle-adblock': await this.handleIntent({ type: 'toggle-adblock' }); break;
@@ -3382,6 +3494,7 @@ export class KinexWindowManager {
     if (this.disposed) return;
     this.closeExtensionPopup(false);
     this.disposed = true;
+    void this.autoPictureInPicture.clear((id) => this.tabManager.getView(id)?.webContents);
     this.cancelPendingFocus();
     this.focusOnWindowActivation = false;
     this.runtimeListenersActive = false;

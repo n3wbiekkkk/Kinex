@@ -331,6 +331,8 @@ export interface PersistedKinexData {
   zoomByHost: Record<string, number>;
   readerOptions: ReaderOptions;
   sidebarOpen: boolean;
+  sidebarCollapsed: boolean;
+  hoverPeek: boolean;
   sidebarWidth: number;
   adBlockEnabled: boolean;
   shields: PersistedShieldsSettings;
@@ -349,6 +351,7 @@ export interface PersistedKinexData {
 export interface KinexStateSnapshot extends PersistedKinexData {
   extensions: ExtensionViewModel[];
   reducedEffects: boolean;
+  sidebarPeeking: boolean;
   overlayGeneration: number;
   overlay: OverlayState;
   downloads: DownloadItem[];
@@ -451,6 +454,9 @@ export type KinexIntent =
   | { type: 'set-zoom'; delta: 'in' | 'out' | 'reset'; tabId?: string }
   | { type: 'toggle-mute'; tabId: string }
   | { type: 'toggle-sidebar'; open?: boolean }
+  | { type: 'toggle-sidebar-collapse'; collapsed?: boolean }
+  | { type: 'set-hover-peek'; enabled: boolean }
+  | { type: 'set-sidebar-peeking'; peeking: boolean }
   | { type: 'set-sidebar-width'; width: number }
   | { type: 'set-overlay'; overlay: OverlayState }
   | { type: 'set-search-engine'; engine: SearchEngineId }
@@ -507,7 +513,7 @@ export type KinexIntent =
   | { type: 'set-new-tab-config'; config: Partial<NewTabConfig> }
   | { type: 'install-extension'; sourcePath: string }
   | { type: 'install-extension-crx'; sourcePath: string }
-  | { type: 'install-extension-webstore'; url: string }
+  | { type: 'install-extension-webstore'; url: string; consent: boolean }
   | { type: 'uninstall-extension'; extensionId: string }
   | { type: 'set-extension-enabled'; extensionId: string; enabled: boolean; consent?: boolean }
   | { type: 'open-extension-popup'; extensionId: string; anchor?: { x: number; y: number; width: number; height: number } }
@@ -525,9 +531,47 @@ export interface LittleKinexInfo {
   securityState?: SecurityState;
 }
 
+/** Aggregated, privacy-safe performance counters for `kinex://performance`. */
+export interface ShieldsBlockCounts {
+  ads: number;
+  trackers: number;
+  other: number;
+  total: number;
+}
+
+export interface PerformanceSnapshot {
+  tabCount: number;
+  activeViewCount: number;
+  sleepingTabCount: number;
+  estimatedSleepingMemorySavedBytes: number;
+  shieldsBlocked: ShieldsBlockCounts;
+  shieldsBlockedTotal: number;
+  capturedAt: number;
+}
+
+/** Sanitized, passphrase-encrypted sync envelope payload. */
+export interface SyncSnapshot {
+  format: 'kinex-sync';
+  version: number;
+  exportedAt: number;
+  data: Record<string, unknown>;
+}
+
+export interface BackupResult {
+  filename: string;
+  primaryPath: string;
+  icloudPath?: string;
+  removed: string[];
+  icloudRemoved: string[];
+}
+
 export interface KinexAPI {
   getState: () => Promise<KinexStateSnapshot>;
   dispatch: (intent: KinexIntent) => Promise<void>;
+  getPerformanceSnapshot: () => Promise<PerformanceSnapshot>;
+  syncExport: (passphrase: string) => Promise<{ filePath: string; snapshot: SyncSnapshot } | null>;
+  syncImport: (passphrase: string) => Promise<SyncSnapshot | null>;
+  syncBackup: (passphrase: string) => Promise<BackupResult | null>;
   onFocusRequested: (listener: (region: FocusRequest) => void) => () => void;
   onStateUpdated: (listener: (state: KinexStateSnapshot) => void) => () => void;
   showTabContextMenu: (tabId: string) => Promise<void>;

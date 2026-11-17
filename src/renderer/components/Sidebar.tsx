@@ -74,24 +74,48 @@ interface SidebarTabRowProps {
   isActive: boolean;
   isFocused: boolean;
   onDragStartTab: (tabId: string) => void;
+  onDragEndTab: () => void;
+  onDragOverTab: (tabId: string) => void;
+  onDragLeaveTab: () => void;
   onDropTab: (targetTabId: string) => void;
   dispatch: (intent: KinexIntent) => void;
   isTabStop: boolean;
   onFocusPrimary: () => void;
+  isDragging: boolean;
+  isDropTarget: boolean;
 }
 
 const SidebarTabRow = memo<SidebarTabRowProps>(
-  ({ tab, isPinned, isActive, isFocused, onDragStartTab, onDropTab, dispatch, isTabStop, onFocusPrimary }) => {
+  ({
+    tab,
+    isPinned,
+    isActive,
+    isFocused,
+    onDragStartTab,
+    onDragEndTab,
+    onDragOverTab,
+    onDragLeaveTab,
+    onDropTab,
+    dispatch,
+    isTabStop,
+    onFocusPrimary,
+    isDragging,
+    isDropTarget,
+  }) => {
     const isModified = isPinned && Boolean(tab.pinnedUrl) && tab.url !== tab.pinnedUrl;
     return (
       <div
         draggable
         title={tab.isDiscarded ? `${tab.title || tab.url} (Sleeping to save memory)` : tab.title || tab.url}
         onDragStart={() => onDragStartTab(tab.id)}
-        onDragOver={(e) => e.preventDefault()}
+        onDragEnd={onDragEndTab}
+        onDragOver={(e) => { e.preventDefault(); onDragOverTab(tab.id); }}
+        onDragLeave={onDragLeaveTab}
         onDrop={() => onDropTab(tab.id)}
         className={`tab-row ${isActive ? 'active' : ''} ${tab.isDiscarded ? 'discarded' : ''}`}
         data-focused={isFocused || undefined}
+        data-dragging={isDragging || undefined}
+        data-drop-target={isDropTarget || undefined}
         onClick={() => dispatch({ type: 'select-tab', tabId: tab.id })}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -201,6 +225,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
   const [focusedItem, setFocusedItem] = useState<string | null>(null);
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [folderName, setFolderName] = useState('');
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
+  const [dropTabId, setDropTabId] = useState<string | null>(null);
+  const [draggingSpaceId, setDraggingSpaceId] = useState<string | null>(null);
+  const [dropSpaceId, setDropSpaceId] = useState<string | null>(null);
   const folderFocusRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (renamingFolder) {
@@ -316,6 +344,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
   const focusedHost = focusedTab
     ? extractHostname(focusedTab.url) || focusedTab.url
     : 'Search or enter URL';
+
+  // Optional state hooks owned by the orchestrator; read defensively so the
+  // sidebar keeps compiling before those flags land in KinexStateSnapshot.
+  const readFlag = useCallback(
+    (key: string) => (state as unknown as Record<string, unknown>)[key] === true,
+    [state]
+  );
+  const sidebarCollapsed = readFlag('sidebarCollapsed');
+  const hoverPeek = readFlag('hoverPeek');
+  const sidebarPeeking = readFlag('sidebarPeeking');
+
+  const activeDownloads = useMemo(
+    () => state.downloads.filter((download) => download.state === 'progressing' && !download.isPaused && download.totalBytes > 0),
+    [state.downloads]
+  );
+  const downloadPercent = useMemo(() => {
+    if (activeDownloads.length === 0) return 0;
+    const received = activeDownloads.reduce((sum, download) => sum + download.receivedBytes, 0);
+    const total = activeDownloads.reduce((sum, download) => sum + download.totalBytes, 0);
+    return total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
+  }, [activeDownloads]);
+
   const activeExtensions = state.extensions.filter(
     (extension) => extension.enabled && extension.spaceId === activeSpace.id && Boolean(extension.actionPopup)
   );
@@ -352,12 +402,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
 
   const handleDragStartTab = useCallback((tabId: string) => {
     draggedTabIdRef.current = tabId;
+    setDraggingTabId(tabId);
   }, []);
+
+  const handleDragEndTab = useCallback(() => {
+    draggedTabIdRef.current = null;
+    setDraggingTabId(null);
+    setDropTabId(null);
+  }, []);
+
+  const handleDragOverTab = useCallback((tabId: string) => setDropTabId(tabId), []);
+  const handleDragLeaveTab = useCallback(() => setDropTabId(null), []);
 
   const handleDropTab = useCallback(
     (targetTabId: string) => {
       const srcId = draggedTabIdRef.current;
       draggedTabIdRef.current = null;
+      setDraggingTabId(null);
+      setDropTabId(null);
       if (srcId && srcId !== targetTabId) {
         dispatch({ type: 'reorder-tab', sourceTabId: srcId, targetTabId });
       }
@@ -384,16 +446,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
       isActive={activeTabIds.has(tab.id)}
       isFocused={tab.id === focusedTab?.id}
       onDragStartTab={handleDragStartTab}
+      onDragEndTab={handleDragEndTab}
+      onDragOverTab={handleDragOverTab}
+      onDragLeaveTab={handleDragLeaveTab}
       onDropTab={handleDropTab}
       dispatch={dispatch}
       isTabStop={selectedItem === `tab:${tab.id}`}
       onFocusPrimary={() => setFocusedItem(`tab:${tab.id}`)}
+      isDragging={draggingTabId === tab.id}
+      isDropTarget={dropTabId === tab.id}
     />
   );
 
   return (
     <>
-      <aside className="sidebar" aria-label="Sidebar" onKeyDown={onSidebarKeyDown} style={{ width: state.sidebarWidth }}>
+      <aside
+        className="sidebar"
+        aria-label="Sidebar"
+        onKeyDown={onSidebarKeyDown}
+        style={{ width: state.sidebarWidth }}
+        data-collapsed={sidebarCollapsed || undefined}
+        data-hover-peek={hoverPeek || undefined}
+        data-peeking={sidebarPeeking || undefined}
+      >
         <div className="sidebar-drag-top">
           <button
             className="icon-btn"
@@ -584,10 +659,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
                 return (
                   <div
                     key={folder.id}
-                    onDragOver={(e) => e.preventDefault()}
+                    onDragOver={(e) => { e.preventDefault(); setDropTabId(folder.id); }}
+                    onDragLeave={() => setDropTabId(null)}
                     onDrop={() => {
                       const srcId = draggedTabIdRef.current;
                       draggedTabIdRef.current = null;
+                      setDraggingTabId(null);
+                      setDropTabId(null);
                       if (srcId) {
                         dispatch({ type: 'move-tab-to-folder', tabId: srcId, folderId: folder.id });
                       }
@@ -606,7 +684,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
                         <button type="button" className="tab-mini-btn" aria-label="Cancel Folder Rename" onClick={() => setRenamingFolder(null)}><X size={12} /></button>
                       </form>
                     ) : (
-                      <div className="tab-row">
+                      <div className="tab-row" data-drop-target={dropTabId === folder.id || undefined}>
                         <button
                           className="tab-row-main"
                           data-sidebar-item={`folder:${folder.id}`}
@@ -669,7 +747,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
         </div>
 
         <div className="sidebar-footer">
-          {state.updateStatus.state === 'downloaded' && (
+          {activeDownloads.length > 0 && (
+            <div className="download-progress-pill" role="status" aria-live="polite">
+              <Download size={12} />
+              <div className="dl-progress-track">
+                <div className="dl-progress-fill" style={{ width: `${downloadPercent}%` }} />
+              </div>
+              <span>{downloadPercent}%</span>
+            </div>
+          )}
+
+          {state.updateStatus.state === 'downloaded' && state.updateStatus.installation !== 'manual' && (
             <div className="update-banner">
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <ArrowUpCircle size={14} />
@@ -741,13 +829,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ state, dispatch }) => {
                   }
                 }}
                 className={`space-pill ${sp.id === activeSpace.id ? 'active' : ''}`}
+                data-dragging={draggingSpaceId === sp.id || undefined}
+                data-drop-target={dropSpaceId === sp.id || undefined}
                 onDragStart={() => {
                   draggedSpaceIdRef.current = sp.id;
+                  setDraggingSpaceId(sp.id);
                 }}
-                onDragOver={(e) => e.preventDefault()}
+                onDragEnd={() => {
+                  draggedSpaceIdRef.current = null;
+                  setDraggingSpaceId(null);
+                  setDropSpaceId(null);
+                }}
+                onDragOver={(e) => { e.preventDefault(); setDropSpaceId(sp.id); }}
+                onDragLeave={() => setDropSpaceId(null)}
                 onDrop={() => {
                   const src = draggedSpaceIdRef.current;
                   draggedSpaceIdRef.current = null;
+                  setDraggingSpaceId(null);
+                  setDropSpaceId(null);
                   if (src && src !== sp.id) {
                     dispatch({ type: 'reorder-space', sourceSpaceId: src, targetSpaceId: sp.id });
                   }

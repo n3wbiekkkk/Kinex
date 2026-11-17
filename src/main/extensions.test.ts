@@ -88,6 +88,21 @@ describe('extension IPC intents', () => {
     expect(validateIntent({ type: 'set-extension-enabled', extensionId: 'bad', enabled: true }).ok).toBe(false);
     expect(validateIntent({ type: 'set-extension-enabled', extensionId: `ext-${'a'.repeat(8)}-${'a'.repeat(4)}-${'a'.repeat(4)}-${'a'.repeat(4)}-${'a'.repeat(12)}`, enabled: true, consent: 'yes' }).ok).toBe(false);
   });
+
+  it('only accepts canonical Web Store URLs and ids through IPC', () => {
+    const id = 'a'.repeat(32);
+    const accepted = validateIntent({ type: 'install-extension-webstore', url: `https://chromewebstore.google.com/detail/tool/${id}`, consent: true });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.ok && accepted.value).toMatchObject({ type: 'install-extension-webstore', consent: true });
+    expect(validateIntent({ type: 'install-extension-webstore', url: `https://chromewebstore.google.com/detail/tool/${id}` }).ok).toBe(false);
+    expect(validateIntent({ type: 'install-extension-webstore', url: `https://chromewebstore.google.com/detail/tool/${id}`, consent: false }).ok).toBe(false);
+
+    expect(validateIntent({ type: 'install-extension-webstore', url: `http://chromewebstore.google.com/detail/tool/${id}` }).ok).toBe(false);
+    expect(validateIntent({ type: 'install-extension-webstore', url: `https://evil.example.com/detail/tool/${id}` }).ok).toBe(false);
+    expect(validateIntent({ type: 'install-extension-webstore', url: `https://chromewebstore.google.com.evil.example/detail/tool/${id}` }).ok).toBe(false);
+    expect(validateIntent({ type: 'install-extension-webstore', url: id + '/../escape' }).ok).toBe(false);
+    expect(validateIntent({ type: 'install-extension-webstore', url: 42 }).ok).toBe(false);
+  });
 });
 
 describe('persisted extension sanitization', () => {

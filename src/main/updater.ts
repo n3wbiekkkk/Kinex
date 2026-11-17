@@ -7,10 +7,21 @@ import { Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { app, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import yaml from 'js-yaml';
 import type { AppUpdaterEvents } from 'electron-updater/out/AppUpdater';
 import { DEFAULT_UPDATE_FEED_URL } from '../shared/domain';
 import type { UpdateStatus } from '../shared/types';
 import { isSafeUpdateFeedUrl } from './security';
+import {
+  detectInstallLocation,
+  getRunningAppBundlePath,
+  launchMacUpdateHelper,
+  normalizeSha256,
+  stageMacUpdate,
+  verifyFileSha256,
+  type InstallLocation,
+  type StagedMacUpdate,
+} from './macUpdater';
 
 export function isMissingManifestError(err: unknown): boolean {
   const raw = err instanceof Error ? err.message : String(err || '');
@@ -62,6 +73,70 @@ export interface ReleaseFallbackCandidate {
   assetName: string;
   sha256?: string;
   size?: number;
+  releaseUrl: string;
+}
+
+export type VerifiedMacZip = ReleaseFallbackCandidate & { sha256: string };
+
+function verifiedMacZip(candidate: ReleaseFallbackCandidate): VerifiedMacZip {
+  if (candidate.assetName !== `Kinex-${candidate.version}-arm64-mac.zip` || !normalizeSha256(candidate.sha256)) {
+    throw new Error('The release has no valid arm64 ZIP checksum');
+  }
+  return { ...candidate, sha256: normalizeSha256(candidate.sha256)! };
+}
+
+function releaseAsset(
+  assets: Array<{ name?: unknown; browser_download_url?: unknown; digest?: unknown; size?: unknown }>,
+  version: string,
+  owner: string,
+  repo: string,
+  extension: 'zip' | 'dmg'
+): ReleaseFallbackCandidate | null {
+  const assetName = extension === 'zip' ? `Kinex-${version}-arm64-mac.zip` : `Kinex-${version}-arm64.dmg`;
+  const assetUrl = `https://github.com/${owner}/${repo}/releases/download/v${version}/${assetName}`;
+  const asset = assets.find((item) => item.name === assetName && item.browser_download_url === assetUrl);
+  if (!asset) return null;
+  return {
+    version, assetUrl, assetName, releaseUrl: `https://github.com/${owner}/${repo}/releases/tag/v${version}`,
+    sha256: normalizeSha256(asset.digest) ?? undefined,
+    size: typeof asset.size === 'number' && Number.isSafeInteger(asset.size) && asset.size > 0 ? asset.size : undefined,
+  };
+}
+
+export function parseMacZipManifest(raw: string, owner: string, repo: string): VerifiedMacZip {
+  const document = yaml.load(raw) as { version?: unknown; files?: unknown };
+  const files = Array.isArray(document.files) ? document.files as Array<Record<string, unknown>> : [];
+  const version = typeof document.version === 'string' ? document.version : '';
+  const assetName = `Kinex-${version}-arm64-mac.zip`;
+  if (!/^v?\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid update manifest');
+  const file = files.find((item) => item.url === assetName);
+  if (!file || !Number.isSafeInteger(file.size) || (file.size as number) <= 0) {
+    throw new Error('The update manifest has no arm64 ZIP asset');
+  }
+  const sha256 = file.sha256 ? normalizeSha256(Buffer.from(String(file.sha256), 'base64').toString('hex')) : null;
+  if (!sha256) throw new Error('The update manifest has no SHA-256 checksum');
+  return {
+    version: version.replace(/^v/, ''), assetName,
+    assetUrl: `https://github.com/${owner}/${repo}/releases/download/v${version.replace(/^v/, '')}/${assetName}`,
+    releaseUrl: `https://github.com/${owner}/${repo}/releases/tag/v${version.replace(/^v/, '')}`,
+    sha256, size: file.size as number,
+  };
+}
+
+export async function resolveGitHubDmgCandidate(
+  owner: string, repo: string, version: string, fetchImpl: typeof fetch = fetch
+): Promise<ReleaseFallbackCandidate | null> {
+  const apiRes = await fetchImpl(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Kinex-Browser' },
+  });
+  if (!apiRes.ok) return null;
+  try {
+    const data = await apiRes.json() as { tag_name?: unknown; assets?: Array<{ name?: unknown; browser_download_url?: unknown; digest?: unknown; size?: unknown }> };
+    if (data.tag_name !== `v${version}`) return null;
+    return releaseAsset(Array.isArray(data.assets) ? data.assets : [], version, owner, repo, 'dmg');
+  } catch {
+    return null;
+  }
 }
 
 export function parseGitHubFeedRepo(rawUrl: string): { owner: string; repo: string } | null {
@@ -103,34 +178,25 @@ export async function resolveGitHubReleaseCandidate(
           digest?: unknown;
           size?: unknown;
         }>;
+        draft?: unknown;
+        prerelease?: unknown;
       };
-      const version = String(data?.tag_name || '').replace(/^v/i, '').trim();
-      if (compareSemver(version, '0.0.0') >= 0) {
-        const assets = Array.isArray(data?.assets) ? data.assets : [];
-        const dmgAsset =
-          assets.find((item) => typeof item?.name === 'string' && /arm64.*\.dmg$/i.test(item.name)) ||
-          assets.find((item) => typeof item?.name === 'string' && /\.dmg$/i.test(item.name)) ||
-          assets.find((item) => typeof item?.name === 'string' && /arm64.*\.zip$/i.test(item.name)) ||
-          assets.find((item) => typeof item?.name === 'string' && /\.zip$/i.test(item.name));
-        const rawUrl = typeof dmgAsset?.browser_download_url === 'string' ? dmgAsset.browser_download_url : '';
-        if (rawUrl.toLowerCase().startsWith(downloadPrefix.toLowerCase())) {
-          const assetName = path.basename(new URL(rawUrl).pathname);
-          const digest = typeof dmgAsset?.digest === 'string' ? dmgAsset.digest : '';
-          const shaMatch = /^sha256:([a-f0-9]{64})$/i.exec(digest);
-          return {
-            version,
-            assetUrl: rawUrl,
-            assetName,
-            sha256: shaMatch ? shaMatch[1].toLowerCase() : undefined,
-            size: typeof dmgAsset?.size === 'number' && Number.isFinite(dmgAsset.size) ? dmgAsset.size : undefined,
-          };
+      if (data.draft === true || data.prerelease === true) return null;
+      const version = typeof data.tag_name === 'string' && /^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(data.tag_name)
+        ? data.tag_name.slice(1) : '';
+      if (version) {
+        const assets = Array.isArray(data.assets) ? data.assets : [];
+        const candidate = releaseAsset(assets, version, owner, repo, 'zip');
+        if (candidate && !candidate.sha256) {
+          const checksumRes = await fetchImpl(`${candidate.assetUrl}.sha256`, {
+            headers: { Accept: 'text/plain', 'User-Agent': 'Kinex-Browser' },
+          });
+          if (checksumRes.ok) {
+            const text = (await checksumRes.text()).trim();
+            if (text === `${normalizeSha256(text)}  ${candidate.assetName}`) candidate.sha256 = normalizeSha256(text) ?? undefined;
+          }
         }
-        const fallbackName = `Kinex-${version}-arm64.dmg`;
-        return {
-          version,
-          assetName: fallbackName,
-          assetUrl: `${downloadPrefix}v${version}/${fallbackName}`,
-        };
+        return candidate;
       }
     }
   } catch {}
@@ -142,11 +208,15 @@ export async function resolveGitHubReleaseCandidate(
   const tagMatch = /\/releases\/tag\/v?(\d+\.\d+\.\d+)\/?$/i.exec(headRes.url || '');
   if (!tagMatch) return null;
   const version = tagMatch[1];
-  const assetName = `Kinex-${version}-arm64.dmg`;
+  const assetName = `Kinex-${version}-arm64-mac.zip`;
+  const assetUrl = `${downloadPrefix}v${version}/${assetName}`;
+  const checksumRes = await fetchImpl(`${assetUrl}.sha256`);
+  if (!checksumRes.ok) return null;
+  const text = (await checksumRes.text()).trim();
+  if (text !== `${normalizeSha256(text)}  ${assetName}`) return null;
   return {
-    version,
-    assetName,
-    assetUrl: `${downloadPrefix}v${version}/${assetName}`,
+    version, assetName, assetUrl, sha256: normalizeSha256(text) ?? undefined,
+    releaseUrl: `https://github.com/${owner}/${repo}/releases/tag/v${version}`,
   };
 }
 
@@ -236,6 +306,12 @@ export interface UpdaterRuntimeDeps {
   openPath?: (targetPath: string) => Promise<string>;
   fetchImpl?: typeof fetch;
   checkManifest?: (feedUrl: string) => Promise<void>;
+  getInstallLocation?: () => Promise<InstallLocation>;
+  stageUpdate?: (archivePath: string, candidate: VerifiedMacZip, location: { kind: 'writable'; appBundlePath: string }) => Promise<StagedMacUpdate>;
+  launchHelper?: (staged: StagedMacUpdate, location: { kind: 'writable'; appBundlePath: string }) => Promise<void>;
+  verifyDmg?: (dmgPath: string) => Promise<void>;
+  shouldUseUnsigned?: () => boolean;
+  quit?: () => void;
 }
 
 export class KinexAutoUpdater {
@@ -243,6 +319,11 @@ export class KinexAutoUpdater {
   private localServer: http.Server | null = null;
   private activeLocalDir: string | null = null;
   private downloadedInstallerPath: string | null = null;
+  private stagedUpdate: StagedMacUpdate | null = null;
+  private installLocation: InstallLocation | null = null;
+  private releaseUrl: string | undefined;
+  private downloadAbort: AbortController | null = null;
+  private installPromise: Promise<void> | null = null;
   private initialized = false;
   private generation = 0;
   private disposed = false;
@@ -277,6 +358,10 @@ export class KinexAutoUpdater {
     return this.deps.fetchImpl ?? fetch;
   }
 
+  private isUnsignedPreview(): boolean {
+    return this.deps.shouldUseUnsigned?.() ?? (process.platform === 'darwin' && process.arch === 'arm64' && this.getCurrentVersion().startsWith('0.'));
+  }
+
   getStatus(): UpdateStatus {
     return this.status;
   }
@@ -291,7 +376,7 @@ export class KinexAutoUpdater {
     if (this.initialized) return;
     this.initialized = true;
     this.disposed = false;
-    if (this.deps.checkManifest) return;
+    if (this.deps.checkManifest || this.isUnsignedPreview()) return;
 
     autoUpdater.allowDowngrade = false;
     const supported = autoUpdater.isUpdateSupported;
@@ -414,10 +499,15 @@ export class KinexAutoUpdater {
     let remoteFeedUrl = DEFAULT_UPDATE_FEED_URL;
     try {
       this.setStatus({ state: 'checking' });
+      const previewRepo = source.kind === 'remote' ? parseGitHubFeedRepo(source.url) : null;
+      if (previewRepo && this.isUnsignedPreview()) {
+        await this.checkViaGitHubReleaseFallback(previewRepo, generation, remoteFeedUrl);
+        return;
+      }
       if (source.kind === 'local-dir') {
         if (!fs.existsSync(source.dir)) {
           this.activeLocalDir = null;
-          if (!this.deps.checkManifest) {
+          if (!this.deps.checkManifest && !this.isUnsignedPreview()) {
             autoUpdater.setFeedURL({ provider: 'generic', url: DEFAULT_UPDATE_FEED_URL });
           }
         } else if (!fs.existsSync(path.join(source.dir, 'latest-mac.yml'))) {
@@ -435,7 +525,7 @@ export class KinexAutoUpdater {
           this.activeLocalDir = source.dir;
           const localUrl = await this.startLocalFeedServer(source.dir, generation);
           remoteFeedUrl = localUrl;
-          if (!this.deps.checkManifest) {
+          if (!this.deps.checkManifest && !this.isUnsignedPreview()) {
             autoUpdater.setFeedURL({ provider: 'generic', url: localUrl });
           }
         }
@@ -448,6 +538,15 @@ export class KinexAutoUpdater {
       }
       if (this.disposed || generation !== this.generation) return;
       const ghRepo = this.activeLocalDir ? null : parseGitHubFeedRepo(remoteFeedUrl);
+      if (this.activeLocalDir) {
+        await this.checkViaGitHubReleaseFallback({ owner: '', repo: '' }, generation, remoteFeedUrl);
+        return;
+      }
+      const previewUnsigned = this.isUnsignedPreview();
+      if (ghRepo && process.platform === 'darwin' && (previewUnsigned || this.deps.checkManifest !== undefined)) {
+        await this.checkViaGitHubReleaseFallback(ghRepo, generation, remoteFeedUrl);
+        return;
+      }
       this.suppressManifestNotFoundError = Boolean(ghRepo);
       try {
         if (this.deps.checkManifest) {
@@ -474,66 +573,97 @@ export class KinexAutoUpdater {
     }
   }
 
+  private async resolveReleaseCandidate(
+    repo: { owner: string; repo: string },
+    feedUrl = DEFAULT_UPDATE_FEED_URL
+  ): Promise<ReleaseFallbackCandidate> {
+    const response = await this.getFetch()(`${feedUrl}/latest-mac.yml`, {
+      headers: { Accept: 'text/yaml', 'User-Agent': 'Kinex-Browser' },
+    });
+    if (response.ok) {
+      const candidate = parseMacZipManifest(await response.text(), repo.owner, repo.repo);
+      if (feedUrl.startsWith('http://127.0.0.1:') || feedUrl.startsWith('http://localhost:')) {
+        candidate.assetUrl = `${feedUrl}/${candidate.assetName}`;
+      }
+      return candidate;
+    }
+    if (response.status !== 404) throw new Error('Unable to check for updates right now. Please try again later.');
+    const candidate = await resolveGitHubReleaseCandidate(repo.owner, repo.repo, this.getFetch());
+    if (!candidate) throw new Error('Unable to check for updates right now. Please try again later.');
+    return candidate;
+  }
+
   private async checkViaGitHubReleaseFallback(
     repo: { owner: string; repo: string },
-    generation: number
+    generation: number,
+    feedUrl = DEFAULT_UPDATE_FEED_URL
   ): Promise<void> {
-    const candidate = await resolveGitHubReleaseCandidate(repo.owner, repo.repo, this.getFetch());
+    const candidate = await this.resolveReleaseCandidate(repo, feedUrl);
     if (this.disposed || generation !== this.generation) return;
-    if (!candidate) {
-      throw new Error('Unable to check for updates right now. Please try again later.');
-    }
     const currentVersion = this.getCurrentVersion();
-    if (
-      !isCompatibleUpdateVersion(currentVersion, candidate.version) ||
-      !(compareSemver(candidate.version, currentVersion) > 0)
-    ) {
+    if (!isCompatibleUpdateVersion(currentVersion, candidate.version) ||
+        !(compareSemver(candidate.version, currentVersion) > 0)) {
       this.setStatus({ state: 'up-to-date', version: currentVersion });
       return;
     }
+    if (process.platform !== 'darwin' || process.arch !== 'arm64' || !candidate.version.startsWith('0.')) {
+      throw new Error('This update is not compatible with the installed preview');
+    }
     this.downloadedInstallerPath = null;
-    this.setStatus({ state: 'available', version: candidate.version });
-    await this.downloadFallbackInstaller(candidate, generation);
+    this.stagedUpdate = null;
+    this.releaseUrl = candidate.releaseUrl;
+    await this.downloadFallbackInstaller(candidate, generation, repo);
   }
 
   private async downloadFallbackInstaller(
     candidate: ReleaseFallbackCandidate,
-    generation: number
+    generation: number,
+    repo: { owner: string; repo: string }
   ): Promise<void> {
+    const candidateUrl = new URL(candidate.assetUrl);
+    const localLoopback = candidateUrl.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(candidateUrl.hostname);
     if (
-      !candidate.assetUrl.startsWith('https://') ||
+      candidateUrl.protocol !== 'https:' && !localLoopback ||
       candidate.assetName !== path.basename(candidate.assetName) ||
-      !/^Kinex-[0-9A-Za-z._-]+\.(?:dmg|zip)$/i.test(candidate.assetName)
+      (candidate.assetName !== `Kinex-${candidate.version}-arm64-mac.zip` && candidate.assetName !== `Kinex-${candidate.version}-arm64.dmg`) ||
+      !normalizeSha256(candidate.sha256)
     ) {
       throw new Error('Update package URL failed validation');
     }
 
-    const updateDir = path.join(this.getTempPath(), 'kinex-updates');
-    await fs.promises.mkdir(updateDir, { recursive: true });
+    const updateDir = path.join(await fs.promises.realpath(this.getTempPath()), 'kinex-updates');
+    await fs.promises.mkdir(updateDir, { recursive: true, mode: 0o700 });
     const finalPath = path.join(updateDir, candidate.assetName);
-    const partPath = `${finalPath}.part`;
-
-    if (candidate.sha256 && fs.existsSync(finalPath)) {
-      const existingHash = createHash('sha256');
-      existingHash.update(await fs.promises.readFile(finalPath));
-      if (existingHash.digest('hex').toLowerCase() === candidate.sha256.toLowerCase()) {
-        this.downloadedInstallerPath = finalPath;
-        this.setStatus({ state: 'downloaded', version: candidate.version });
-        return;
-      }
+    const partPath = `${finalPath}.${process.pid}.${Date.now()}.part`;
+    const finalStat = await fs.promises.lstat(finalPath).catch(() => null);
+    if (finalStat?.isFile()) {
+      await verifyFileSha256(finalPath, candidate.sha256!);
+      this.downloadedInstallerPath = finalPath;
+      this.releaseUrl = candidate.releaseUrl;
+      await this.prepareFallback(candidate, generation, finalPath, repo);
+      return;
     }
+    if (finalStat) await fs.promises.rm(finalPath, { force: true });
 
-    const res = await this.getFetch()(candidate.assetUrl);
-    if (!res.ok || !res.body) {
-      throw new Error('Unable to download update package');
-    }
-    const totalBytes = Number(res.headers.get('content-length')) || candidate.size || 0;
-    const hash = createHash('sha256');
-    let receivedBytes = 0;
-    let lastPercent = -1;
-
-    const fileStream = fs.createWriteStream(partPath, { flags: 'w' });
+    const abort = new AbortController();
+    this.downloadAbort = abort;
+    let downloadStream: fs.WriteStream | undefined;
     try {
+      const res = await this.getFetch()(candidate.assetUrl, { signal: abort.signal, redirect: 'follow' });
+      if (!res.ok || !res.body || !candidate.size || candidate.size > 1024 * 1024 * 1024) {
+        throw new Error('Unable to download update package');
+      }
+      if (res.headers.has('content-length') && Number(res.headers.get('content-length')) !== candidate.size) {
+        await res.body.cancel();
+        throw new Error('Downloaded update has an unexpected size');
+      }
+      const totalBytes = candidate.size;
+      const hash = createHash('sha256');
+      let receivedBytes = 0;
+      let lastPercent = -1;
+      downloadStream = fs.createWriteStream(partPath, { flags: 'wx', mode: 0o600 });
+      const stream = downloadStream;
+      this.setStatus({ state: 'downloading', version: candidate.version, percent: 0 });
       const nodeBody = Readable.fromWeb(res.body as unknown as WebReadableStream);
       for await (const chunk of nodeBody) {
         if (this.disposed || generation !== this.generation) {
@@ -542,11 +672,14 @@ export class KinexAutoUpdater {
         const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
         hash.update(buf);
         receivedBytes += buf.length;
-        if (!fileStream.write(buf)) {
-          await new Promise<void>((resolve) => fileStream.once('drain', resolve));
+        if (totalBytes === 0 || receivedBytes > totalBytes || receivedBytes > 1024 * 1024 * 1024) {
+          throw new Error('Downloaded update has an unexpected size');
+        }
+        if (!stream.write(buf)) {
+          await new Promise<void>((resolve) => stream.once('drain', resolve));
         }
         if (totalBytes > 0) {
-          const percent = Math.min(99, Math.round((receivedBytes / totalBytes) * 100));
+          const percent = Math.min(100, Math.floor((receivedBytes / totalBytes) * 100));
           if (percent !== lastPercent) {
             lastPercent = percent;
             this.setStatus({ state: 'downloading', version: candidate.version, percent });
@@ -554,28 +687,62 @@ export class KinexAutoUpdater {
         }
       }
       await new Promise<void>((resolve, reject) => {
-        fileStream.end((err?: Error | null) => (err ? reject(err) : resolve()));
+        stream.end((err?: Error | null) => (err ? reject(err) : resolve()));
       });
-      if (candidate.sha256 && hash.digest('hex').toLowerCase() !== candidate.sha256.toLowerCase()) {
+      const actualDigest = hash.digest('hex');
+      if (actualDigest !== normalizeSha256(candidate.sha256)) {
         throw new Error('Downloaded update failed integrity check');
       }
       if (partPath.toLowerCase().endsWith('.dmg')) {
-        await verifyDmgIntegrity(partPath);
+        await (this.deps.verifyDmg ?? verifyDmgIntegrity)(partPath);
       }
-      await fs.promises.rename(partPath, finalPath);
+      await fs.promises.link(partPath, finalPath);
+      await fs.promises.unlink(partPath);
     } catch (err) {
-      fileStream.destroy();
+      downloadStream?.destroy();
       await fs.promises.rm(partPath, { force: true }).catch(() => {});
       throw err;
+    } finally {
+      this.downloadAbort = null;
     }
 
     if (this.disposed || generation !== this.generation) return;
     this.downloadedInstallerPath = finalPath;
-    this.setStatus({ state: 'downloaded', version: candidate.version });
+    this.releaseUrl = candidate.releaseUrl;
+    await this.prepareFallback(candidate, generation, finalPath, repo);
+  }
+
+  private async prepareFallback(
+    candidate: ReleaseFallbackCandidate, generation: number, archivePath: string,
+    repo: { owner: string; repo: string }
+  ): Promise<void> {
+    this.installLocation = this.deps.getInstallLocation
+      ? await this.deps.getInstallLocation()
+      : await detectInstallLocation(getRunningAppBundlePath());
+    const location = this.installLocation;
+    if (location.kind === 'read-only') {
+      if (candidate.assetName.endsWith('.zip')) {
+        const dmg = await resolveGitHubDmgCandidate(repo.owner, repo.repo, candidate.version, this.getFetch());
+        if (!dmg) throw new Error('Unable to download the verified manual update');
+        await this.downloadFallbackInstaller(dmg, generation, repo);
+        return;
+      }
+      await (this.deps.verifyDmg ?? verifyDmgIntegrity)(archivePath);
+      this.downloadedInstallerPath = archivePath;
+      this.setStatus({ state: 'downloaded', version: candidate.version, installation: 'manual', releaseUrl: candidate.releaseUrl });
+      return;
+    }
+    this.setStatus({ state: 'preparing', version: candidate.version });
+    const validated = verifiedMacZip(candidate);
+    this.stagedUpdate = this.deps.stageUpdate
+      ? await this.deps.stageUpdate(archivePath, validated, location)
+      : await stageMacUpdate(archivePath, validated, location, this.getTempPath());
+    if (this.disposed || generation !== this.generation) return;
+    this.setStatus({ state: 'downloaded', version: candidate.version, installation: 'in-app' });
   }
 
   async downloadUpdate(): Promise<void> {
-    if (!this.isPackaged()) return;
+    if (!this.isPackaged() || this.status.state !== 'available') return;
     try {
       await autoUpdater.downloadUpdate();
     } catch (error) {
@@ -583,19 +750,39 @@ export class KinexAutoUpdater {
     }
   }
 
-  quitAndInstall(): void {
+  async openReleasePage(): Promise<void> {
+    if (this.releaseUrl && this.installLocation?.kind === 'read-only') {
+      await shell.openExternal(this.releaseUrl);
+    }
+  }
+
+  quitAndInstall(): Promise<void> {
+    if (this.installPromise) return this.installPromise;
+    this.installPromise = this.performQuitAndInstall().finally(() => { this.installPromise = null; });
+    return this.installPromise;
+  }
+
+  private async performQuitAndInstall(): Promise<void> {
     this.stopLocalFeedServer();
     if (this.status.state !== 'downloaded') return;
-    if (this.downloadedInstallerPath && fs.existsSync(this.downloadedInstallerPath)) {
-      const openPath = this.deps.openPath ?? ((target: string) => shell.openPath(target));
-      void openPath(this.downloadedInstallerPath).then((err) => {
-        if (!err && !this.deps.openPath && typeof app?.quit === 'function') {
-          app.quit();
-        }
-      });
+    if (this.downloadedInstallerPath && this.installLocation?.kind === 'read-only') {
+      const err = await (this.deps.openPath ?? ((target: string) => shell.openPath(target)))(this.downloadedInstallerPath);
+      if (err) this.setStatus({ state: 'error', message: 'Could not open the verified update download' });
+      else (this.deps.quit ?? (() => app.quit()))();
       return;
     }
-    if (this.isPackaged()) {
+    if (this.stagedUpdate && this.installLocation?.kind === 'writable') {
+      this.setStatus({ state: 'installing', version: this.status.version });
+      try {
+        if (this.deps.launchHelper) await this.deps.launchHelper(this.stagedUpdate, this.installLocation);
+        else await launchMacUpdateHelper(this.stagedUpdate, this.installLocation);
+        (this.deps.quit ?? (() => app.quit()))();
+      } catch (error) {
+        this.setStatus({ state: 'error', message: formatUpdaterError(error) });
+      }
+      return;
+    }
+    if (this.isPackaged() && !this.deps.launchHelper) {
       autoUpdater.quitAndInstall(false, true);
     }
   }
@@ -603,6 +790,7 @@ export class KinexAutoUpdater {
   dispose(): void {
     this.disposed = true;
     this.generation += 1;
+    this.downloadAbort?.abort();
     this.suppressManifestNotFoundError = false;
     for (const remove of this.removeListeners) remove();
     this.removeListeners.length = 0;

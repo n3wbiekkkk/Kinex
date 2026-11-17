@@ -519,6 +519,8 @@ export class KinexPersistence {
         },
         sidebarWidth: Math.min(380, Math.max(200, Math.round(rawSidebarWidth))),
         sidebarOpen: typeof parsed.sidebarOpen === 'boolean' ? parsed.sidebarOpen : defaults.sidebarOpen,
+        sidebarCollapsed: typeof parsed.sidebarCollapsed === 'boolean' ? parsed.sidebarCollapsed : defaults.sidebarCollapsed,
+        hoverPeek: typeof parsed.hoverPeek === 'boolean' ? parsed.hoverPeek : defaults.hoverPeek,
         shields,
         adBlockEnabled: shields.globalMode !== 'disabled',
         httpsOnly: typeof parsed.httpsOnly === 'boolean' ? parsed.httpsOnly : defaults.httpsOnly,

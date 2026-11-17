@@ -165,3 +165,27 @@ Re-measured after integrating the native Rust **Kinex Shields** subsystem (`145,
 | 50 Live Tabs Settled / Peak RSS | 4,771.0 / 4,771.9 MB | **4,900.5 / 4,951.5 MB** | `+2.7%` total tree RSS with 145k rules active across all partitions |
 | 50 Live Tabs Switch Latency (median) | 1.6 ms | **4.7 ms** | Sub-5ms tab switches with full Shields coordinator active |
 | `170,813`-Rule 10k Query Latency | `26` suffix host entries | **2.93 µs mean / 2.67 µs median / 3.62 µs p95** | V8 JS heap impact `0 MB` (`61.58 MB` native Rust RSS across all 7 lists) |
+
+---
+
+## Reproducing the runtime performance telemetry hook
+
+The `PerformanceSnapshot` aggregator in `src/main/performanceTelemetry.ts` is a pure function:
+it takes injected getters (tab count, active view count, sleeping-tab count / measured bytes,
+and Shields block counters) and returns a single snapshot. It imports no Electron module at
+top level, so it can be validated in plain Node with the targeted unit tests:
+
+```
+npx vitest run src/main/performanceTelemetry.test.ts
+```
+
+To gather the underlying live numbers on this machine, run the existing benchmark harness:
+
+```
+npm run bench
+```
+
+`npm run bench` rebuilds the app and executes `tests/perf/run-benchmarks.mjs` against a fresh
+temporary profile; `npm run bench:memory-saver` measures sleeping-tab RSS savings used by the
+`estimatedSleepingMemorySavedBytes` telemetry field. Wire the harness's reported tab/view/
+sleeping counts and Shields block totals into the getters when collecting a runtime snapshot.

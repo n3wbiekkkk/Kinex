@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InstalledExtension } from '../shared/types';
 import { extractCrxZip, parseCrx3, verifyCrx3Signature, type ParsedCrx3 } from './crx';
 import { ExtensionManager } from './extensionManager';
-import { parseWebStoreUrl } from './extensionSupport';
+import { MAX_EXTENSION_BYTES, parseWebStoreUrl } from './extensionSupport';
+import { buildCrxDownloadUrl } from './webStore';
 
 const temporaryDirs: string[] = [];
 const RUNTIME_ID = 'a'.repeat(32);
@@ -40,6 +41,9 @@ interface ZipEntry {
   attrs?: number;
   flags?: number;
   method?: 0 | 8;
+  /** Test-only overrides so size guards can be exercised without huge allocations. */
+  uncompressedSize?: number;
+  compressedSize?: number;
 }
 
 function makeZip(entries: ZipEntry[]): Buffer {
@@ -55,8 +59,8 @@ function makeZip(entries: ZipEntry[]): Buffer {
     local.writeUInt16LE(20, 4);
     local.writeUInt16LE(entry.flags ?? 0, 6);
     local.writeUInt16LE(method, 8);
-    local.writeUInt32LE(payload.length, 18);
-    local.writeUInt32LE(entry.content.length, 22);
+    local.writeUInt32LE(entry.compressedSize ?? payload.length, 18);
+    local.writeUInt32LE(entry.uncompressedSize ?? entry.content.length, 22);
     local.writeUInt16LE(name.length, 26);
     locals.push(local, name, payload);
 
@@ -66,8 +70,8 @@ function makeZip(entries: ZipEntry[]): Buffer {
     central.writeUInt16LE(20, 6);
     central.writeUInt16LE(entry.flags ?? 0, 8);
     central.writeUInt16LE(method, 10);
-    central.writeUInt32LE(payload.length, 20);
-    central.writeUInt32LE(entry.content.length, 24);
+    central.writeUInt32LE(entry.compressedSize ?? payload.length, 20);
+    central.writeUInt32LE(entry.uncompressedSize ?? entry.content.length, 24);
     central.writeUInt16LE(name.length, 28);
     central.writeUInt32LE(entry.attrs ?? ((0o100600 << 16) >>> 0), 38);
     central.writeUInt32LE(offset, 42);
@@ -118,6 +122,14 @@ function makeCrx3(zip: Buffer, keyPair = crypto.generateKeyPairSync('rsa', { mod
   return { buffer: Buffer.concat([prefix, header, zip]), crxId };
 }
 
+function makeRawCrx3(header: Buffer, zip: Buffer): Buffer {
+  const prefix = Buffer.alloc(12);
+  prefix.write('Cr24', 0, 'ascii');
+  prefix.writeUInt32LE(3, 4);
+  prefix.writeUInt32LE(header.length, 8);
+  return Buffer.concat([prefix, header, zip]);
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   for (const dir of temporaryDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
@@ -148,6 +160,59 @@ describe('CRX3 parsing and signature verification', () => {
     expect(() => parseCrx3(badVersion)).toThrow(/CRX3/);
   });
 
+  it('cannot bypass signature validation via the declared id or missing proofs', () => {
+    const zip = extensionZip();
+    const keyPair = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const publicKey = keyPair.publicKey.export({ type: 'spki', format: 'der' });
+    const signature = crypto.sign('sha256', zip, keyPair.privateKey);
+    const idBytes = crypto.createHash('sha256').update(publicKey).digest().subarray(0, 16);
+    const proof = Buffer.concat([protoField(1, publicKey), protoField(2, signature)]);
+
+    expect(() => parseCrx3(makeRawCrx3(protoField(4, idBytes), zip))).toThrow(/no signing key/);
+
+    const wrongId = Buffer.alloc(16, 0);
+    expect(() => parseCrx3(makeRawCrx3(
+      Buffer.concat([protoField(2, proof), protoField(4, wrongId)]), zip
+    ))).toThrow(/does not match/);
+
+    expect(() => parseCrx3(makeRawCrx3(
+      Buffer.concat([protoField(2, proof), protoField(4, idBytes.subarray(0, 15))]), zip
+    ))).toThrow(/Invalid CRX3 id field/);
+  });
+
+  it('rejects a corrupted signature and only accepts a proof matching the declared id', () => {
+    const zip = extensionZip();
+    const signer = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const other = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const signerKey = signer.publicKey.export({ type: 'spki', format: 'der' });
+    const otherKey = other.publicKey.export({ type: 'spki', format: 'der' });
+    const idBytes = crypto.createHash('sha256').update(signerKey).digest().subarray(0, 16);
+    const validSignature = crypto.sign('sha256', zip, signer.privateKey);
+    const corruptSignature = Buffer.from(validSignature);
+    corruptSignature[0] ^= 0xff;
+    const badProof = Buffer.concat([protoField(1, signerKey), protoField(2, corruptSignature)]);
+    const badParsed = parseCrx3(makeRawCrx3(
+      Buffer.concat([protoField(2, badProof), protoField(4, idBytes)]), zip
+    ));
+    expect(verifyCrx3Signature(badParsed)).toBe(false);
+
+    // A valid signature from a different key must not authorize the declared id.
+    const otherProof = Buffer.concat([
+      protoField(1, otherKey),
+      protoField(2, crypto.sign('sha256', zip, other.privateKey)),
+    ]);
+    const wrongKeyParsed = parseCrx3(makeRawCrx3(
+      Buffer.concat([protoField(3, otherProof), protoField(2, badProof), protoField(4, idBytes)]), zip
+    ));
+    expect(verifyCrx3Signature(wrongKeyParsed)).toBe(false);
+
+    const goodProof = Buffer.concat([protoField(1, signerKey), protoField(2, validSignature)]);
+    const goodParsed = parseCrx3(makeRawCrx3(
+      Buffer.concat([protoField(3, otherProof), protoField(2, goodProof), protoField(4, idBytes)]), zip
+    ));
+    expect(verifyCrx3Signature(goodParsed)).toBe(true);
+  });
+
   it('extracts ZIP entries safely with deflate support', () => {
     const zip = makeZip([
       { name: 'manifest.json', content: Buffer.from(JSON.stringify(manifest)), method: 8 },
@@ -163,6 +228,11 @@ describe('CRX3 parsing and signature verification', () => {
   it('blocks zip-slip, absolute paths, symlinks and encrypted entries', () => {
     const cases: Array<{ entry: ZipEntry; message: RegExp }> = [
       { entry: { name: '../escape.txt', content: Buffer.from('bad') }, message: /Unsafe/ },
+      { entry: { name: 'a/../../escape.txt', content: Buffer.from('bad') }, message: /Unsafe/ },
+      { entry: { name: 'a/b/../../../escape.txt', content: Buffer.from('bad') }, message: /Unsafe/ },
+      { entry: { name: '..\\escape.txt', content: Buffer.from('bad') }, message: /Unsafe/ },
+      { entry: { name: 'C:/escape.txt', content: Buffer.from('bad') }, message: /Unsafe/ },
+      { entry: { name: 'evil\u0000.js', content: Buffer.from('bad') }, message: /Unsafe/ },
       { entry: { name: '/etc/evil.txt', content: Buffer.from('bad') }, message: /Unsafe/ },
       { entry: { name: 'link.js', content: Buffer.from('bad'), attrs: 0xa1ff0000 }, message: /links/ },
       { entry: { name: 'secret.js', content: Buffer.from('bad'), flags: 1 }, message: /Encrypted/ },
@@ -175,6 +245,29 @@ describe('CRX3 parsing and signature verification', () => {
       expect(fs.readdirSync(target)).toEqual([]);
     }
   });
+
+  it('rejects oversized entries, decompression bombs and duplicate destinations', () => {
+    const storedTarget = path.join(tempDir('kinex-crx-oversize-'), 'ext');
+    fs.mkdirSync(storedTarget);
+    const oversized = makeZip([{
+      name: 'big.bin', content: Buffer.from('x'), uncompressedSize: MAX_EXTENSION_BYTES + 1,
+    }]);
+    expect(() => extractCrxZip(oversized, storedTarget)).toThrow(/too large/);
+    expect(fs.readdirSync(storedTarget)).toEqual([]);
+
+    const bombTarget = path.join(tempDir('kinex-crx-bomb-'), 'ext');
+    fs.mkdirSync(bombTarget);
+    const bomb = makeZip([{ name: 'bomb.bin', content: Buffer.alloc(MAX_EXTENSION_BYTES + 1024), method: 8 }]);
+    expect(() => extractCrxZip(bomb, bombTarget)).toThrow(/too large/);
+
+    const dupTarget = path.join(tempDir('kinex-crx-dup-'), 'ext');
+    fs.mkdirSync(dupTarget);
+    const duplicate = makeZip([
+      { name: 'dup.js', content: Buffer.from('a') },
+      { name: 'dup.js', content: Buffer.from('b') },
+    ]);
+    expect(() => extractCrxZip(duplicate, dupTarget)).toThrow(/duplicate/);
+  });
 });
 
 describe('Chrome Web Store URL validation', () => {
@@ -185,6 +278,33 @@ describe('Chrome Web Store URL validation', () => {
     expect(parseWebStoreUrl(`http://chromewebstore.google.com/detail/tool/${id}`)).toBeNull();
     expect(parseWebStoreUrl(`https://evil.example.com/detail/tool/${id}`)).toBeNull();
     expect(parseWebStoreUrl('https://chromewebstore.google.com/detail/tool/not-an-id')).toBeNull();
+  });
+
+  it('only allows the exact allowlisted hosts and HTTPS, with the id in the path', () => {
+    const id = 'a'.repeat(32);
+    expect(parseWebStoreUrl(`https://chrome.google.com/webstore/detail/tool/${id}`)?.extensionId).toBe(id);
+    expect(parseWebStoreUrl(123)).toBeNull();
+    expect(parseWebStoreUrl('')).toBeNull();
+    expect(parseWebStoreUrl('a'.repeat(2049))).toBeNull();
+    expect(parseWebStoreUrl(`//chromewebstore.google.com/detail/tool/${id}`)).toBeNull();
+    expect(parseWebStoreUrl(`data:text/html,${id}`)).toBeNull();
+    expect(parseWebStoreUrl(`file:///detail/tool/${id}`)).toBeNull();
+    expect(parseWebStoreUrl(`https://chromewebstore.google.com.evil.example/detail/tool/${id}`)).toBeNull();
+    expect(parseWebStoreUrl(`https://evil.chromewebstore.google.com/detail/tool/${id}`)).toBeNull();
+    expect(parseWebStoreUrl(`https://chromewebstore.google.com./detail/tool/${id}`)).toBeNull();
+    expect(parseWebStoreUrl(`https://chromewebstore.google.com/detail/tool?x=${id}`)).toBeNull();
+  });
+
+  it('builds download URLs only for valid ids and keeps the host/scheme fixed', () => {
+    const url = buildCrxDownloadUrl('a'.repeat(32));
+    expect(url).not.toBeNull();
+    const parsed = new URL(url!);
+    expect(parsed.protocol).toBe('https:');
+    expect(parsed.hostname).toBe('clients2.google.com');
+    expect(parsed.searchParams.get('acceptformat')).toBe('crx3');
+    expect(buildCrxDownloadUrl('../'.repeat(10))).toBeNull();
+    expect(buildCrxDownloadUrl('not-an-id')).toBeNull();
+    expect(buildCrxDownloadUrl('')).toBeNull();
   });
 });
 
@@ -231,13 +351,50 @@ describe('CRX and Web Store installation', () => {
       downloadWebStoreCrx: async () => parsed,
     });
 
-    await expect(manager.installFromWebStore(itemUrl, 'space-personal', 'persist:nook-default')).rejects.toThrow(/does not match/);
+    await expect(manager.installFromWebStore(itemUrl, 'space-personal', 'persist:nook-default', true)).rejects.toThrow(/does not match/);
     const matchingUrl = `https://chromewebstore.google.com/detail/tool/${parsed.crxId}`;
-    const record = await manager.installFromWebStore(matchingUrl, 'space-personal', 'persist:nook-default');
+    const record = await manager.installFromWebStore(matchingUrl, 'space-personal', 'persist:nook-default', true);
     expect(record.source).toBe('webstore');
     expect(record.webStoreUrl).toBe(matchingUrl);
     expect(record.crxId).toBe(parsed.crxId);
     expect(record.enabled).toBe(false);
+    expect(record.consented).toBe(false);
+  });
+
+  it('never downloads a Web Store CRX without explicit consent or a persistent partition', async () => {
+    const dir = tempDir('kinex-crx-consent-');
+    const download = vi.fn(async () => parseCrx3(makeCrx3(extensionZip()).buffer));
+    const manager = new ExtensionManager(dir, {
+      getExtensions: () => [],
+      commitExtensions: () => {},
+      getSessionForPartition: () => ({ extensions: { getAllExtensions: () => [], loadExtension: vi.fn(), removeExtension: vi.fn() } }) as any,
+      showToast: () => {},
+      downloadWebStoreCrx: download,
+    });
+    const url = `https://chromewebstore.google.com/detail/tool/${'b'.repeat(32)}`;
+
+    await expect(manager.installFromWebStore(url, 'space-personal', 'persist:nook-default')).rejects.toThrow(/Confirm/);
+    await expect(manager.installFromWebStore(url, 'space-personal', 'persist:nook-default', false)).rejects.toThrow(/Confirm/);
+    await expect(manager.installFromWebStore(url, 'space-personal', 'kinex-private-1', true)).rejects.toThrow(/Invalid extension install request/);
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('refuses a Web Store download whose signature does not verify', async () => {
+    const dir = tempDir('kinex-crx-store-signature-');
+    const parsed = parseCrx3(makeCrx3(extensionZip()).buffer);
+    const corruptedZip = Buffer.from(parsed.zip);
+    corruptedZip[corruptedZip.length - 1] ^= 0xff;
+    const manager = new ExtensionManager(dir, {
+      getExtensions: () => [],
+      commitExtensions: () => {},
+      getSessionForPartition: () => ({ extensions: { getAllExtensions: () => [], loadExtension: vi.fn(), removeExtension: vi.fn() } }) as any,
+      showToast: () => {},
+      downloadWebStoreCrx: async () => ({ ...parsed, zip: corruptedZip }),
+    });
+    await expect(manager.installFromWebStore(
+      `https://chromewebstore.google.com/detail/tool/${parsed.crxId}`,
+      'space-personal', 'persist:nook-default', true
+    )).rejects.toThrow(/signature/);
   });
 });
 

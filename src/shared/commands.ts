@@ -25,6 +25,8 @@ const definitions = [
   ['open-archive', 'Closed & Archived Tabs', 'Tabs', '', 'Restore tabs or closed tab groups'],
   ['clear-history', 'Clear History', 'Tools', '', 'Review privacy controls before clearing browsing history'],
   ['toggle-sidebar', 'Toggle Sidebar', 'View', 'Alt+CmdOrCtrl+S', 'Show or hide the workspace sidebar'],
+  ['toggle-sidebar-collapse', 'Collapse / Expand Sidebar', 'View', 'Ctrl+CmdOrCtrl+S', 'Animate the sidebar between compact and full width'],
+  ['toggle-hover-peek', 'Toggle Hover Peek', 'View', '', 'Preview the collapsed sidebar by hovering its edge'],
   ['new-split', 'Toggle Split View', 'View', 'CmdOrCtrl+Shift+\\', 'View two pages side by side'],
   ['next-pane', 'Focus Other Split Pane', 'View', 'Alt+CmdOrCtrl+Right', 'Switch keyboard focus between split panes'],
   ['focus-next', 'Focus Next Browser Region', 'View', 'F6', 'Cycle content, sidebar and toolbar'],

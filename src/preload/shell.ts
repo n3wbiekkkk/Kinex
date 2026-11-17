@@ -11,6 +11,10 @@ import type {
 const api: KinexAPI = {
   getState: () => ipcRenderer.invoke('kinex:get-state'),
   dispatch: (intent: KinexIntent) => ipcRenderer.invoke('kinex:dispatch', intent),
+  getPerformanceSnapshot: () => ipcRenderer.invoke('kinex:performance-snapshot'),
+  syncExport: (passphrase) => ipcRenderer.invoke('kinex:sync-export', passphrase),
+  syncImport: (passphrase) => ipcRenderer.invoke('kinex:sync-import', passphrase),
+  syncBackup: (passphrase) => ipcRenderer.invoke('kinex:sync-backup', passphrase),
   onFocusRequested: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, region: FocusRequest) => listener(region);
     ipcRenderer.on('kinex:focus-requested', handler);

@@ -36,6 +36,10 @@
     "test:shields-startup": "npm run build && node tests/perf/run-shields-initialization.mjs"
   },
   "build": {
+    "afterPack": "scripts/afterPack.cjs",
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/v"
+    },
     "appId": "com.kinex.browser",
     "productName": "Kinex",
     "publish": [
@@ -98,7 +102,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "5.2.0",
-    "electron": "45.3.3",
+    "electron": "github:castlabs/electron-releases#v45.2.1+wvcus",
     "electron-builder": "26.18.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

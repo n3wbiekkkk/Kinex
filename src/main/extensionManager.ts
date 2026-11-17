@@ -291,10 +291,17 @@ export class ExtensionManager {
     return this.installParsedCrx(parsed, spaceId, partition, 'crx');
   }
 
-  async installFromWebStore(url: string, spaceId: string, partition: string): Promise<InstalledExtension> {
+  async installFromWebStore(
+    url: string,
+    spaceId: string,
+    partition: string,
+    consent?: boolean
+  ): Promise<InstalledExtension> {
     if (!partition.startsWith('persist:')) throw new Error('Invalid extension install request');
     const item = parseWebStoreUrl(url);
     if (!item) throw new Error('Invalid Chrome Web Store URL or extension id');
+    // Never start a network download until the caller confirms an explicit user consent action.
+    if (consent !== true) throw new Error('Confirm the Web Store download before installing');
     const parsed = this.host.downloadWebStoreCrx
       ? await this.host.downloadWebStoreCrx(item.extensionId)
       : await downloadWebStoreCrx(item.extensionId);

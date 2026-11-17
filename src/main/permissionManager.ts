@@ -23,9 +23,12 @@ const HARMLESS_PERMISSIONS = new Set([
 
 const PROMPT_PERMISSIONS = new Set([
   'media', 'geolocation', 'notifications', 'clipboard-read', 'display-capture',
-  'mediaKeySystem', 'midi', 'speaker-selection', 'window-management',
+  'mediaKeySystem', 'protectedMediaIdentifier', 'midi', 'speaker-selection', 'window-management',
   'storage-access', 'top-level-storage-access',
 ]);
+
+const PROTECTED_MEDIA_PERMISSIONS = new Set(['mediaKeySystem', 'protectedMediaIdentifier']);
+for (const permission of PROTECTED_MEDIA_PERMISSIONS) PRIVATE_SENSITIVE_DENIED.add(permission);
 
 const configuredSessions = new WeakSet<Session>();
 
@@ -51,7 +54,7 @@ export function evaluateStaticPermissionPolicy(
   if (HARMLESS_PERMISSIONS.has(permission)) {
     return 'allow';
   }
-  if (!isWebOriginEligible(requestingOrigin)) {
+  if (!isWebOriginEligible(requestingOrigin) || (PROTECTED_MEDIA_PERMISSIONS.has(permission) && !requestingOrigin.startsWith('https:'))) {
     return 'deny';
   }
   if (isPrivate && PRIVATE_SENSITIVE_DENIED.has(permission)) {
@@ -74,8 +77,10 @@ export function formatPermissionLabel(permission: string): string {
       return 'desktop notifications';
     case 'clipboard-read':
       return 'read your clipboard';
-    case 'display-capture':
       return 'capture your screen';
+    case 'mediaKeySystem':
+    case 'protectedMediaIdentifier':
+      return 'protected media content';
     default:
       return permission;
   }

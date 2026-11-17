@@ -35,9 +35,11 @@
   /* Motion */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring-soft: cubic-bezier(0.22, 0.8, 0.24, 1);
   --dur-fast: 120ms;
   --dur-med: 160ms;
   --dur-slow: 200ms;
+  --dur-spring: 220ms;
   --dur-exit: 140ms;
 
   /* Default dark palette (also scoped cleanly via .theme-dark) */

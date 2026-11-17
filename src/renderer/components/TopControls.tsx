@@ -28,6 +28,11 @@ interface TopControlsProps {
   dispatch: (intent: KinexIntent) => void;
 }
 
+/** Badge colors are rendered as inline CSS, so only accept a literal #RRGGBB value. */
+function safeBadgeColor(color: string | undefined): string | undefined {
+  return color && /^#[0-9a-f]{6}$/i.test(color) ? color : undefined;
+}
+
 export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => {
   const split = getActiveSplit(state);
   const panes = split.tabIds
@@ -177,6 +182,15 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
           <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
             {Math.round((split.splitRatio || 0.5) * 100)}/{100 - Math.round((split.splitRatio || 0.5) * 100)}
           </span>
+          <button
+            className="split-reset-btn"
+            title="Reset split to 50/50"
+            aria-label="Reset split to 50/50"
+            disabled={Math.abs((split.splitRatio ?? 0.5) - 0.5) < 0.01}
+            onClick={() => dispatch({ type: 'set-split-ratio', ratio: 0.5 })}
+          >
+            50/50
+          </button>
         </div>
       )}
 
@@ -351,7 +365,7 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
             <Puzzle size={14} />
           )}
           {extension.badge?.text && (
-            <span className="extension-action-badge" style={{ backgroundColor: extension.badge.color }} aria-label={`${extension.name} badge ${extension.badge.text}`}>
+            <span className="extension-action-badge" style={{ backgroundColor: safeBadgeColor(extension.badge.color) }} aria-label={`${extension.name} badge ${extension.badge.text}`}>
               {extension.badge.text}
             </span>
           )}

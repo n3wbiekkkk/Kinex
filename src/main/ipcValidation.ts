@@ -324,6 +324,11 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
         ? { ok: true, value: { type: 'reorder-tab', sourceTabId: raw.sourceTabId, targetTabId: raw.targetTabId } }
         : { ok: false, error: 'Invalid reorder-tab payload' };
 
+    case 'copy-text':
+      return typeof raw.text === 'string' && raw.text.length <= 256
+        ? { ok: true, value: { type: 'copy-text', text: raw.text } }
+        : { ok: false, error: 'Invalid text to copy' };
+
     case 'select-tab':
       return isNonEmptyString(raw.tabId, 128) &&
         (raw.paneIndex === undefined || (isFiniteNumber(raw.paneIndex) && (raw.paneIndex === 0 || raw.paneIndex === 1)))
@@ -442,6 +447,21 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
         ? { ok: true, value: { type: 'toggle-sidebar', open: raw.open } }
         : { ok: false, error: 'Invalid sidebar open flag' };
 
+    case 'toggle-sidebar-collapse':
+      return raw.collapsed === undefined || typeof raw.collapsed === 'boolean'
+        ? { ok: true, value: { type: 'toggle-sidebar-collapse', collapsed: raw.collapsed } }
+        : { ok: false, error: 'Invalid sidebar collapse flag' };
+
+    case 'set-hover-peek':
+      return typeof raw.enabled === 'boolean'
+        ? { ok: true, value: { type: 'set-hover-peek', enabled: raw.enabled } }
+        : { ok: false, error: 'Invalid hover peek flag' };
+
+    case 'set-sidebar-peeking':
+      return typeof raw.peeking === 'boolean'
+        ? { ok: true, value: { type: 'set-sidebar-peeking', peeking: raw.peeking } }
+        : { ok: false, error: 'Invalid sidebar peeking flag' };
+
     case 'set-sidebar-width':
       return isFiniteNumber(raw.width)
         ? { ok: true, value: { type: 'set-sidebar-width', width: Math.min(380, Math.max(200, Math.round(raw.width))) } }
@@ -516,6 +536,7 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
     case 'check-for-updates':
     case 'download-update':
     case 'install-update':
+    case 'open-update-release':
       return { ok: true, value: { type: raw.type } };
 
     case 'set-shields-global-mode':
@@ -653,6 +674,11 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
         ? { ok: true, value: { type: 'set-update-feed-url', url: raw.url.trim() } }
         : { ok: false, error: 'Update feed must be an HTTPS URL, localhost, or a local directory path' };
 
+    case 'set-auto-picture-in-picture':
+      return typeof raw.enabled === 'boolean'
+        ? { ok: true, value: { type: 'set-auto-picture-in-picture', enabled: raw.enabled } }
+        : { ok: false, error: 'Invalid auto Picture-in-Picture flag' };
+
     case 'set-memory-saver-timeout':
       return typeof raw.timeout === 'string' && MEMORY_SAVER_TIMEOUTS.has(raw.timeout as MemorySaverTimeout)
         ? { ok: true, value: { type: 'set-memory-saver-timeout', timeout: raw.timeout as MemorySaverTimeout } }
@@ -681,9 +707,11 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
 
     case 'install-extension-webstore': {
       const item = parseWebStoreUrl(raw.url);
-      return item
-        ? { ok: true, value: { type: 'install-extension-webstore', url: item.itemUrl } }
-        : { ok: false, error: 'Invalid Chrome Web Store URL or extension id' };
+      if (!item) return { ok: false, error: 'Invalid Chrome Web Store URL or extension id' };
+      if (raw.consent !== true) {
+        return { ok: false, error: 'Web Store installation requires explicit consent' };
+      }
+      return { ok: true, value: { type: 'install-extension-webstore', url: item.itemUrl, consent: true } };
     }
 
     case 'uninstall-extension':
@@ -767,6 +795,13 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
     default:
       return { ok: false, error: `Unknown intent type: ${String(raw.type)}` };
   }
+}
+
+/** Passphrase supplied to encrypted sync operations from the trusted shell. */
+export function validatePassphraseInput(raw: unknown): ValidationResult<string> {
+  return isNonEmptyString(raw, 256)
+    ? { ok: true, value: raw }
+    : { ok: false, error: 'Invalid sync passphrase' };
 }
 
 export function validateTabContextMenuInput(tabId: unknown): ValidationResult<string> {

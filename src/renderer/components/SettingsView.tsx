@@ -822,7 +822,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       aria-label="Install from Chrome Web Store"
                       disabled={webStoreInput.trim().length === 0}
                       onClick={() => {
-                        dispatch({ type: 'install-extension-webstore', url: webStoreInput.trim() });
+                        dispatch({ type: 'install-extension-webstore', url: webStoreInput.trim(), consent: true });
                         setWebStoreInput('');
                       }}
                     >

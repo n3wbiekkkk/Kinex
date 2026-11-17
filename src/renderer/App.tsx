@@ -83,6 +83,25 @@ export const App: React.FC = () => {
       }}
     >
       {state.sidebarOpen && <Sidebar state={state} dispatch={dispatch} />}
+      {state.sidebarOpen && state.sidebarCollapsed && state.hoverPeek && (
+        <div
+          className="sidebar-peek-rail"
+          role="button"
+          tabIndex={0}
+          aria-label="Peek at sidebar"
+          onMouseEnter={() => dispatch({ type: 'set-sidebar-peeking', peeking: true })}
+          onMouseLeave={() => dispatch({ type: 'set-sidebar-peeking', peeking: false })}
+          onFocus={() => dispatch({ type: 'set-sidebar-peeking', peeking: true })}
+          onBlur={() => dispatch({ type: 'set-sidebar-peeking', peeking: false })}
+          onClick={() => dispatch({ type: 'toggle-sidebar-collapse', collapsed: false })}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              dispatch({ type: 'toggle-sidebar-collapse', collapsed: false });
+            }
+          }}
+        />
+      )}
       <div className="main-area">
         {showTopBar && <TopControls state={state} dispatch={dispatch} />}
         {split.tabIds.length > 1 && (

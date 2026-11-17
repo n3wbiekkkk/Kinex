@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { NewTabConfig } from '../shared/types';
+import type { NewTabConfig, PerformanceSnapshot } from '../shared/types';
 import { isSafeNavigationUrl } from './security';
 
 export interface NewTabShortcutItem {
@@ -19,6 +19,7 @@ export interface NewTabRenderContext {
   favorites?: NewTabShortcutItem[];
   frequent?: NewTabShortcutItem[];
   getReaderHtml?: (readerUrl: string) => string | null;
+  performanceSnapshot?: PerformanceSnapshot;
 }
 
 let cachedLogoDataUri: string | null = null;
@@ -128,6 +129,49 @@ export function renderKinexInternalHtml(
   url: string,
   context: NewTabRenderContext = {}
 ): string {
+  if (url.startsWith('kinex://performance')) {
+    const snapshot = context.performanceSnapshot;
+    const rows = snapshot
+      ? [
+          ['Open tabs', String(snapshot.tabCount)],
+          ['Live views', String(snapshot.activeViewCount)],
+          ['Sleeping tabs', String(snapshot.sleepingTabCount)],
+          ['Estimated memory saved', `${Math.round(snapshot.estimatedSleepingMemorySavedBytes / (1024 * 1024))} MB`],
+          ['Shields blocks', String(snapshot.shieldsBlockedTotal)],
+          ['Ads / trackers / other', `${snapshot.shieldsBlocked.ads} / ${snapshot.shieldsBlocked.trackers} / ${snapshot.shieldsBlocked.other}`],
+        ]
+      : [['Status', 'Metrics unavailable for this page']];
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="color-scheme" content="dark light" />
+<title>Performance — Kinex</title>
+<style>
+  :root { --bg: #f6f7f9; --surface: #fff; --border: rgba(15,18,30,.09); --text: #14161f; --muted: #5c6275; --accent: #4f5bd5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #101116; --surface: #171820; --border: rgba(255,255,255,.09); --text: #f3f4fa; --muted: #8b90a6; --accent: #7c8cff; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; background: var(--bg); color: var(--text); padding: 32px; }
+  .wrap { max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  h1 { font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+  p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .row { display: flex; justify-content: space-between; gap: 16px; padding: 13px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .row:last-child { border-bottom: none; }
+  .row span:last-child { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 600; }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <div><h1>Performance</h1><p>Live, privacy-safe counters for this browser session.</p></div>
+    <div class="card">${rows.map(([label, value]) => `<div class="row"><span>${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`).join('')}</div>
+  </main>
+</body>
+</html>`;
+  }
+
   if (url.startsWith('kinex://reader')) {
     const readerHtml = context.getReaderHtml?.(url);
     if (readerHtml) return readerHtml;
