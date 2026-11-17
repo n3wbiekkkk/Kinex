@@ -91,10 +91,19 @@ async function run() {
     checks.push('Startup presents the native window without test calling show');
 
     await load('/typing');
-    await page().executeJavaScript("document.querySelector('#typing').focus()");
+    const typingPage = page();
+    await until(() => win.isFocused() && typingPage.isFocused(), 'typing page native focus');
+    await typingPage.executeJavaScript("document.querySelector('#typing').focus()");
+    await until(() => typingPage.executeJavaScript("document.hasFocus() && document.activeElement.id === 'typing'"), 'typing input DOM focus');
     const beforeTyping = mgr.getSnapshot().tabs.length;
-    await key(page(), 'X', [], 'x');
-    await until(async () => await page().executeJavaScript("document.querySelector('#typing').value") === 'x', 'plain typing preserved');
+    await key(typingPage, 'x', [], 'x');
+    try {
+      await until(async () => await typingPage.executeJavaScript("document.querySelector('#typing').value") === 'x', 'plain typing preserved');
+    } catch (error) {
+      const typing = await typingPage.executeJavaScript("({ value: document.querySelector('#typing')?.value, activeId: document.activeElement?.id, documentFocused: document.hasFocus() })");
+      error.message += ` ${JSON.stringify({ typing, nativeFocused: typingPage.isFocused(), windowFocused: win.isFocused(), focusEvents })}`;
+      throw error;
+    }
     assert.equal(mgr.getSnapshot().tabs.length, beforeTyping);
     assert.equal(mgr.getSnapshot().overlay.mode, 'none');
     checks.push('Plain typing reaches the remote document without browser command dispatch');
@@ -243,7 +252,7 @@ async function run() {
   app.exit(0);
 }
 run().catch((error) => {
-  const report = { ok: false, checksPassed: checks.length, checks, error: error.stack ?? String(error) };
+  const report = { ok: false, checksPassed: checks.length, checks, focusEvents, error: error.stack ?? String(error) };
   if (process.env.KINEX_REPORT_PATH) fs.writeFileSync(process.env.KINEX_REPORT_PATH, JSON.stringify(report, null, 2));
   console.error('Experience integration failed:', error);
   app.exit(1);
