@@ -3,8 +3,14 @@ name: Kinex Browser CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 permissions:
   contents: read
@@ -14,12 +20,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify-and-package-mac:
+  fast-checks:
+    name: Typecheck, lint and unit tests
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       KINEX_DISABLE_AUTO_UPDATER: '1'
       KINEX_TEST_MODE: '1'
+      # Keep adblock-rs compilation in a stable directory outside node_modules so
+      # the cached Cargo artifacts survive `npm ci` and the postinstall build is incremental.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
     steps:
       - name: Check out repository
@@ -32,6 +42,27 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      - name: Cache Electron runtime and builder artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
+      - name: Cache Rust/Cargo registry and adblock-rs build artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-adblock-rs-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-adblock-rs-
 
       - name: Verify Apple Silicon runner and native toolchain
         run: |
@@ -58,6 +89,112 @@ jobs:
       - name: Run native Shields unit tests
         run: npm run test:native
 
+  package:
+    name: Package and launch the macOS application
+    needs: e2e
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      KINEX_DISABLE_AUTO_UPDATER: '1'
+      KINEX_TEST_MODE: '1'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Setup Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Cache Electron runtime and builder artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: ${{ runner.os }}-electron-
+      - name: Cache Rust/Cargo registry and adblock-rs build artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/registry
+            ~/.cargo/registry
+            ~/.cargo/git/git
+            target
+          key: ${{ runner.os }}-cargo-adblock-rs-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-cargo-adblock-rs-
+      - name: Install locked dependencies and build native addon
+        run: npm ci
+      - name: Download pinned Electron runtime
+        run: npx --no-install install-electron
+      - name: Package ad-hoc signed arm64 validation bundle
+        run: npm run package:mac
+      - name: Launch packaged application with disposable data
+        run: node tests/integration/run-packaged.mjs
+      - name: Verify DMG and launch its bundled application
+        run: node tests/integration/run-dmg.mjs
+
+  e2e:
+    name: Real Electron E2E, security and experience checks
+    needs: fast-checks
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      KINEX_DISABLE_AUTO_UPDATER: '1'
+      KINEX_TEST_MODE: '1'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Cache Electron runtime and builder artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
+      - name: Cache Rust/Cargo registry and adblock-rs build artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-adblock-rs-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-adblock-rs-
+
+      - name: Verify Apple Silicon runner and native toolchain
+        run: |
+          test "$(uname -m)" = arm64
+          xcode-select -p
+          rustc --version
+          cargo --version
+
+      - name: Install locked dependencies and build native addon
+        run: npm ci
+
+      - name: Download pinned Electron runtime
+        run: npx --no-install install-electron
+
       - name: Build production bundles
         run: npm run build
 
@@ -75,17 +212,6 @@ jobs:
           node tests/e2e/run-keyboard-only.mjs --out=artifacts/ci/keyboard
           node tests/integration/run-experience.mjs --out=artifacts/ci/experience.json
           node tests/integration/run-shields.mjs
-
-      - name: Package ad-hoc signed arm64 validation bundle
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npm run package:mac
-
-      - name: Launch packaged application with disposable data
-        run: node tests/integration/run-packaged.mjs
-
-      - name: Verify DMG and launch its bundled application
-        run: node tests/integration/run-dmg.mjs
 
       - name: Retain validation evidence
         if: always()
