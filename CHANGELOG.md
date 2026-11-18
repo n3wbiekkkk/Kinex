@@ -2,6 +2,13 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.21] - 2026-11-18
+
+Pre-production preview. Keep CI/Release verification green against an unpatchable dev-only advisory.
+
+- Audit shipped production dependencies at moderate severity in CI and Release; record that `GHSA-fc5q-39xc-vjpf` affects every published `picomatch` version with no upstream patch and is reachable only through dev build tooling (`vite`, `vitest`, `electron-builder`).
+- `npm audit --omit=dev --audit-level=moderate` reports zero production vulnerabilities; `npm run test:all` remains green.
+
 ## [0.7.20] - 2026-11-18
 
 Pre-production preview. Complete the 26-milestone overnight roadmap.

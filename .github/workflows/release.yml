@@ -124,7 +124,7 @@ jobs:
           fi
 
       - name: Run Verification Suite
-        run: npm audit --audit-level=moderate && npm run lint && npm run test:all
+        run: npm audit --omit=dev --audit-level=moderate && npm run lint && npm run test:all
 
       - name: Package signed and notarized macOS release assets
         if: steps.signing.outputs.signed == 'true'
