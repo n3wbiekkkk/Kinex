@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { extractHostname, getFocusedTab } from '../../shared/domain';
 import type { FindInPageStatus, KinexIntent, KinexStateSnapshot } from '../../shared/types';
+import { encodeQrMatrix } from '../../shared/qrcode';
+import { BookmarksView } from './BookmarksView';
 import { BoostPanel } from './BoostPanel';
 import { CommandBar } from './CommandBar';
 import { SettingsView } from './SettingsView';
@@ -722,6 +724,60 @@ const OverlayContent: React.FC<OverlayAppProps & { active: boolean }> = ({ state
           </div>
         </div>
       )}
+
+      {overlay.mode === 'bookmarks' && <BookmarksView state={state} dispatch={dispatch} onClose={close} />}
+
+      {overlay.mode === 'reading-list' && (
+        <div className="modal-card" role="dialog" aria-modal="true" aria-label="Reading List" onClick={(event) => event.stopPropagation()}>
+          <div className="modal-header">
+            <span style={{ fontWeight: 600 }}>Reading List</span>
+            <button className="icon-btn" aria-label="Close Reading List" onClick={close}><X size={16} /></button>
+          </div>
+          <div className="modal-body">
+            {state.readingList.length === 0 ? (
+              <p className="empty-state">Add pages with ⇧⌘D to read them later.</p>
+            ) : (
+              state.readingList.map((entry) => (
+                <button
+                  key={entry.url}
+                  className="row-item"
+                  onClick={() => dispatch({ type: 'open-url', url: entry.url, target: 'current' })}
+                >
+                  <span>{entry.title}</span>
+                  <span className="row-subtitle">{extractHostname(entry.url)}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {overlay.mode === 'share-qr' && (() => {
+        const url = getFocusedTab(state)?.url ?? '';
+        const matrix = url ? encodeQrMatrix(url) : null;
+        return (
+          <div className="modal-card" role="dialog" aria-modal="true" aria-label="Share QR Code" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 600 }}>Share this page</span>
+              <button className="icon-btn" aria-label="Close Share" onClick={close}><X size={16} /></button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              {matrix && (
+                <div
+                  role="img"
+                  aria-label={`QR code for ${url}`}
+                  style={{ display: 'grid', gridTemplateColumns: `repeat(${matrix.size}, 3px)`, gap: 0, background: '#fff', padding: 8 }}
+                >
+                  {matrix.modules.flatMap((row, r) => row.map((dark, c) => (
+                    <span key={`${r}-${c}`} style={{ width: 3, height: 3, background: dark ? '#000' : '#fff' }} />
+                  )))}
+                </div>
+              )}
+              <button className="btn-secondary" onClick={() => dispatch({ type: 'copy-text', text: url })}>Copy link</button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

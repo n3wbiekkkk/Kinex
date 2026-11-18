@@ -1,11 +1,12 @@
 import { matchShortcut, type CommandId } from '../shared/commands';
 import fs from 'node:fs';
-import { app, BrowserWindow, clipboard, dialog, Menu, type Session, type WebContents, webContents, systemPreferences, powerMonitor, WebContentsView } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, Menu, screen, type Session, type WebContents, webContents, systemPreferences, powerMonitor, WebContentsView } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   clearTodayTabsForSpace,
   closeOrResetTab,
+  createDefaultPersistedData,
   closeOtherTabsForSpace,
   closeTabsToRightForSpace,
   extractHostname,
@@ -70,6 +71,16 @@ import { downloadWebStoreCrx } from './webStore';
 import { ExtensionActionBridge } from './extensionActionBridge';
 import { AutoPictureInPicture } from './mediaController';
 import { isMac } from './platformSupport';
+import { WebContextMenuController } from './contextMenu';
+import { ScreenshotController } from './screenshot';
+import { SavePageController } from './savePage';
+import { GestureNavigationController } from './gestureNavigation';
+import { mergeArchivedEntries, planAutoArchive, queryArchiveVault, wouldCreateFolderCycle } from './archiveManager';
+import { applySitePermissionMutation } from './siteControl';
+import { isNavigationBlocked, reduceFocusSession } from './zenFocus';
+import { buildLinkPeekViewOptions } from './linkPeek';
+import { encodeQrMatrix } from '../shared/qrcode';
+import { detectShortcutConflicts } from '../shared/settingsPreferences';
 import {
   collectPerformanceSnapshot,
   summarizeShieldsBlockCounts,
@@ -166,6 +177,9 @@ export class KinexWindowManager {
   private readonly extensionActionBridge: ExtensionActionBridge;
   private readonly autoPictureInPicture = new AutoPictureInPicture();
   private sidebarPeeking = false;
+  private linkPeekView: WebContentsView | null = null;
+  private linkPeekRect: { x: number; y: number; width: number; height: number } | null = null;
+  private gestureNavigation: GestureNavigationController | null = null;
   private readonly navigationManager: NavigationManager;
   private readonly tabManager: TabManager;
   private readonly layoutManager = new ViewLayoutManager();
@@ -629,7 +643,10 @@ export class KinexWindowManager {
     this.downloadManager.resetForNewWindow();
 
     this.memorySaverTimer = setInterval(() => {
-      if (!this.disposed) void this.runMemorySaverSweep();
+      if (!this.disposed) {
+        void this.runMemorySaverSweep();
+        this.runAutoArchiveSweep();
+      }
     }, 60_000);
     this.memorySaverTimer.unref?.();
 
@@ -1365,6 +1382,17 @@ export class KinexWindowManager {
     duplicatePolicy: 'prompt' | 'allow' = 'allow'
   ): void {
     const normalized = normalizeNavigationInput(rawInput, this.persisted.searchEngine);
+    const focusSpaceId = explicitSpaceId ?? this.persisted.activeSpaceId;
+    if (isNavigationBlocked(
+      { ...this.persisted.focusConfig, privateSpaceIds: new Set(
+        this.persisted.spaces.filter((space) => /:private$/i.test(space.profilePartition)).map((space) => space.id)
+      ) },
+      focusSpaceId,
+      normalized
+    )) {
+      this.showToast('Zen Focus is blocking this site');
+      return;
+    }
     if (target === 'little-kinex' || target === 'little-nook') {
       this.auxiliaryWindows.openLittleKinex(normalized);
       return;
@@ -1462,6 +1490,143 @@ export class KinexWindowManager {
     if (target !== 'new-tab-background') {
       this.focusActiveTabView(newTab.id);
     }
+    this.persistAndBroadcast();
+  }
+
+  private getActiveTabView(): { tabId: string; url: string; title: string; contents: WebContents } | null {
+    const tab = getFocusedTab(this.persisted);
+    if (!tab) return null;
+    const view = this.tabManager.getView(tab.id);
+    if (!view || view.webContents.isDestroyed()) return null;
+    return { tabId: tab.id, url: tab.url, title: tab.title || tab.url, contents: view.webContents };
+  }
+
+  private showWebContextMenu(payload: Extract<KinexIntent, { type: 'show-web-context-menu' }>): void {
+    const navigate = (url: string | undefined, target: 'new-tab' | 'split') => {
+      if (url) void this.handleIntent({ type: 'open-url', url, target });
+    };
+    const controller = new WebContextMenuController({
+      'open-link-new-tab': (url) => navigate(url, 'new-tab'),
+      'open-link-split': (url) => navigate(url, 'split'),
+      'open-image-new-tab': (url) => navigate(url, 'new-tab'),
+      'save-link': (url) => { if (url) void this.handleIntent({ type: 'download-url', url }); },
+      'save-image': (url) => { if (url) void this.handleIntent({ type: 'download-url', url }); },
+      'copy-link': (url) => { if (url) void this.handleIntent({ type: 'copy-text', text: url }); },
+      'copy-image': (url) => { if (url) void this.handleIntent({ type: 'copy-text', text: url }); },
+      'copy-selection': (text) => { if (text) void this.handleIntent({ type: 'copy-text', text }); },
+      'search-selection': (text) => {
+        if (text) void this.handleIntent({ type: 'open-url', url: `https://www.google.com/search?q=${encodeURIComponent(text)}`, target: 'new-tab' });
+      },
+      'copy-page-url': (url) => { if (url) void this.handleIntent({ type: 'copy-text', text: url }); },
+      reload: () => { void this.handleIntent({ type: 'nav-reload' }); },
+      print: () => { void this.handleIntent({ type: 'print-page' }); },
+      inspect: () => { void this.handleIntent({ type: 'open-devtools' }); },
+    });
+    const raw = {
+      linkUrl: payload.linkUrl,
+      imageUrl: payload.imageUrl,
+      selectionText: payload.selectionText,
+      pageUrl: payload.pageUrl,
+      isEditable: payload.isEditable,
+      mediaFlags: payload.mediaFlags,
+    };
+    const template: Electron.MenuItemConstructorOptions[] = controller.template(raw).map((entry) =>
+      entry.separator
+        ? { type: 'separator' }
+        : { label: entry.label, enabled: entry.enabled, click: () => { void controller.invoke(entry); } }
+    );
+    const menu = Menu.buildFromTemplate(template);
+    const window = this.mainWindow && !this.mainWindow.isDestroyed() ? this.mainWindow : undefined;
+    if (window) menu.popup({ window, ...screen.getCursorScreenPoint() });
+    else menu.popup();
+  }
+
+  private runAutoArchiveSweep(): void {
+    const timeout = this.persisted.autoArchiveTimeout;
+    if (timeout === 'off') return;
+    const privateSpaceIds = new Set(
+      this.persisted.spaces.filter((space) => /:private$/i.test(space.profilePartition)).map((space) => space.id)
+    );
+    const plan = planAutoArchive({ tabs: this.persisted.tabs, now: Date.now(), timeout, privateSpaceIds });
+    if (plan.tabIds.length === 0) return;
+    const remove = new Set(plan.tabIds);
+    for (const id of plan.tabIds) {
+      this.shieldsCoordinator.clearTabStats(id);
+      this.tabManager.destroyTabView(id);
+    }
+    this.persisted = {
+      ...this.persisted,
+      tabs: this.persisted.tabs.filter((tab) => !remove.has(tab.id)),
+      archivedTabs: mergeArchivedEntries(this.persisted.archivedTabs, plan.entries),
+    };
+    for (const [spaceId, split] of Object.entries(this.persisted.splitsBySpace)) {
+      const kept = split.tabIds.filter((id) => !remove.has(id));
+      if (kept.length !== split.tabIds.length) {
+        const fallback = this.persisted.tabs.find((tab) => tab.spaceId === spaceId);
+        this.persisted.splitsBySpace[spaceId] = {
+          ...split,
+          tabIds: kept.length > 0 ? kept : fallback ? [fallback.id] : [],
+          focusedIndex: 0,
+        };
+      }
+    }
+    this.persistAndBroadcast();
+  }
+
+  private closeLinkPeekView(): void {
+    if (!this.linkPeekView) return;
+    this.linkPeekView.webContents.close();
+    this.mainWindow?.contentView.removeChildView(this.linkPeekView);
+    this.linkPeekView = null;
+    this.linkPeekRect = null;
+  }
+
+  private applyFocusSession(
+    type: 'start' | 'end' | 'toggle',
+    spaceId: string
+  ): void {
+    if (!this.persisted.spaces.some((space) => space.id === spaceId)) return;
+    const config = {
+      ...this.persisted.focusConfig,
+      privateSpaceIds: new Set(
+        this.persisted.spaces.filter((space) => /:private$/i.test(space.profilePartition)).map((space) => space.id)
+      ),
+    };
+    const next = reduceFocusSession(config, { type, spaceId, now: Date.now() });
+    this.persisted = {
+      ...this.persisted,
+      focusConfig: { rulesBySpace: next.rulesBySpace, sessions: next.sessions },
+    };
+    this.persistAndBroadcast();
+  }
+
+  private resetPreferences(): void {
+    const defaults = createDefaultPersistedData();
+    this.persisted = {
+      ...this.persisted,
+      theme: defaults.theme,
+      sidebarSide: defaults.sidebarSide,
+      density: defaults.density,
+      accent: defaults.accent,
+      vibrancy: defaults.vibrancy,
+      showFullUrl: defaults.showFullUrl,
+      defaultZoom: defaults.defaultZoom,
+      startupBehavior: defaults.startupBehavior,
+      startupUrls: defaults.startupUrls,
+      customSearchEngine: defaults.customSearchEngine,
+      downloadFolder: defaults.downloadFolder,
+      askBeforeDownload: defaults.askBeforeDownload,
+      thirdPartyCookies: defaults.thirdPartyCookies,
+      referrerPolicy: defaults.referrerPolicy,
+      webRtcPolicy: defaults.webRtcPolicy,
+      customFilterUrls: defaults.customFilterUrls,
+      siteWhitelist: defaults.siteWhitelist,
+      customShortcuts: defaults.customShortcuts,
+      autoArchiveTimeout: defaults.autoArchiveTimeout,
+      readingList: defaults.readingList,
+      cookiePolicyByOrigin: defaults.cookiePolicyByOrigin,
+      focusConfig: defaults.focusConfig,
+    };
     this.persistAndBroadcast();
   }
 
@@ -2889,6 +3054,387 @@ export class KinexWindowManager {
         this.closeExtensionPopup();
         return;
       }
+
+      case 'show-web-context-menu':
+        this.showWebContextMenu(intent);
+        return;
+
+      case 'capture-screenshot': {
+        const active = this.getActiveTabView();
+        if (!active) {
+          this.showToast('No page is available to capture');
+          return;
+        }
+        const controller = new ScreenshotController({
+          getViewport: () => {
+            const bounds = this.tabManager.getView(active.tabId)?.getBounds();
+            return bounds ?? { x: 0, y: 0, width: 1280, height: 800 };
+          },
+          captureVisible: async () => Buffer.from((await active.contents.capturePage()).toPNG()),
+          captureRect: async (rect) => Buffer.from((await active.contents.capturePage(rect)).toPNG()),
+          writeFile: async (filePath, data) => { await fs.promises.writeFile(filePath, data); },
+          copyImage: async (data) => {
+            const blob = new Blob([Buffer.from(data)], { type: 'image/png' });
+            await clipboard.write([new Electron.ClipboardItem({ 'image/png': blob })]);
+          },
+          now: () => Date.now(),
+          buildFilePath: (filename) => path.join(app.getPath('downloads'), filename),
+        });
+        const outcome = await controller.capture(intent);
+        if (!outcome.ok) this.showToast(`Screenshot failed: ${outcome.reason ?? 'unknown'}`);
+        else if (outcome.target === 'clipboard') this.showToast('Screenshot copied to clipboard');
+        else this.showToast(`Screenshot saved as ${outcome.filename ?? 'PNG'}`);
+        return;
+      }
+
+      case 'save-page-mhtml': {
+        const active = this.getActiveTabView();
+        if (!active) {
+          this.showToast('No page is available to save');
+          return;
+        }
+        const controller = new SavePageController({
+          getPageUrl: () => active.url,
+          getPageTitle: () => active.title,
+          showSaveDialog: async (options) => {
+            const result = this.mainWindow && !this.mainWindow.isDestroyed()
+              ? await dialog.showSaveDialog(this.mainWindow, options as Electron.SaveDialogOptions)
+              : await dialog.showSaveDialog(options as Electron.SaveDialogOptions);
+            return { canceled: result.canceled, filePath: result.filePath };
+          },
+          saveMhtml: async (filePath) => { await active.contents.savePage(filePath, 'MHTML'); },
+          getDownloadsDir: () => app.getPath('downloads'),
+        });
+        const outcome = await controller.saveAsMhtml();
+        if (outcome.ok) this.showToast(`Saved ${path.basename(outcome.filePath!)}`);
+        else if (outcome.reason !== 'canceled') this.showToast(`Could not save MHTML: ${outcome.reason}`);
+        return;
+      }
+
+      case 'open-console': {
+        const active = this.getActiveTabView();
+        if (!active) return;
+        active.contents.openDevTools({ mode: 'detach' });
+        return;
+      }
+
+      case 'view-source': {
+        const active = this.getActiveTabView();
+        if (!active || !/^https?:\/\//i.test(active.url)) return;
+        await this.handleIntent({ type: 'open-url', url: `view-source:${active.url}`, target: 'new-tab' });
+        return;
+      }
+
+      case 'download-url': {
+        const active = this.getActiveTabView();
+        if (active) active.contents.downloadURL(intent.url);
+        return;
+      }
+
+      case 'swipe-navigation': {
+        if (!isMac()) return;
+        if (!this.gestureNavigation) {
+          this.gestureNavigation = new GestureNavigationController({
+            now: () => Date.now(),
+            navigate: (direction) => { void this.handleIntent({ type: direction === 'back' ? 'nav-back' : 'nav-forward' }); },
+            canGoBack: () => Boolean(getFocusedTab(this.persisted)?.canGoBack),
+            canGoForward: () => Boolean(getFocusedTab(this.persisted)?.canGoForward),
+          });
+        }
+        this.gestureNavigation.handleScroll(intent.deltaX, intent.deltaY);
+        return;
+      }
+
+      case 'set-auto-archive-timeout':
+        this.persisted = { ...this.persisted, autoArchiveTimeout: intent.timeout };
+        this.persistAndBroadcast();
+        if (intent.timeout !== 'off') this.runAutoArchiveSweep();
+        return;
+
+      case 'query-archive-vault': {
+        const matches = queryArchiveVault(this.persisted.archivedTabs, { query: intent.query, spaceId: intent.spaceId });
+        this.showToast(`${matches.length} archived tab${matches.length === 1 ? '' : 's'} match “${intent.query}”`);
+        return;
+      }
+
+      case 'move-folder': {
+        const folder = this.persisted.folders.find((item) => item.id === intent.folderId);
+        if (!folder) return;
+        if (intent.parentId && wouldCreateFolderCycle(this.persisted.folders, intent.folderId, intent.parentId)) {
+          this.showToast('That folder move would create a cycle');
+          return;
+        }
+        this.persisted = {
+          ...this.persisted,
+          folders: this.persisted.folders.map((item) =>
+            item.id === intent.folderId ? { ...item, parentId: intent.parentId } : item
+          ),
+        };
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'set-site-cookie-policy':
+        this.persisted = {
+          ...this.persisted,
+          cookiePolicyByOrigin: { ...this.persisted.cookiePolicyByOrigin, [intent.origin]: intent.policy },
+        };
+        this.persistAndBroadcast();
+        return;
+
+      case 'set-site-permission': {
+        const decision = applySitePermissionMutation(
+          this.persisted.sitePermissions,
+          {
+            type: 'set-site-permission',
+            origin: intent.origin,
+            permission: intent.permission,
+            decision: intent.decision,
+          },
+          this.getPartitionForSpace(this.persisted.activeSpaceId),
+          Date.now()
+        );
+        this.persisted = { ...this.persisted, sitePermissions: decision };
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'toggle-reading-list': {
+        const exists = this.persisted.readingList.some((item) => item.url === intent.url);
+        this.persisted = {
+          ...this.persisted,
+          readingList: exists
+            ? this.persisted.readingList.filter((item) => item.url !== intent.url)
+            : [{ url: intent.url, title: intent.title, addedAt: Date.now(), spaceId: this.persisted.activeSpaceId }, ...this.persisted.readingList],
+        };
+        this.showToast(exists ? 'Removed from Reading List' : 'Added to Reading List');
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'start-focus-session':
+        this.applyFocusSession('start', intent.spaceId);
+        this.showToast('Zen Focus started');
+        return;
+      case 'end-focus-session':
+        this.applyFocusSession('end', intent.spaceId);
+        this.showToast('Zen Focus ended');
+        return;
+      case 'toggle-focus-session':
+        this.applyFocusSession('toggle', intent.spaceId);
+        return;
+
+      case 'save-focus-rule': {
+        const spaceId = this.persisted.activeSpaceId;
+        const existing = this.persisted.focusConfig.rulesBySpace[spaceId] ?? [];
+        this.persisted = {
+          ...this.persisted,
+          focusConfig: {
+            ...this.persisted.focusConfig,
+            rulesBySpace: {
+              ...this.persisted.focusConfig.rulesBySpace,
+              [spaceId]: [...existing.filter((rule) => rule.id !== intent.rule.id), intent.rule],
+            },
+          },
+        };
+        this.persistAndBroadcast();
+        return;
+      }
+
+      case 'delete-focus-rule':
+        this.persisted = {
+          ...this.persisted,
+          focusConfig: {
+            ...this.persisted.focusConfig,
+            rulesBySpace: {
+              ...this.persisted.focusConfig.rulesBySpace,
+              [intent.spaceId]: (this.persisted.focusConfig.rulesBySpace[intent.spaceId] ?? []).filter((rule) => rule.id !== intent.ruleId),
+            },
+          },
+        };
+        this.persistAndBroadcast();
+        return;
+
+      case 'open-link-peek': {
+        this.closeLinkPeekView();
+        const built = buildLinkPeekViewOptions(intent.url, {
+          rect: intent.rect,
+          partition: intent.partition ?? 'persist:link-peek',
+        });
+        if (!built.ok) {
+          this.showToast(`Link Peek unavailable: ${built.reason}`);
+          return;
+        }
+        const view = new WebContentsView({ webPreferences: built.options });
+        this.linkPeekView = view;
+        this.linkPeekRect = built.options.rect;
+        this.mainWindow?.contentView.addChildView(view);
+        view.setBounds(built.options.rect);
+        void view.webContents.loadURL(intent.url);
+        return;
+      }
+
+      case 'link-peek-action': {
+        const view = this.linkPeekView;
+        if (!view) return;
+        if (intent.action === 'close' || intent.action === 'backdrop') {
+          this.closeLinkPeekView();
+          return;
+        }
+        if (intent.action === 'expand' && this.linkPeekRect) {
+          const bounds = this.mainWindow?.getBounds();
+          if (bounds) view.setBounds({ x: 0, y: 0, width: bounds.width, height: bounds.height });
+          return;
+        }
+        if (intent.action === 'split' && this.linkPeekRect) {
+          const bounds = this.mainWindow?.getBounds();
+          if (bounds) view.setBounds({ x: Math.floor(bounds.width / 2), y: 0, width: Math.floor(bounds.width / 2), height: bounds.height });
+          return;
+        }
+        return;
+      }
+
+      case 'show-share-qr': {
+        const active = this.getActiveTabView();
+        const url = intent.url ?? active?.url;
+        if (!url) return;
+        const matrix = encodeQrMatrix(url);
+        this.showToast(`QR ready — ${matrix.size}×${matrix.size} modules for ${url}`);
+        return;
+      }
+
+      case 'set-theme':
+        this.persisted = { ...this.persisted, theme: intent.theme };
+        this.persistAndBroadcast();
+        return;
+      case 'set-sidebar-side':
+        this.persisted = { ...this.persisted, sidebarSide: intent.side };
+        this.persistAndBroadcast();
+        return;
+      case 'set-density':
+        this.persisted = { ...this.persisted, density: intent.density };
+        this.persistAndBroadcast();
+        return;
+      case 'set-accent':
+        this.persisted = { ...this.persisted, accent: intent.accent };
+        this.persistAndBroadcast();
+        return;
+      case 'set-vibrancy':
+        this.persisted = { ...this.persisted, vibrancy: intent.vibrancy };
+        this.persistAndBroadcast();
+        return;
+      case 'set-show-full-url':
+        this.persisted = { ...this.persisted, showFullUrl: intent.enabled };
+        this.persistAndBroadcast();
+        return;
+      case 'set-default-zoom':
+        this.persisted = { ...this.persisted, defaultZoom: intent.zoom };
+        this.persistAndBroadcast();
+        return;
+      case 'set-startup-behavior':
+        this.persisted = { ...this.persisted, startupBehavior: intent.behavior };
+        this.persistAndBroadcast();
+        return;
+      case 'set-startup-urls':
+        this.persisted = { ...this.persisted, startupUrls: intent.urls };
+        this.persistAndBroadcast();
+        return;
+      case 'set-custom-search-engine':
+        this.persisted = { ...this.persisted, customSearchEngine: intent.engine };
+        this.persistAndBroadcast();
+        return;
+      case 'set-download-folder':
+        this.persisted = { ...this.persisted, downloadFolder: intent.folder };
+        this.persistAndBroadcast();
+        return;
+      case 'set-ask-before-download':
+        this.persisted = { ...this.persisted, askBeforeDownload: intent.enabled };
+        this.persistAndBroadcast();
+        return;
+      case 'set-third-party-cookies':
+        this.persisted = { ...this.persisted, thirdPartyCookies: intent.policy };
+        this.persistAndBroadcast();
+        return;
+      case 'set-referrer-policy':
+        this.persisted = { ...this.persisted, referrerPolicy: intent.policy };
+        this.persistAndBroadcast();
+        return;
+      case 'set-webrtc-policy':
+        this.persisted = { ...this.persisted, webRtcPolicy: intent.policy };
+        this.persistAndBroadcast();
+        return;
+      case 'set-custom-filter-urls':
+        this.persisted = { ...this.persisted, customFilterUrls: intent.urls };
+        this.persistAndBroadcast();
+        return;
+      case 'set-site-whitelist':
+        this.persisted = { ...this.persisted, siteWhitelist: intent.sites };
+        this.persistAndBroadcast();
+        return;
+      case 'reset-settings':
+        this.resetPreferences();
+        this.showToast('Settings reset to defaults');
+        return;
+      case 'set-custom-shortcut': {
+        const conflicts = detectShortcutConflicts([
+          ...this.persisted.customShortcuts.filter((binding) => binding.id !== intent.id),
+          { id: intent.id, accelerator: intent.accelerator },
+        ]);
+        if (conflicts.length > 0) {
+          this.showToast('That shortcut conflicts with an existing command');
+          return;
+        }
+        this.persisted = {
+          ...this.persisted,
+          customShortcuts: [
+            ...this.persisted.customShortcuts.filter((binding) => binding.id !== intent.id),
+            { id: intent.id, accelerator: intent.accelerator },
+          ],
+        };
+        this.persistAndBroadcast();
+        return;
+      }
+      case 'remove-custom-shortcut':
+        this.persisted = {
+          ...this.persisted,
+          customShortcuts: this.persisted.customShortcuts.filter((binding) => binding.id !== intent.id),
+        };
+        this.persistAndBroadcast();
+        return;
+      case 'reset-custom-shortcuts':
+        this.persisted = { ...this.persisted, customShortcuts: [] };
+        this.persistAndBroadcast();
+        return;
+      case 'reset-welcome-card':
+        this.persisted = { ...this.persisted, welcomeCardDismissed: false };
+        this.persistAndBroadcast();
+        return;
+      case 'clear-browsing-data-timed': {
+        const remove = (item: { visitedAt?: number; archivedAt?: number; spaceId?: string }): boolean => {
+          const at = item.visitedAt ?? item.archivedAt ?? 0;
+          if (at < intent.since) return false;
+          return !intent.spaceId || item.spaceId === intent.spaceId;
+        };
+        this.persisted = {
+          ...this.persisted,
+          ...(intent.scopes.includes('history') ? { history: this.persisted.history.filter((item) => !remove(item)) } : {}),
+          ...(intent.scopes.includes('archived') ? { archivedTabs: this.persisted.archivedTabs.filter((item) => !remove(item)) } : {}),
+        };
+        this.showToast('Selected browsing data cleared');
+        this.persistAndBroadcast();
+        return;
+      }
+      case 'remove-history-entry':
+        this.persisted = { ...this.persisted, history: this.persisted.history.filter((item) => item.url !== intent.url) };
+        this.persistAndBroadcast();
+        return;
+      case 'remove-bookmark':
+        this.persisted = {
+          ...this.persisted,
+          tabs: this.persisted.tabs.filter((tab) => tab.id !== intent.tabId || tab.location === 'unpinned'),
+        };
+        this.persistAndBroadcast();
+        return;
     }
   }
 
@@ -2980,6 +3526,7 @@ export class KinexWindowManager {
       favorites,
       frequent,
       performanceSnapshot: this.getPerformanceSnapshot(),
+      welcomeCardDismissed: this.persisted.welcomeCardDismissed,
       getReaderHtml: (readerUrl: string) => {
         try {
           const parsed = new URL(readerUrl);
@@ -3453,6 +4000,18 @@ export class KinexWindowManager {
       case 'zoom-out': await this.handleIntent({ type: 'set-zoom', delta: 'out' }); break;
       case 'zoom-reset': await this.handleIntent({ type: 'set-zoom', delta: 'reset' }); break;
       case 'devtools': await this.handleIntent({ type: 'open-devtools' }); break;
+      case 'open-console': await this.handleIntent({ type: 'open-console' }); break;
+      case 'view-source': await this.handleIntent({ type: 'view-source' }); break;
+      case 'screenshot': await this.handleIntent({ type: 'capture-screenshot', area: 'visible', target: 'file' }); break;
+      case 'screenshot-area': await this.handleIntent({ type: 'capture-screenshot', area: 'selection', target: 'file' }); break;
+      case 'save-page-mhtml': await this.handleIntent({ type: 'save-page-mhtml' }); break;
+      case 'toggle-reading-list': {
+        const tab = getFocusedTab(this.persisted);
+        if (tab) await this.handleIntent({ type: 'toggle-reading-list', url: tab.url, title: tab.title || tab.url });
+        break;
+      }
+      case 'toggle-zen-mode': await this.handleIntent({ type: 'toggle-focus-session', spaceId: this.persisted.activeSpaceId }); break;
+      case 'open-bookmarks': await this.handleIntent({ type: 'set-overlay', overlay: { mode: 'bookmarks' } }); break;
       case 'open-private-window': await this.handleIntent({ type: 'open-incognito' }); break;
       case 'little-kinex': await this.handleIntent({ type: 'open-url', url: 'kinex://newtab', target: 'little-kinex' }); break;
       case 'close-window': BrowserWindow.getFocusedWindow()?.close(); break;

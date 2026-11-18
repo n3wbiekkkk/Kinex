@@ -1,4 +1,18 @@
 import type { CommandId } from './commands';
+import type {
+  AccentPreference,
+  ClearDataScope,
+  CustomSearchEngine,
+  CustomShortcutBinding,
+  DensityPreference,
+  ReferrerPolicyPreference,
+  SidebarSide,
+  StartupBehavior,
+  ThemePreference,
+  ThirdPartyCookiesPolicy,
+  VibrancyPreference,
+  WebRtcPolicy,
+} from './settingsPreferences';
 
 export type TabLocation = 'topApp' | 'pinned' | 'unpinned';
 
@@ -117,6 +131,38 @@ export interface FolderItem {
   spaceId: string;
   name: string;
   collapsed: boolean;
+  parentId?: string;
+}
+
+export type AutoArchiveTimeout = '12h' | '24h' | '7d' | 'off';
+
+export interface ReadingListEntry {
+  url: string;
+  title: string;
+  addedAt: number;
+  spaceId?: string;
+}
+
+export type CookiePolicy = 'allow' | 'block-third-party' | 'block-all';
+
+export interface FocusDomainRule {
+  id: string;
+  pattern: string;
+  kind: 'allow' | 'deny';
+  enabled: boolean;
+}
+
+export interface FocusSessionState {
+  active: boolean;
+  spaceId: string;
+  startedAt: number | null;
+  endedAt: number | null;
+}
+
+export interface FocusConfig {
+  rulesBySpace: Record<string, FocusDomainRule[]>;
+  sessions: Record<string, FocusSessionState>;
+  privateSpaceIds?: string[];
 }
 
 export interface TabItem {
@@ -273,6 +319,9 @@ export type OverlayState =
   | { mode: 'find' }
   | { mode: 'settings'; section?: SettingsSection }
   | { mode: 'shields' }
+  | { mode: 'bookmarks' }
+  | { mode: 'reading-list' }
+  | { mode: 'share-qr' }
   | { mode: 'site-info' };
 
 export type ExtensionSource = 'folder' | 'crx' | 'webstore';
@@ -346,7 +395,32 @@ export interface PersistedKinexData {
   memorySaverTimeout: MemorySaverTimeout;
   memorySaverExemptPinned: boolean;
   newTabConfig: NewTabConfig;
+  autoArchiveTimeout: AutoArchiveTimeout;
+  readingList: ReadingListEntry[];
+  cookiePolicyByOrigin: Record<string, CookiePolicy>;
+  focusConfig: FocusConfig;
+  theme: ThemePreference;
+  sidebarSide: SidebarSide;
+  density: DensityPreference;
+  accent: AccentPreference;
+  vibrancy: VibrancyPreference;
+  showFullUrl: boolean;
+  defaultZoom: number;
+  startupBehavior: StartupBehavior;
+  startupUrls: string[];
+  customSearchEngine: CustomSearchEngine | null;
+  downloadFolder: string;
+  askBeforeDownload: boolean;
+  thirdPartyCookies: ThirdPartyCookiesPolicy;
+  referrerPolicy: ReferrerPolicyPreference;
+  webRtcPolicy: WebRtcPolicy;
+  customFilterUrls: string[];
+  siteWhitelist: string[];
+  customShortcuts: CustomShortcutBinding[];
+  welcomeCardDismissed: boolean;
 }
+
+export type { ClearDataScope };
 
 export interface KinexStateSnapshot extends PersistedKinexData {
   extensions: ExtensionViewModel[];
@@ -517,7 +591,79 @@ export type KinexIntent =
   | { type: 'uninstall-extension'; extensionId: string }
   | { type: 'set-extension-enabled'; extensionId: string; enabled: boolean; consent?: boolean }
   | { type: 'open-extension-popup'; extensionId: string; anchor?: { x: number; y: number; width: number; height: number } }
-  | { type: 'close-extension-popup' };
+  | { type: 'close-extension-popup' }
+  | {
+      type: 'show-web-context-menu';
+      linkUrl?: string;
+      imageUrl?: string;
+      selectionText?: string;
+      pageUrl?: string;
+      isEditable?: boolean;
+      mediaFlags?: { isImage?: boolean; isVideo?: boolean; isAudio?: boolean; hasVideo?: boolean; hasAudio?: boolean };
+    }
+  | {
+      type: 'capture-screenshot';
+      area: 'visible' | 'selection';
+      rect?: { x: number; y: number; width: number; height: number };
+      target?: 'clipboard' | 'file';
+      title?: string;
+    }
+  | { type: 'save-page-mhtml' }
+  | { type: 'open-console' }
+  | { type: 'view-source' }
+  | { type: 'download-url'; url: string }
+  | {
+      type: 'swipe-navigation';
+      deltaX: number;
+      deltaY: number;
+      x?: number;
+      viewportWidth?: number;
+      reducedMotion?: boolean;
+    }
+  | { type: 'set-auto-archive-timeout'; timeout: AutoArchiveTimeout }
+  | { type: 'query-archive-vault'; query: string; spaceId?: string }
+  | { type: 'move-folder'; folderId: string; parentId?: string }
+  | { type: 'set-site-cookie-policy'; origin: string; policy: CookiePolicy }
+  | { type: 'set-site-permission'; origin: string; permission: string; decision: 'allow' | 'deny' }
+  | { type: 'toggle-reading-list'; url: string; title: string }
+  | { type: 'start-focus-session'; spaceId: string }
+  | { type: 'end-focus-session'; spaceId: string }
+  | { type: 'toggle-focus-session'; spaceId: string }
+  | { type: 'save-focus-rule'; rule: FocusDomainRule }
+  | { type: 'delete-focus-rule'; ruleId: string; spaceId: string }
+  | {
+      type: 'open-link-peek';
+      url: string;
+      rect: { x: number; y: number; width: number; height: number };
+      partition?: string;
+    }
+  | { type: 'link-peek-action'; action: 'expand' | 'split' | 'close' | 'backdrop' }
+  | { type: 'show-share-qr'; url?: string }
+  | { type: 'set-theme'; theme: ThemePreference }
+  | { type: 'set-sidebar-side'; side: SidebarSide }
+  | { type: 'set-density'; density: DensityPreference }
+  | { type: 'set-accent'; accent: AccentPreference }
+  | { type: 'set-vibrancy'; vibrancy: VibrancyPreference }
+  | { type: 'set-show-full-url'; enabled: boolean }
+  | { type: 'set-default-zoom'; zoom: number }
+  | { type: 'set-startup-behavior'; behavior: StartupBehavior }
+  | { type: 'set-startup-urls'; urls: string[] }
+  | { type: 'set-custom-search-engine'; engine: CustomSearchEngine | null }
+  | { type: 'set-download-folder'; folder: string }
+  | { type: 'set-ask-before-download'; enabled: boolean }
+  | { type: 'set-third-party-cookies'; policy: ThirdPartyCookiesPolicy }
+  | { type: 'set-referrer-policy'; policy: ReferrerPolicyPreference }
+  | { type: 'set-webrtc-policy'; policy: WebRtcPolicy }
+  | { type: 'set-custom-filter-urls'; urls: string[] }
+  | { type: 'set-site-whitelist'; sites: string[] }
+  | { type: 'reset-settings' }
+  | { type: 'set-custom-shortcut'; id: string; accelerator: string }
+  | { type: 'remove-custom-shortcut'; id: string }
+  | { type: 'reset-custom-shortcuts' }
+  | { type: 'reset-welcome-card' }
+  | { type: 'clear-browsing-data-timed'; scopes: ClearDataScope[]; since: number; spaceId?: string }
+  | { type: 'remove-history-entry'; url: string }
+  | { type: 'remove-bookmark'; tabId: string };
 
 export type LittleKinexAction = 'back' | 'forward' | 'reload' | 'navigate' | 'promote' | 'close' | 'focus-content';
 

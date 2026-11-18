@@ -10,6 +10,22 @@ import {
   SEARCH_ENGINES,
   SPACE_THEME_PRESETS,
 } from '../shared/domain';
+import {
+  clampDefaultZoom,
+  isAccentPreference,
+  isDensityPreference,
+  isReferrerPolicy,
+  isSidebarSide,
+  isStartupBehavior,
+  isThemePreference,
+  isThirdPartyCookiesPolicy,
+  isVibrancyPreference,
+  isWebRtcPolicy,
+  normalizeCustomSearchEngine,
+  MAX_CUSTOM_FILTER_URLS,
+  MAX_SITE_WHITELIST,
+  MAX_STARTUP_URLS,
+} from '../shared/settingsPreferences';
 import type {
   MemorySaverTimeout,
   NewTabConfig,
@@ -542,6 +558,89 @@ export class KinexPersistence {
           typeof parsed.memorySaverExemptPinned === 'boolean'
             ? parsed.memorySaverExemptPinned
             : defaults.memorySaverExemptPinned,
+        autoArchiveTimeout:
+          typeof parsed.autoArchiveTimeout === 'string' &&
+          ['12h', '24h', '7d', 'off'].includes(parsed.autoArchiveTimeout)
+            ? (parsed.autoArchiveTimeout as PersistedKinexData['autoArchiveTimeout'])
+            : defaults.autoArchiveTimeout,
+        readingList: Array.isArray(parsed.readingList)
+          ? parsed.readingList
+              .filter(
+                (entry): entry is PersistedKinexData['readingList'][number] =>
+                  Boolean(entry) &&
+                  typeof entry.url === 'string' &&
+                  typeof entry.title === 'string' &&
+                  Number.isFinite(entry.addedAt)
+              )
+              .slice(0, 500)
+          : defaults.readingList,
+        cookiePolicyByOrigin:
+          parsed.cookiePolicyByOrigin && typeof parsed.cookiePolicyByOrigin === 'object' && !Array.isArray(parsed.cookiePolicyByOrigin)
+            ? Object.fromEntries(
+                Object.entries(parsed.cookiePolicyByOrigin).filter(
+                  ([origin, policy]) => typeof origin === 'string' && ['allow', 'block-third-party', 'block-all'].includes(String(policy))
+                )
+              ) as PersistedKinexData['cookiePolicyByOrigin']
+            : defaults.cookiePolicyByOrigin,
+        focusConfig: (() => {
+          const raw = parsed.focusConfig;
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaults.focusConfig;
+          const rulesBySpace: PersistedKinexData['focusConfig']['rulesBySpace'] = {};
+          if (raw.rulesBySpace && typeof raw.rulesBySpace === 'object' && !Array.isArray(raw.rulesBySpace)) {
+            for (const [spaceId, rules] of Object.entries(raw.rulesBySpace)) {
+              if (!Array.isArray(rules)) continue;
+              rulesBySpace[spaceId] = rules
+                .filter((rule): rule is PersistedKinexData['focusConfig']['rulesBySpace'][string][number] =>
+                  Boolean(rule) && typeof rule.id === 'string' && typeof rule.pattern === 'string' &&
+                  (rule.kind === 'allow' || rule.kind === 'deny') && typeof rule.enabled === 'boolean')
+                .slice(0, 100);
+            }
+          }
+          const sessions: PersistedKinexData['focusConfig']['sessions'] = {};
+          if (raw.sessions && typeof raw.sessions === 'object' && !Array.isArray(raw.sessions)) {
+            for (const [spaceId, session] of Object.entries(raw.sessions)) {
+              if (!session || typeof session !== 'object') continue;
+              sessions[spaceId] = {
+                active: (session as { active?: unknown }).active === true,
+                spaceId,
+                startedAt: Number.isFinite((session as { startedAt?: unknown }).startedAt) ? (session as { startedAt: number }).startedAt : null,
+                endedAt: Number.isFinite((session as { endedAt?: unknown }).endedAt) ? (session as { endedAt: number }).endedAt : null,
+              };
+            }
+          }
+          return { rulesBySpace, sessions };
+        })(),
+        theme: isThemePreference(parsed.theme) ? parsed.theme : defaults.theme,
+        sidebarSide: isSidebarSide(parsed.sidebarSide) ? parsed.sidebarSide : defaults.sidebarSide,
+        density: isDensityPreference(parsed.density) ? parsed.density : defaults.density,
+        accent: isAccentPreference(parsed.accent) ? parsed.accent : defaults.accent,
+        vibrancy: isVibrancyPreference(parsed.vibrancy) ? parsed.vibrancy : defaults.vibrancy,
+        showFullUrl: typeof parsed.showFullUrl === 'boolean' ? parsed.showFullUrl : defaults.showFullUrl,
+        defaultZoom: parsed.defaultZoom === undefined ? defaults.defaultZoom : clampDefaultZoom(parsed.defaultZoom),
+        startupBehavior: isStartupBehavior(parsed.startupBehavior) ? parsed.startupBehavior : defaults.startupBehavior,
+        startupUrls: Array.isArray(parsed.startupUrls)
+          ? parsed.startupUrls.filter((url): url is string => typeof url === 'string' && url.length <= 8192).slice(0, MAX_STARTUP_URLS)
+          : defaults.startupUrls,
+        customSearchEngine: normalizeCustomSearchEngine(parsed.customSearchEngine),
+        downloadFolder: typeof parsed.downloadFolder === 'string' ? parsed.downloadFolder : defaults.downloadFolder,
+        askBeforeDownload: typeof parsed.askBeforeDownload === 'boolean' ? parsed.askBeforeDownload : defaults.askBeforeDownload,
+        thirdPartyCookies: isThirdPartyCookiesPolicy(parsed.thirdPartyCookies) ? parsed.thirdPartyCookies : defaults.thirdPartyCookies,
+        referrerPolicy: isReferrerPolicy(parsed.referrerPolicy) ? parsed.referrerPolicy : defaults.referrerPolicy,
+        webRtcPolicy: isWebRtcPolicy(parsed.webRtcPolicy) ? parsed.webRtcPolicy : defaults.webRtcPolicy,
+        customFilterUrls: Array.isArray(parsed.customFilterUrls)
+          ? parsed.customFilterUrls.filter((url): url is string => typeof url === 'string' && /^https:\/\//i.test(url)).slice(0, MAX_CUSTOM_FILTER_URLS)
+          : defaults.customFilterUrls,
+        siteWhitelist: Array.isArray(parsed.siteWhitelist)
+          ? parsed.siteWhitelist.filter((site): site is string => typeof site === 'string' && site.length <= 512).slice(0, MAX_SITE_WHITELIST)
+          : defaults.siteWhitelist,
+        customShortcuts: Array.isArray(parsed.customShortcuts)
+          ? parsed.customShortcuts.filter(
+              (binding): binding is PersistedKinexData['customShortcuts'][number] =>
+                Boolean(binding) && typeof binding.id === 'string' && binding.id.length <= 128 &&
+                typeof binding.accelerator === 'string' && binding.accelerator.length <= 64
+            ).slice(0, 100)
+          : defaults.customShortcuts,
+        welcomeCardDismissed: typeof parsed.welcomeCardDismissed === 'boolean' ? parsed.welcomeCardDismissed : defaults.welcomeCardDismissed,
         newTabConfig: {
           preset:
             parsed.newTabConfig && VALID_NEW_TAB_PRESETS.has(parsed.newTabConfig.preset)

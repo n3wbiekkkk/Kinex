@@ -7,6 +7,8 @@ import {
   Layers,
   Plus,
   Puzzle,
+  RotateCcw,
+  Search,
   Settings,
   Shield,
   ShieldCheck,
@@ -14,6 +16,32 @@ import {
   X,
 } from 'lucide-react';
 import { SEARCH_ENGINES } from '../../shared/domain';
+import {
+  ACCENT_PREFERENCES,
+  DENSITY_PREFERENCES,
+  REFERRER_POLICIES,
+  SIDEBAR_SIDES,
+  THEME_PREFERENCES,
+  VIBRANCY_PREFERENCES,
+  detectShortcutConflicts,
+  findShortcutConflict,
+  isValidCustomFilterUrl,
+  normalizeCustomSearchEngine,
+  readSettingsPreferences,
+  searchSettings,
+  type AccentPreference,
+  type ClearDataScope,
+  type CustomShortcutBinding,
+  type DensityPreference,
+  type ReferrerPolicyPreference,
+  type SidebarSide,
+  type StartupBehavior,
+  type ThemePreference,
+  type ThirdPartyCookiesPolicy,
+  type VibrancyPreference,
+  type Wave2Intent,
+  type WebRtcPolicy,
+} from '../../shared/settingsPreferences';
 import kinexLogo from '../assets/kinex-logo.png';
 import type {
   KinexIntent,
@@ -30,6 +58,57 @@ interface SettingsViewProps {
   state: KinexStateSnapshot;
   initialSection?: SettingsSection;
   dispatch: (intent: KinexIntent) => void;
+}
+
+const SettingToggle: React.FC<{
+  title: string;
+  description?: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}> = ({ title, description, label, checked, onChange }) => (
+  <div className="settings-row">
+    <div>
+      <div className="settings-row-title">{title}</div>
+      {description && <div className="settings-row-desc">{description}</div>}
+    </div>
+    <input type="checkbox" aria-label={label} checked={checked} onChange={(e) => onChange(e.target.checked)} />
+  </div>
+);
+
+const SettingSelect: React.FC<{
+  label: string;
+  value: string;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+  width?: number;
+}> = ({ label, value, options, onChange, width = 180 }) => (
+  <div className="settings-row">
+    <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{label}</span>
+    <select
+      className="text-input"
+      style={{ width }}
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>{option.label}</option>
+      ))}
+    </select>
+  </div>
+);
+
+function eventToAccelerator(event: React.KeyboardEvent<HTMLInputElement>): string {
+  if (['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) return '';
+  const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+  const parts: string[] = [];
+  if (event.metaKey) parts.push('CmdOrCtrl');
+  if (event.ctrlKey) parts.push('Ctrl');
+  if (event.altKey) parts.push('Alt');
+  if (event.shiftKey) parts.push('Shift');
+  parts.push(key);
+  return parts.join('+');
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -51,6 +130,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     cookies: false,
     archived: false,
   });
+  const [settingsQuery, setSettingsQuery] = useState('');
+  const [customEngineName, setCustomEngineName] = useState('');
+  const [customEngineTemplate, setCustomEngineTemplate] = useState('');
+  const [customEngineKeyword, setCustomEngineKeyword] = useState('');
+  const [customFilterUrl, setCustomFilterUrl] = useState('');
+  const [whitelistInput, setWhitelistInput] = useState('');
+  const [startupUrlInput, setStartupUrlInput] = useState('');
+  const [downloadFolderInput, setDownloadFolderInput] = useState('');
+  const [shortcutId, setShortcutId] = useState('');
+  const [shortcutAccelerator, setShortcutAccelerator] = useState('');
+  const [clearTimeRange, setClearTimeRange] = useState<'1h' | '24h' | '7d' | 'all'>('24h');
+  const [clearSpaceId, setClearSpaceId] = useState('');
+
+  const stateRecord = state as unknown as Record<string, unknown>;
+  const prefs = readSettingsPreferences(stateRecord);
+  const customShortcuts: CustomShortcutBinding[] = Array.isArray(stateRecord.customShortcuts)
+    ? (stateRecord.customShortcuts as CustomShortcutBinding[])
+    : [];
+  const emit = (intent: KinexIntent | Wave2Intent) => dispatch(intent as KinexIntent);
+  const shortcutConflicts = detectShortcutConflicts(customShortcuts);
+  const pendingShortcutConflict = findShortcutConflict(shortcutAccelerator, customShortcuts);
 
   const up = state.updateStatus;
   const describeUpdate = () => {
@@ -89,6 +189,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { id: 'updates', label: 'Updates & About', icon: <ArrowUpCircle size={15} /> },
   ];
 
+  const queryActive = settingsQuery.trim().length > 0;
+  const matchedSections = queryActive
+    ? new Set(searchSettings(settingsQuery).map((entry) => entry.section))
+    : null;
+  const visibleNavItems = matchedSections
+    ? navItems.filter((item) => matchedSections.has(item.id))
+    : navItems;
+
   return (
       <div className="settings-window" role="dialog" aria-modal="true" aria-label="Kinex Settings" onClick={(e) => e.stopPropagation()}>
       <nav className="settings-nav" aria-label="Settings Sections">
@@ -96,7 +204,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <img src={kinexLogo} alt="Kinex" width={16} height={16} style={{ borderRadius: 4, background: '#fff', padding: 2 }} />
           <span>Kinex Settings</span>
         </div>
-        {navItems.map((item) => (
+        {visibleNavItems.map((item) => (
           <button
             key={item.id}
             aria-current={section === item.id ? 'page' : undefined}
@@ -113,16 +221,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div className="settings-content">
         <header className="settings-content-header">
           <span>{navItems.find((i) => i.id === section)?.label}</span>
-          <button
-            className="icon-btn"
-            aria-label="Close Settings"
-            onClick={() => dispatch({ type: 'set-overlay', overlay: { mode: 'none' } })}
-          >
-            <X size={16} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              className="text-input"
+              type="search"
+              style={{ width: 220 }}
+              aria-label="Search settings"
+              placeholder="Search settings..."
+              value={settingsQuery}
+              onChange={(event) => {
+                const value = event.target.value;
+                setSettingsQuery(value);
+                const first = searchSettings(value)[0]?.section as SettingsSection | undefined;
+                setSection(first ?? ('' as SettingsSection));
+              }}
+            />
+            <button
+              className="icon-btn"
+              aria-label="Close Settings"
+              onClick={() => dispatch({ type: 'set-overlay', overlay: { mode: 'none' } })}
+            >
+              <X size={16} />
+            </button>
+          </div>
         </header>
 
         <div className="settings-content-body">
+          {queryActive && visibleNavItems.length === 0 && (
+            <div className="empty-state">
+              <Search size={22} style={{ opacity: 0.65 }} />
+              <div className="empty-state-title">No settings found</div>
+              <div className="empty-state-sub">Try a different search term.</div>
+            </div>
+          )}
           {section === 'general' && (
             <>
               <div className="settings-group">
@@ -302,6 +433,206 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }
                   />
                 </div>
+                <div className="settings-row">
+                  <div>
+                    <div className="settings-row-title">Welcome Tips</div>
+                    <div className="settings-row-desc">Replay the three-tip welcome card on the next New Tab.</div>
+                  </div>
+                  <button className="btn-secondary" onClick={() => emit({ type: 'reset-welcome-card' })}>
+                    <RotateCcw size={13} /> Replay
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-group">
+                <div className="settings-row-title">Appearance &amp; Layout</div>
+                <SettingSelect
+                  label="Theme"
+                  value={prefs.theme}
+                  options={THEME_PREFERENCES.map((value) => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))}
+                  onChange={(value) => emit({ type: 'set-theme', theme: value as ThemePreference })}
+                />
+                <div className="settings-row">
+                  <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Sidebar Side</span>
+                  <div className="seg-group" role="group" aria-label="Sidebar Side">
+                    {SIDEBAR_SIDES.map((side) => (
+                      <button
+                        key={side}
+                        className={`seg-btn ${prefs.sidebarSide === side ? 'active' : ''}`}
+                        aria-pressed={prefs.sidebarSide === side}
+                        onClick={() => emit({ type: 'set-sidebar-side', side: side as SidebarSide })}
+                      >
+                        {side === 'left' ? 'Left' : 'Right'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <SettingSelect
+                  label="Density"
+                  value={prefs.density}
+                  options={DENSITY_PREFERENCES.map((value) => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))}
+                  onChange={(value) => emit({ type: 'set-density', density: value as DensityPreference })}
+                />
+                <div className="settings-row">
+                  <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Accent</span>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {ACCENT_PREFERENCES.map((accent) => (
+                      <button
+                        key={accent}
+                        aria-pressed={prefs.accent === accent}
+                        className={`btn-secondary ${prefs.accent === accent ? 'selected' : ''}`}
+                        onClick={() => emit({ type: 'set-accent', accent: accent as AccentPreference })}
+                      >
+                        {accent}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <SettingSelect
+                  label="Window Vibrancy"
+                  value={prefs.vibrancy}
+                  options={VIBRANCY_PREFERENCES.map((value) => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))}
+                  onChange={(value) => emit({ type: 'set-vibrancy', vibrancy: value as VibrancyPreference })}
+                />
+                <SettingToggle
+                  title="Show Full URL"
+                  description="Display the complete address instead of only the domain in the address bar."
+                  label="Show Full URL"
+                  checked={prefs.showFullUrl}
+                  onChange={(enabled) => emit({ type: 'set-show-full-url', enabled })}
+                />
+              </div>
+
+              <div className="settings-group">
+                <div className="settings-row-title">Zoom &amp; Startup</div>
+                <div className="settings-row">
+                  <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Default Zoom</span>
+                  <select
+                    className="text-input"
+                    style={{ width: 140 }}
+                    aria-label="Default Zoom"
+                    value={String(prefs.defaultZoom)}
+                    onChange={(e) => emit({ type: 'set-default-zoom', zoom: Number(e.target.value) })}
+                  >
+                    {[0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2].map((zoom) => (
+                      <option key={zoom} value={zoom}>{Math.round(zoom * 100)}%</option>
+                    ))}
+                  </select>
+                </div>
+                <SettingSelect
+                  label="On Startup"
+                  value={prefs.startupBehavior}
+                  options={[
+                    { value: 'new-tab', label: 'Open the New Tab page' },
+                    { value: 'restore-session', label: 'Restore the last session' },
+                    { value: 'specific-pages', label: 'Open specific pages' },
+                  ]}
+                  onChange={(value) => emit({ type: 'set-startup-behavior', behavior: value as StartupBehavior })}
+                  width={220}
+                />
+                <div className="settings-row">
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="settings-row-title">Startup Pages</div>
+                    <div className="settings-row-desc">Applied when "Open specific pages" is selected.</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <input
+                        className="text-input"
+                        placeholder="https://example.com"
+                        aria-label="Startup page URL"
+                        value={startupUrlInput}
+                        onChange={(e) => setStartupUrlInput(e.target.value)}
+                      />
+                      <button
+                        className="btn-secondary"
+                        disabled={!startupUrlInput.trim()}
+                        onClick={() => {
+                          emit({ type: 'set-startup-urls', urls: [...prefs.startupUrls, startupUrlInput.trim()].slice(0, 10) });
+                          setStartupUrlInput('');
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                    {prefs.startupUrls.map((url, index) => (
+                      <div key={`${url}:${index}`} className="settings-row">
+                        <span style={{ fontSize: 12 }}>{url}</span>
+                        <button
+                          className="icon-btn"
+                          aria-label={`Remove startup page ${url}`}
+                          onClick={() => emit({ type: 'set-startup-urls', urls: prefs.startupUrls.filter((_, i) => i !== index) })}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-group">
+                <div className="settings-row-title">Custom Search Engine</div>
+                <div className="settings-row-desc">
+                  Template must be an HTTPS URL containing <code>%s</code>. Keyword is used as <code>@keyword</code> in the address bar.
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input className="text-input" style={{ width: 130 }} placeholder="Name" aria-label="Custom search engine name" value={customEngineName} onChange={(e) => setCustomEngineName(e.target.value)} />
+                  <input className="text-input" style={{ flex: '2 1 240px' }} placeholder="https://site/search?q=%s" aria-label="Custom search template" value={customEngineTemplate} onChange={(e) => setCustomEngineTemplate(e.target.value)} />
+                  <input className="text-input" style={{ width: 100 }} placeholder="@kw" aria-label="Custom search keyword" value={customEngineKeyword} onChange={(e) => setCustomEngineKeyword(e.target.value)} />
+                  <button
+                    className="btn-primary"
+                    disabled={!normalizeCustomSearchEngine({ name: customEngineName, template: customEngineTemplate, keyword: customEngineKeyword })}
+                    onClick={() => {
+                      const engine = normalizeCustomSearchEngine({ name: customEngineName, template: customEngineTemplate, keyword: customEngineKeyword });
+                      if (engine) emit({ type: 'set-custom-search-engine', engine });
+                    }}
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    disabled={!prefs.customSearchEngine}
+                    onClick={() => emit({ type: 'set-custom-search-engine', engine: null })}
+                  >
+                    Remove
+                  </button>
+                </div>
+                {prefs.customSearchEngine && (
+                  <div className="settings-row-desc">
+                    Current: {prefs.customSearchEngine.name} · {prefs.customSearchEngine.keyword} · {prefs.customSearchEngine.template}
+                  </div>
+                )}
+              </div>
+
+              <div className="settings-group">
+                <div className="settings-row-title">Downloads</div>
+                <div className="settings-row">
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="settings-row-title">Download Folder</div>
+                    <div className="settings-row-desc">Leave empty to use the system default Downloads folder.</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        className="text-input"
+                        placeholder={prefs.downloadFolder || '~/Downloads'}
+                        aria-label="Download folder"
+                        value={downloadFolderInput}
+                        onChange={(e) => setDownloadFolderInput(e.target.value)}
+                      />
+                      <button
+                        className="btn-secondary"
+                        onClick={() => emit({ type: 'set-download-folder', folder: downloadFolderInput.trim() })}
+                      >
+                        Set
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <SettingToggle
+                  title="Ask Before Downloading"
+                  description="Show a save dialog before each download starts."
+                  label="Ask Before Downloading"
+                  checked={prefs.askBeforeDownload}
+                  onChange={(enabled) => emit({ type: 'set-ask-before-download', enabled })}
+                />
               </div>
             </>
           )}
@@ -447,6 +778,77 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div className="settings-group">
+                <div className="settings-row-title">Network Privacy</div>
+                <SettingSelect
+                  label="Third-Party Cookies"
+                  value={prefs.thirdPartyCookies}
+                  options={[
+                    { value: 'block', label: 'Block third-party cookies' },
+                    { value: 'allow', label: 'Allow third-party cookies' },
+                    { value: 'incognito-only', label: 'Block except in Private windows' },
+                  ]}
+                  onChange={(value) => emit({ type: 'set-third-party-cookies', policy: value as ThirdPartyCookiesPolicy })}
+                  width={230}
+                />
+                <SettingSelect
+                  label="Referrer Policy"
+                  value={prefs.referrerPolicy}
+                  options={REFERRER_POLICIES.map((value) => ({ value, label: value }))}
+                  onChange={(value) => emit({ type: 'set-referrer-policy', policy: value as ReferrerPolicyPreference })}
+                  width={240}
+                />
+                <SettingSelect
+                  label="WebRTC IP Policy"
+                  value={prefs.webRtcPolicy}
+                  options={[
+                    { value: 'default', label: 'Default' },
+                    { value: 'public-only', label: 'Public IP only (recommended)' },
+                    { value: 'disabled', label: 'Disable WebRTC' },
+                  ]}
+                  onChange={(value) => emit({ type: 'set-webrtc-policy', policy: value as WebRtcPolicy })}
+                  width={230}
+                />
+              </div>
+
+              <div className="settings-group">
+                <div className="settings-row-title">Site Whitelist</div>
+                <div className="settings-row-desc">
+                  Hosts or <code>*.domain</code> patterns excluded from tracking protections.
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    className="text-input"
+                    placeholder="example.com or *.example.com"
+                    aria-label="Site whitelist pattern"
+                    value={whitelistInput}
+                    onChange={(e) => setWhitelistInput(e.target.value)}
+                  />
+                  <button
+                    className="btn-secondary"
+                    disabled={!whitelistInput.trim()}
+                    onClick={() => {
+                      emit({ type: 'set-site-whitelist', sites: [...prefs.siteWhitelist, whitelistInput.trim()] });
+                      setWhitelistInput('');
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+                {prefs.siteWhitelist.map((site) => (
+                  <div key={site} className="settings-row">
+                    <span style={{ fontSize: 12 }}>{site}</span>
+                    <button
+                      className="icon-btn"
+                      aria-label={`Remove ${site} from whitelist`}
+                      onClick={() => emit({ type: 'set-site-whitelist', sites: prefs.siteWhitelist.filter((item) => item !== site) })}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="settings-group">
                 <div className="settings-row-title">Clear Browsing Data</div>
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5 }}>
                   {(
@@ -484,6 +886,57 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     Clear Selected Data
                   </button>
                 </div>
+                <div className="settings-row">
+                  <div>
+                    <div className="settings-row-title">Timed &amp; Per-Space Clearing</div>
+                    <div className="settings-row-desc">Restrict clearing to a time range and optionally one Space.</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <select
+                      className="text-input"
+                      style={{ width: 130 }}
+                      aria-label="Clear time range"
+                      value={clearTimeRange}
+                      onChange={(e) => setClearTimeRange(e.target.value as typeof clearTimeRange)}
+                    >
+                      <option value="1h">Last hour</option>
+                      <option value="24h">Last 24 hours</option>
+                      <option value="7d">Last 7 days</option>
+                      <option value="all">All time</option>
+                    </select>
+                    <select
+                      className="text-input"
+                      style={{ width: 150 }}
+                      aria-label="Clear Space"
+                      value={clearSpaceId}
+                      onChange={(e) => setClearSpaceId(e.target.value)}
+                    >
+                      <option value="">All Spaces</option>
+                      {state.spaces.map((space) => (
+                        <option key={space.id} value={space.id}>{space.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => {
+                        const scopes = (
+                          Object.keys(clearScopes) as Array<keyof typeof clearScopes>
+                        ).filter((k) => clearScopes[k]) as ClearDataScope[];
+                        const duration = clearTimeRange === '1h' ? 3_600_000
+                          : clearTimeRange === '24h' ? 86_400_000
+                          : clearTimeRange === '7d' ? 604_800_000 : 0;
+                        emit({
+                          type: 'clear-browsing-data-timed',
+                          scopes,
+                          since: duration ? Date.now() - duration : 0,
+                          ...(clearSpaceId ? { spaceId: clearSpaceId } : {}),
+                        });
+                      }}
+                    >
+                      Clear Timed
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="settings-group">
@@ -512,6 +965,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                   ))
                 )}
+              </div>
+
+              <div className="settings-group">
+                <div className="settings-row">
+                  <div>
+                    <div className="settings-row-title">Reset Settings</div>
+                    <div className="settings-row-desc">
+                      Restore all preferences to their defaults. Browsing data and permissions are not affected.
+                    </div>
+                  </div>
+                  <button
+                    className="btn-danger"
+                    onClick={() => {
+                      if (window.confirm('Reset all Kinex preferences to their defaults?')) {
+                        emit({ type: 'reset-settings' });
+                      }
+                    }}
+                  >
+                    Reset Settings
+                  </button>
+                </div>
               </div>
             </>
           )}
@@ -750,10 +1224,128 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   ))
                 )}
               </div>
+
+              <div className="settings-group">
+                <div className="settings-row-title">Custom Filter URLs</div>
+                <div className="settings-row-desc">
+                  Add HTTPS filter-list subscriptions. Unsafe or malformed URLs are ignored; existing bundled lists stay intact.
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    className="text-input"
+                    placeholder="https://example.com/filters.txt"
+                    aria-label="Custom filter URL"
+                    value={customFilterUrl}
+                    onChange={(e) => setCustomFilterUrl(e.target.value)}
+                  />
+                  <button
+                    className="btn-secondary"
+                    disabled={!isValidCustomFilterUrl(customFilterUrl)}
+                    onClick={() => {
+                      if (prefs.customFilterUrls.includes(customFilterUrl.trim())) {
+                        setCustomFilterUrl('');
+                        return;
+                      }
+                      emit({ type: 'set-custom-filter-urls', urls: [...prefs.customFilterUrls, customFilterUrl.trim()] });
+                      setCustomFilterUrl('');
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+                {prefs.customFilterUrls.length === 0 ? (
+                  <div className="settings-row-desc">No custom filter subscriptions configured.</div>
+                ) : prefs.customFilterUrls.map((url) => (
+                  <div key={url} className="settings-row">
+                    <span style={{ fontSize: 12 }}>{url}</span>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => emit({ type: 'set-custom-filter-urls', urls: prefs.customFilterUrls.filter((item) => item !== url) })}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
             </>
           )}
 
           {section === 'shortcuts' && (
+            <>
+            <div className="settings-group">
+              <div className="settings-row-title">Custom Shortcuts</div>
+              <div className="settings-row-desc">
+                Press your chord in the shortcut field. Conflicts with built-in or other custom chords are reported before saving.
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input
+                  className="text-input"
+                  style={{ width: 180 }}
+                  placeholder="Action id (e.g. open-mail)"
+                  aria-label="Custom shortcut id"
+                  value={shortcutId}
+                  onChange={(e) => setShortcutId(e.target.value)}
+                />
+                <input
+                  className="text-input"
+                  style={{ width: 200 }}
+                  placeholder="Press shortcut keys…"
+                  aria-label="Custom shortcut chord"
+                  value={shortcutAccelerator}
+                  onKeyDown={(event) => {
+                    event.preventDefault();
+                    setShortcutAccelerator(eventToAccelerator(event));
+                  }}
+                  readOnly
+                />
+                <button
+                  className="btn-primary"
+                  disabled={!shortcutId.trim() || !shortcutAccelerator || Boolean(pendingShortcutConflict)}
+                  onClick={() => {
+                    emit({ type: 'set-custom-shortcut', id: shortcutId.trim(), accelerator: shortcutAccelerator });
+                    setShortcutId('');
+                    setShortcutAccelerator('');
+                  }}
+                >
+                  Save
+                </button>
+                <button
+                  className="btn-secondary"
+                  disabled={customShortcuts.length === 0}
+                  onClick={() => emit({ type: 'reset-custom-shortcuts' })}
+                >
+                  Reset All
+                </button>
+              </div>
+              {pendingShortcutConflict && (
+                <div className="settings-row-desc" style={{ color: 'var(--warning)' }}>
+                  Conflicts with {pendingShortcutConflict.source === 'built-in' ? 'built-in command' : 'custom shortcut'} "{pendingShortcutConflict.conflictsWithId}". Choose another chord.
+                </div>
+              )}
+              {customShortcuts.map((binding) => {
+                const conflict = shortcutConflicts.find((entry) => entry.bindingId === binding.id);
+                return (
+                  <div key={binding.id} className="settings-row">
+                    <div>
+                      <span style={{ fontSize: 13 }}>{binding.id}</span>{' '}
+                      <kbd className="kbd-badge">{formatShortcut(binding.accelerator)}</kbd>
+                      {conflict && (
+                        <div className="settings-row-desc" style={{ color: 'var(--warning)' }}>
+                          Conflicts with {conflict.conflictsWithId}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      className="icon-btn"
+                      aria-label={`Remove custom shortcut ${binding.id}`}
+                      onClick={() => emit({ type: 'remove-custom-shortcut', id: binding.id })}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
             <div className="settings-group">
               <p className="settings-row-desc">F6 cycles between website content and browser controls. Use arrows to navigate Sidebar tabs, ⌥↑ / ⌥↓ to reorder tabs, Shift+F10 for tab actions, and ⌥← / ⌥→ to reorder Spaces. Tab and Shift+Tab reach every control. Escape closes the current dialog and restores focus.</p>
               {BROWSER_COMMANDS.filter((command) => command.accelerator).map((command) => (
@@ -763,6 +1355,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               ))}
             </div>
+            </>
           )}
 
           {section === 'extensions' && (

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -22,6 +22,8 @@ import {
 import { extractHostname, getActiveSplit, resolveEffectiveShieldsMode } from '../../shared/domain';
 import { BROWSER_COMMANDS, formatShortcut } from '../../shared/commands';
 import type { KinexIntent, KinexStateSnapshot, ReaderTheme } from '../../shared/types';
+import { SiteControlPopover, type SiteControlViewModel } from './SiteControlPopover';
+import { ReaderControls } from './ReaderControls';
 
 interface TopControlsProps {
   state: KinexStateSnapshot;
@@ -48,6 +50,43 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
   const activeExtensions = state.extensions.filter(
     (extension) => extension.enabled && extension.spaceId === state.activeSpaceId && (extension.actionPopup || extension.badge?.text)
   );
+  const [siteControlOpen, setSiteControlOpen] = useState(false);
+  const siteModel: SiteControlViewModel | null = focusedTab
+    ? (() => {
+        let origin = '';
+        try { origin = new URL(focusedTab.url).origin; } catch { origin = ''; }
+        const internal = /^(kinex|about|devtools|chrome):/i.test(focusedTab.url);
+        const secure = /^https:/i.test(focusedTab.url);
+        return {
+          url: focusedTab.url,
+          origin,
+          host: extractHostname(focusedTab.url) || focusedTab.url,
+          isInternal: internal,
+          tls: {
+            state: internal ? 'internal' : secure ? 'secure' : 'insecure',
+            secure,
+            label: internal ? 'internal' : secure ? 'secure' : 'insecure',
+          },
+          shields: {
+            mode: focusedEffectiveShields.mode,
+            source: focusedEffectiveShields.source,
+            domainKey: focusedEffectiveShields.domainKey,
+          },
+          cookiePolicy: {
+            effective: state.cookiePolicyByOrigin[origin] ?? 'block-third-party',
+            source: state.cookiePolicyByOrigin[origin] ? 'site' : 'global',
+            origin,
+          },
+          permissions: state.sitePermissions
+            .filter((permission) => permission.origin === origin)
+            .map((permission) => ({
+              permission: permission.permission,
+              status: permission.decision === 'allow' ? ('allowed' as const) : ('denied' as const),
+              origin: permission.origin,
+            })),
+        };
+      })()
+    : null;
 
   return (
     <div className={`top-controls ${state.sidebarOpen ? '' : 'sidebar-closed'}`} role="toolbar" aria-label="Browser Toolbar" onKeyDown={(event) => {
@@ -371,6 +410,47 @@ export const TopControls: React.FC<TopControlsProps> = ({ state, dispatch }) => 
           )}
         </button>
       ))}
+
+      {focusedTab && (
+        <button
+          className="icon-btn"
+          aria-label="Site controls"
+          title="Site controls"
+          aria-pressed={siteControlOpen}
+          onClick={() => setSiteControlOpen((open) => !open)}
+        >
+          <Shield size={15} />
+        </button>
+      )}
+      {siteControlOpen && siteModel && (
+        <SiteControlPopover
+          model={siteModel}
+          reducedMotion={state.reducedEffects}
+          onClose={() => setSiteControlOpen(false)}
+          onShieldsModeChange={(mode) => {
+            dispatch({ type: 'set-shields-site-mode', domain: siteModel.shields.domainKey || siteModel.host, mode });
+          }}
+          onCookiePolicyChange={(policy) => {
+            if (siteModel.origin) dispatch({ type: 'set-site-cookie-policy', origin: siteModel.origin, policy });
+          }}
+          onPermissionChange={(permission, decision) => {
+            if (siteModel.origin) dispatch({ type: 'set-site-permission', origin: siteModel.origin, permission, decision });
+          }}
+        />
+      )}
+      {focusedTab && state.readerTabIds.includes(focusedTab.id) && (
+        <ReaderControls
+          active
+          options={state.readerOptions}
+          inReadingList={state.readingList.some((entry) => entry.url === focusedTab.url)}
+          reducedMotion={state.reducedEffects}
+          onToggleReader={() => dispatch({ type: 'toggle-reader-mode', tabId: focusedTab.id })}
+          onFontSizeChange={(fontSize) => dispatch({ type: 'set-reader-options', options: { fontSize } })}
+          onThemeChange={(theme) => dispatch({ type: 'set-reader-options', options: { theme } })}
+          onToggleReadingList={() => dispatch({ type: 'toggle-reading-list', url: focusedTab.url, title: focusedTab.title || focusedTab.url })}
+          onClose={() => dispatch({ type: 'toggle-reader-mode', tabId: focusedTab.id })}
+        />
+      )}
     </div>
   );
 };

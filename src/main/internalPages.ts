@@ -20,6 +20,7 @@ export interface NewTabRenderContext {
   frequent?: NewTabShortcutItem[];
   getReaderHtml?: (readerUrl: string) => string | null;
   performanceSnapshot?: PerformanceSnapshot;
+  welcomeCardDismissed?: boolean;
 }
 
 let cachedLogoDataUri: string | null = null;
@@ -559,9 +560,20 @@ export function renderKinexInternalHtml(
     ${showFavoritesBlock ? renderShortcutTiles(favoriteItems, 'Favorites') : ''}
     ${showFrequentBlock ? renderShortcutTiles(frequentItems, 'Frequently Visited') : ''}
 
+    ${context.welcomeCardDismissed ? '' : `
+    <section class="welcome-card" id="welcome-card" aria-label="Welcome to Kinex">
+      <button class="welcome-dismiss" id="welcome-dismiss" aria-label="Dismiss welcome tips">×</button>
+      <h2>Three quick tips</h2>
+      <ol>
+        <li>Press <kbd>⌘T</kbd> to search tabs, history and commands — or do math inline.</li>
+        <li>Press <kbd>⌃⌘S</kbd> to collapse the Sidebar; hover its edge to peek.</li>
+        <li>Use Spaces to keep work and personal browsing in separate Profiles.</li>
+      </ol>
+    </section>`}
+
     <div class="hints">
       <span class="hint"><kbd>⌘T</kbd> Command Bar</span>
-      <span class="hint"><kbd>⌘S</kbd> Sidebar</span>
+      <span class="hint"><kbd>⌃⌘S</kbd> Sidebar</span>
       <span class="hint"><kbd>⌘⇧\\</kbd> Split</span>
       <span class="hint"><kbd>⌘,</kbd> Settings</span>
     </div>
@@ -575,6 +587,14 @@ export function renderKinexInternalHtml(
       };
       tick();
       setInterval(tick, 15000);
+    }
+    const welcome = document.getElementById('welcome-card');
+    const dismiss = document.getElementById('welcome-dismiss');
+    if (dismiss && welcome) {
+      dismiss.addEventListener('click', () => {
+        welcome.remove();
+        try { localStorage.setItem('kinex.welcome.dismissed', '1'); } catch { /* storage may be unavailable */ }
+      });
     }
   </script>
 </body>

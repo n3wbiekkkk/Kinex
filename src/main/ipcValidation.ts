@@ -14,6 +14,28 @@ import type {
   TabLocation,
 } from '../shared/types';
 import { isSafeNavigationUrl, isSafeUpdateFeedUrl } from './security';
+import { sanitizeContextPayload } from './contextMenu';
+import { isAutoArchiveTimeout } from './archiveManager';
+import { validateSiteControlMutation } from './siteControl';
+import { validateFocusRule } from './zenFocus';
+import { isLinkPeekAction, isLinkPeekUrl } from './linkPeek';
+import {
+  clampDefaultZoom,
+  isAccentPreference,
+  isClearDataScope,
+  isDensityPreference,
+  isReferrerPolicy,
+  isSidebarSide,
+  isStartupBehavior,
+  isThemePreference,
+  isThirdPartyCookiesPolicy,
+  isVibrancyPreference,
+  isWebRtcPolicy,
+  normalizeCustomSearchEngine,
+  MAX_CUSTOM_FILTER_URLS,
+  MAX_SITE_WHITELIST,
+  MAX_STARTUP_URLS,
+} from '../shared/settingsPreferences';
 
 export type TrustedIpcRole = 'shell' | 'overlay' | 'little-kinex' | 'private-header';
 
@@ -93,6 +115,19 @@ function isAnchorRect(value: unknown): value is AnchorRectInput | undefined {
   return ['x', 'y', 'width', 'height'].every(
     (key) => isFiniteNumber(value[key]) && Math.abs(value[key] as number) <= 20000
   );
+}
+
+function isBoundedRect(value: unknown): value is { x: number; y: number; width: number; height: number } {
+  if (!isRecord(value)) return false;
+  return (
+    ['x', 'y', 'width', 'height'].every((key) => isFiniteNumber(value[key]) && Math.abs(value[key] as number) <= 20000) &&
+    (value.width as number) >= 0 &&
+    (value.height as number) >= 0
+  );
+}
+
+function isBoundedStringArray(value: unknown, max: number, maxLen = MAX_URL_LEN): value is string[] {
+  return Array.isArray(value) && value.length <= max && value.every((item) => isNonEmptyString(item, maxLen));
 }
 
 function isSpaceTheme(value: unknown): value is SpaceTheme {
@@ -791,6 +826,238 @@ export function validateIntent(raw: unknown): ValidationResult<KinexIntent> {
         },
       };
     }
+
+    case 'show-web-context-menu': {
+      const safe = sanitizeContextPayload(raw);
+      return {
+        ok: true,
+        value: {
+          type: 'show-web-context-menu',
+          linkUrl: safe.navigationLinkUrl ?? undefined,
+          imageUrl: safe.imageUrl ?? undefined,
+          selectionText: safe.selectionText ?? undefined,
+          pageUrl: safe.pageLinkUrl ?? undefined,
+          isEditable: safe.isEditable,
+          mediaFlags: safe.media,
+        },
+      };
+    }
+
+    case 'capture-screenshot': {
+      if (raw.area !== 'visible' && raw.area !== 'selection') {
+        return { ok: false, error: 'Invalid screenshot area' };
+      }
+      if (raw.rect !== undefined && !isBoundedRect(raw.rect)) {
+        return { ok: false, error: 'Invalid capture rect' };
+      }
+      if (raw.target !== undefined && raw.target !== 'clipboard' && raw.target !== 'file') {
+        return { ok: false, error: 'Invalid screenshot target' };
+      }
+      if (!isOptionalString(raw.title, 256)) {
+        return { ok: false, error: 'Invalid screenshot title' };
+      }
+      return {
+        ok: true,
+        value: {
+          type: 'capture-screenshot',
+          area: raw.area,
+          ...(raw.rect ? { rect: raw.rect } : {}),
+          ...(raw.target ? { target: raw.target } : {}),
+          ...(raw.title ? { title: raw.title } : {}),
+        },
+      };
+    }
+
+    case 'save-page-mhtml':
+      return { ok: true, value: { type: 'save-page-mhtml' } };
+
+    case 'open-console':
+      return { ok: true, value: { type: 'open-console' } };
+
+    case 'view-source':
+      return { ok: true, value: { type: 'view-source' } };
+
+    case 'download-url':
+      return isNonEmptyString(raw.url, MAX_URL_LEN) && isSafeNavigationUrl(raw.url)
+        ? { ok: true, value: { type: 'download-url', url: raw.url } }
+        : { ok: false, error: 'Invalid download URL' };
+
+    case 'swipe-navigation':
+      return isFiniteNumber(raw.deltaX) && isFiniteNumber(raw.deltaY) &&
+        Math.abs(raw.deltaX) <= 20000 && Math.abs(raw.deltaY) <= 20000 &&
+        (raw.x === undefined || isFiniteNumber(raw.x)) &&
+        (raw.viewportWidth === undefined || isFiniteNumber(raw.viewportWidth)) &&
+        (raw.reducedMotion === undefined || typeof raw.reducedMotion === 'boolean')
+        ? {
+            ok: true,
+            value: {
+              type: 'swipe-navigation',
+              deltaX: raw.deltaX,
+              deltaY: raw.deltaY,
+              ...(raw.x !== undefined ? { x: raw.x } : {}),
+              ...(raw.viewportWidth !== undefined ? { viewportWidth: raw.viewportWidth } : {}),
+              ...(raw.reducedMotion !== undefined ? { reducedMotion: raw.reducedMotion } : {}),
+            },
+          }
+        : { ok: false, error: 'Invalid swipe input' };
+
+    case 'set-auto-archive-timeout':
+      return isAutoArchiveTimeout(raw.timeout)
+        ? { ok: true, value: { type: 'set-auto-archive-timeout', timeout: raw.timeout } }
+        : { ok: false, error: 'Invalid auto-archive timeout' };
+
+    case 'query-archive-vault':
+      return isNonEmptyString(raw.query, 256) && isOptionalString(raw.spaceId, 128)
+        ? { ok: true, value: { type: 'query-archive-vault', query: raw.query, spaceId: raw.spaceId } }
+        : { ok: false, error: 'Invalid archive query' };
+
+    case 'move-folder':
+      return isNonEmptyString(raw.folderId, 128) &&
+        (raw.parentId === undefined || (isNonEmptyString(raw.parentId, 128) && raw.parentId !== raw.folderId))
+        ? { ok: true, value: { type: 'move-folder', folderId: raw.folderId, parentId: raw.parentId } }
+        : { ok: false, error: 'Invalid folder move' };
+
+    case 'set-site-cookie-policy': {
+      const checked = validateSiteControlMutation({ ...(isRecord(raw) ? raw : {}), type: 'set-site-cookie-policy' });
+      return checked.ok && checked.mutation.type === 'set-site-cookie-policy'
+        ? { ok: true, value: { type: 'set-site-cookie-policy', origin: checked.mutation.origin, policy: checked.mutation.policy } }
+        : { ok: false, error: 'Invalid site cookie policy' };
+    }
+
+    case 'set-site-permission': {
+      const checked = validateSiteControlMutation({ ...(isRecord(raw) ? raw : {}), type: 'set-site-permission' });
+      return checked.ok && checked.mutation.type === 'set-site-permission'
+        ? { ok: true, value: { type: 'set-site-permission', origin: checked.mutation.origin, permission: checked.mutation.permission, decision: checked.mutation.decision } }
+        : { ok: false, error: 'Invalid site permission mutation' };
+    }
+
+    case 'toggle-reading-list':
+      return isNonEmptyString(raw.url, MAX_URL_LEN) && isSafeNavigationUrl(raw.url) && isNonEmptyString(raw.title, 256)
+        ? { ok: true, value: { type: 'toggle-reading-list', url: raw.url, title: raw.title } }
+        : { ok: false, error: 'Invalid reading-list entry' };
+
+    case 'start-focus-session':
+    case 'end-focus-session':
+    case 'toggle-focus-session':
+      return isNonEmptyString(raw.spaceId, 128)
+        ? { ok: true, value: { type: raw.type, spaceId: raw.spaceId } as KinexIntent }
+        : { ok: false, error: 'Invalid focus session space' };
+
+    case 'save-focus-rule': {
+      const checked = validateFocusRule(raw.rule);
+      return checked.ok ? { ok: true, value: { type: 'save-focus-rule', rule: checked.rule } } : { ok: false, error: checked.reason };
+    }
+
+    case 'delete-focus-rule':
+      return isNonEmptyString(raw.ruleId, 128) && isNonEmptyString(raw.spaceId, 128)
+        ? { ok: true, value: { type: 'delete-focus-rule', ruleId: raw.ruleId, spaceId: raw.spaceId } }
+        : { ok: false, error: 'Invalid focus rule deletion' };
+
+    case 'open-link-peek':
+      return isLinkPeekUrl(raw.url) && isBoundedRect(raw.rect) && isSafeProfilePartition(raw.partition)
+        ? {
+            ok: true,
+            value: {
+              type: 'open-link-peek',
+              url: raw.url as string,
+              rect: raw.rect,
+              ...(raw.partition ? { partition: raw.partition } : {}),
+            },
+          }
+        : { ok: false, error: 'Invalid Link Peek request' };
+
+    case 'link-peek-action':
+      return isLinkPeekAction(raw.action)
+        ? { ok: true, value: { type: 'link-peek-action', action: raw.action } }
+        : { ok: false, error: 'Invalid Link Peek action' };
+
+    case 'show-share-qr':
+      return raw.url === undefined || (isNonEmptyString(raw.url, MAX_URL_LEN) && isSafeNavigationUrl(raw.url))
+        ? { ok: true, value: { type: 'show-share-qr', url: raw.url } }
+        : { ok: false, error: 'Invalid share URL' };
+
+    case 'set-theme':
+      return isThemePreference(raw.theme) ? { ok: true, value: { type: 'set-theme', theme: raw.theme } } : { ok: false, error: 'Invalid theme' };
+    case 'set-sidebar-side':
+      return isSidebarSide(raw.side) ? { ok: true, value: { type: 'set-sidebar-side', side: raw.side } } : { ok: false, error: 'Invalid sidebar side' };
+    case 'set-density':
+      return isDensityPreference(raw.density) ? { ok: true, value: { type: 'set-density', density: raw.density } } : { ok: false, error: 'Invalid density' };
+    case 'set-accent':
+      return isAccentPreference(raw.accent) ? { ok: true, value: { type: 'set-accent', accent: raw.accent } } : { ok: false, error: 'Invalid accent' };
+    case 'set-vibrancy':
+      return isVibrancyPreference(raw.vibrancy) ? { ok: true, value: { type: 'set-vibrancy', vibrancy: raw.vibrancy } } : { ok: false, error: 'Invalid vibrancy' };
+    case 'set-show-full-url':
+    case 'set-ask-before-download':
+      return typeof raw.enabled === 'boolean'
+        ? { ok: true, value: { type: raw.type, enabled: raw.enabled } as KinexIntent }
+        : { ok: false, error: 'Invalid boolean preference' };
+    case 'set-default-zoom':
+      return isFiniteNumber(raw.zoom)
+        ? { ok: true, value: { type: 'set-default-zoom', zoom: clampDefaultZoom(raw.zoom) } }
+        : { ok: false, error: 'Invalid default zoom' };
+    case 'set-startup-behavior':
+      return isStartupBehavior(raw.behavior)
+        ? { ok: true, value: { type: 'set-startup-behavior', behavior: raw.behavior } }
+        : { ok: false, error: 'Invalid startup behavior' };
+    case 'set-startup-urls':
+      return isBoundedStringArray(raw.urls, MAX_STARTUP_URLS) && raw.urls.every((url) => isSafeNavigationUrl(url))
+        ? { ok: true, value: { type: 'set-startup-urls', urls: raw.urls } }
+        : { ok: false, error: 'Invalid startup URLs' };
+    case 'set-custom-search-engine':
+      return raw.engine === null || normalizeCustomSearchEngine(raw.engine) !== null
+        ? { ok: true, value: { type: 'set-custom-search-engine', engine: raw.engine === null ? null : normalizeCustomSearchEngine(raw.engine) } }
+        : { ok: false, error: 'Invalid custom search engine' };
+    case 'set-download-folder':
+      return isNonEmptyString(raw.folder, MAX_STRING_LEN)
+        ? { ok: true, value: { type: 'set-download-folder', folder: raw.folder } }
+        : { ok: false, error: 'Invalid download folder' };
+    case 'set-third-party-cookies':
+      return isThirdPartyCookiesPolicy(raw.policy)
+        ? { ok: true, value: { type: 'set-third-party-cookies', policy: raw.policy } }
+        : { ok: false, error: 'Invalid third-party cookie policy' };
+    case 'set-referrer-policy':
+      return isReferrerPolicy(raw.policy)
+        ? { ok: true, value: { type: 'set-referrer-policy', policy: raw.policy } }
+        : { ok: false, error: 'Invalid referrer policy' };
+    case 'set-webrtc-policy':
+      return isWebRtcPolicy(raw.policy)
+        ? { ok: true, value: { type: 'set-webrtc-policy', policy: raw.policy } }
+        : { ok: false, error: 'Invalid WebRTC policy' };
+    case 'set-custom-filter-urls':
+      return isBoundedStringArray(raw.urls, MAX_CUSTOM_FILTER_URLS) && raw.urls.every((url) => /^https:\/\//i.test(url))
+        ? { ok: true, value: { type: 'set-custom-filter-urls', urls: raw.urls } }
+        : { ok: false, error: 'Invalid custom filter URLs' };
+    case 'set-site-whitelist':
+      return isBoundedStringArray(raw.sites, MAX_SITE_WHITELIST)
+        ? { ok: true, value: { type: 'set-site-whitelist', sites: raw.sites } }
+        : { ok: false, error: 'Invalid site whitelist' };
+    case 'reset-settings':
+      return { ok: true, value: { type: 'reset-settings' } };
+    case 'set-custom-shortcut':
+      return isNonEmptyString(raw.id, 128) && isNonEmptyString(raw.accelerator, 64)
+        ? { ok: true, value: { type: 'set-custom-shortcut', id: raw.id, accelerator: raw.accelerator } }
+        : { ok: false, error: 'Invalid custom shortcut' };
+    case 'remove-custom-shortcut':
+      return isNonEmptyString(raw.id, 128)
+        ? { ok: true, value: { type: 'remove-custom-shortcut', id: raw.id } }
+        : { ok: false, error: 'Invalid shortcut id' };
+    case 'reset-custom-shortcuts':
+      return { ok: true, value: { type: 'reset-custom-shortcuts' } };
+    case 'reset-welcome-card':
+      return { ok: true, value: { type: 'reset-welcome-card' } };
+    case 'clear-browsing-data-timed':
+      return Array.isArray(raw.scopes) && raw.scopes.length > 0 && raw.scopes.every((scope) => isClearDataScope(scope)) &&
+        isFiniteNumber(raw.since) && raw.since >= 0 && isOptionalString(raw.spaceId, 128)
+        ? { ok: true, value: { type: 'clear-browsing-data-timed', scopes: raw.scopes, since: raw.since, ...(raw.spaceId ? { spaceId: raw.spaceId as string } : {}) } }
+        : { ok: false, error: 'Invalid timed data deletion' };
+    case 'remove-history-entry':
+      return isNonEmptyString(raw.url, MAX_URL_LEN)
+        ? { ok: true, value: { type: 'remove-history-entry', url: raw.url } }
+        : { ok: false, error: 'Invalid history entry' };
+    case 'remove-bookmark':
+      return isNonEmptyString(raw.tabId, 128)
+        ? { ok: true, value: { type: 'remove-bookmark', tabId: raw.tabId } }
+        : { ok: false, error: 'Invalid bookmark id' };
 
     default:
       return { ok: false, error: `Unknown intent type: ${String(raw.type)}` };
