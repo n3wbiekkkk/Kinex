@@ -2,6 +2,18 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.20] - 2026-11-18
+
+Pre-production preview. Complete the 26-milestone overnight roadmap.
+
+- Optimize CI/release caching for npm, Electron and Cargo, ignore docs-only changes, cancel stale runs and split fast from heavy checks. Guard macOS-only APIs with Windows/Linux fallbacks.
+- Require explicit consent for Chrome Web Store installs end to end; navigation to a store item no longer auto-installs. Harden the CRX3 unpacker against nested zip-slip, oversized entries and signature bypass.
+- Add AES-256-GCM `.kinex-sync` export/import with scrypt derivation, authenticated headers and a deny-by-default allowlist that excludes Private windows, cookies and passwords; add rotated folder/iCloud backups and a `kinex://performance` telemetry page.
+- Add a sanitized web context menu, visible/area screenshots to PNG or clipboard, MHTML save, Console/View Source, trackpad swipe navigation, sandboxed Link Peek, Reader appearance controls, a Reading List, configurable auto-archive with a searchable vault, nested folders, QR sharing, a site-control popover and Zen Focus Mode.
+- Make Settings searchable with appearance, layout, zoom, startup, custom search, download, cookie/referrer/WebRTC and privacy preferences; add custom shortcuts with conflict detection, Space-scoped permissions, timed data deletion and a dismissible first-run welcome card.
+- Add reduced-motion-safe spring transitions, animated sidebar collapse/hover-peek, drag indicators, split 50/50 reset and download progress.
+- Bare `⌘S` stays reserved for native Save; sidebar collapse uses `⌃⌘S` and MHTML save is available from the palette/menu. Native Share, WebAuthn/passkey and DRM verification remain external gates.
+
 ## [0.7.19] - 2026-11-17
 
 Pre-production preview. Add verified CRX3 and Chrome Web Store installation for MV3 extensions.

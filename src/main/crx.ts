@@ -76,7 +76,7 @@ function parseProtoFields(buffer: Buffer): ProtoField[] {
   return fields;
 }
 
-function crxIdFromPublicKey(publicKey: Buffer): string {
+export function crxIdFromPublicKey(publicKey: Buffer): string {
   const digest = crypto.createHash('sha256').update(publicKey).digest().subarray(0, 16);
   return [...digest]
     .map((byte) => String.fromCharCode(97 + (byte >> 4)) + String.fromCharCode(97 + (byte & 0x0f)))

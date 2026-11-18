@@ -33,7 +33,7 @@ Work is grouped into three parallel waves executed by isolated agents. The orche
 - [x] 23. Add an address-bar QR code and macOS Share action *(QR rendering + copy-link; native Share sheet pending).*
 - [x] 24. Add Save MHTML and the URL Lock/Shield Site Control Popover (connection, Shields, cookies and permissions).
 - [x] 25. Add Zen Focus Mode (`⌥⌘F`) and per-Space distraction blocking.
-- [ ] 26. Merge all waves, update `README.md` and `CHANGELOG.md`, run `tsc` (node+web) and full `npm run test:all`, fix regressions, bump the preview version, check all boxes and push to `main`.
+- [x] 26. Merge all waves, update `README.md` and `CHANGELOG.md`, run `tsc` (node+web) and full `npm run test:all`, fix regressions, bump the preview version, check all boxes and push to `main`.
 
 ## Verification record
 
@@ -43,7 +43,9 @@ Work is grouped into three parallel waves executed by isolated agents. The orche
 - Milestone 4's opt-in automatic Picture-in-Picture tests pass (commit `49498a9`); the sidebar mute toggle is pending.
 - Baseline at handoff: `npm run typecheck` passes. `npm run test:pure` had 4 pre-existing failing files (`scripts/afterPack.test.cjs`, `scripts/workflows.test.mjs`, `scripts/packaging-policy.test.mjs`, `src/main/mediaComponents.test.ts`) from unrelated in-progress updater/media/packaging work; they were repaired without weakening their assertions (stale log strings updated to the implementation's current messages, renamed CI job, CJS test ported to ESM).
 - Wave 1 (milestones 1–6, 8–12): `npm run typecheck`, `npm run lint` and `npm run test:pure` all pass — 31 files / 247 tests green. Agent-targeted runs: platform/mac updater 33 tests, CRX/extension 29 tests, sync/telemetry 18 tests, plus IPC-boundary and command regressions.
-- Wave 2 (milestones 7, 13–25): agent runs passed 65 context-menu/screenshot/MHTML/gesture tests, 33 archive/site-control/zen/link-peek/QR tests and 24 permission/settings tests. Integrated tree passes `npm run typecheck`, `npm run lint`, `npm run test:pure` (41 files / 359 tests) and `npm run test:native` (3 files / 25 tests).
+- Wave 2 (milestones 7, 13–25): agent runs passed 65 context-menu/screenshot/MHTML/gesture tests, 33 archive/site-control/zen/link-peek/QR tests and 24 permission/settings tests. Integrated tree passed `npm run typecheck`, `npm run lint`, `npm run test:pure` (41 files / 359 tests) and `npm run test:native` (3 files / 25 tests).
+- Wave 3: `npm run test:all` exited 0 — Vitest 44 files / 384 tests, then integration (15 checks), multi-window (2 windows), extensions (CRX + cold start), crash recovery, E2E (15 workflows), keyboard, experience (10 checks), Shields integration, security and Shields startup suites. Version bumped 0.7.19 → 0.7.20.
+- Two real-Electron regressions were found and fixed during Wave 3: the CRX badge-worker wrapper used a Chromium-reserved `__` filename and a non-JavaScript backup extension, and the extracted CRX manifest lacked the verified public key needed for Chromium to derive the same runtime id. `npm run test:extensions` now passes with `EXTENSIONS_PASS`.
 - Deviation: milestone 11's collapse shortcut uses ⌃⌘S because an existing keyboard contract test deliberately reserves bare ⌘S for the native Save action; the palette action remains available without a chord. MHTML is palette/menu-driven for the same reason.
 - Wave 1 commit includes pre-existing updater/media/DRM and calculator work because the new modules import it and `test:pure` cannot pass without it. `.perch/` and `artifacts/ci/` remain untracked as required.
 

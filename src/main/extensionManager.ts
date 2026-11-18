@@ -17,11 +17,27 @@ import {
   resolveInsideRoot,
   type ExtensionManifestSummary,
 } from './extensionSupport';
-import { extractCrxZip, MAX_CRX_BYTES, parseCrx3, verifyCrx3Signature, type ParsedCrx3 } from './crx';
+import { crxIdFromPublicKey, extractCrxZip, MAX_CRX_BYTES, parseCrx3, verifyCrx3Signature, type ParsedCrx3 } from './crx';
 import { downloadWebStoreCrx } from './webStore';
 import { createBadgeWorker } from './extensionActionBadge';
 
 
+
+/**
+ * Chromium derives a CRX extension's runtime id from the public key embedded in
+ * its manifest. The extracted package has no `key` field, so without this the
+ * unpacked directory loads under a different id and the verified CRX id check
+ * fails. Only the already-verified proof for `parsed.crxId` is used.
+ */
+function pinCrxPublicKey(target: string, parsed: ParsedCrx3): void {
+  const proof = parsed.proofs.find((item) => crxIdFromPublicKey(item.publicKey) === parsed.crxId);
+  if (!proof) return;
+  const manifestPath = resolveInsideRoot(target, 'manifest.json');
+  if (!manifestPath) throw new Error('Invalid CRX manifest');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+  manifest.key = proof.publicKey.toString('base64');
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest), { mode: 0o600 });
+}
 
 export interface ExtensionManagerHost {
   getExtensions: () => InstalledExtension[];
@@ -321,6 +337,7 @@ export class ExtensionManager {
     const { id, target } = this.createTarget();
     try {
       extractCrxZip(parsed.zip, target);
+      pinCrxPublicKey(target, parsed);
       const manifest = this.readStagedManifest(target);
       if (manifest.backgroundServiceWorker) createBadgeWorker(target, manifest.backgroundServiceWorker, parsed.crxId);
       for (const file of allDeclaredExtensionFiles(manifest)) {

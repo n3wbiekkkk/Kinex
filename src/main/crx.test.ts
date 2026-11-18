@@ -421,9 +421,9 @@ describe('CRX and Web Store installation', () => {
     const target = path.join(dir, 'Extensions', record.id);
     const manifest = JSON.parse(fs.readFileSync(path.join(target, 'manifest.json'), 'utf8'));
     expect(signed.crxId).toBe(record.crxId);
-    expect(manifest.background.service_worker).toBe('__kinex_action_badge_worker.js');
-    expect(fs.readFileSync(path.join(target, 'worker.js.kinex-original'), 'utf8')).toBe(workerSource);
-    const wrapper = fs.readFileSync(path.join(target, '__kinex_action_badge_worker.js'), 'utf8');
+    expect(manifest.background.service_worker).toBe('kinex-badge-worker.js');
+    expect(fs.readFileSync(path.join(target, 'worker.js.kinex-original.js'), 'utf8')).toBe(workerSource);
+    const wrapper = fs.readFileSync(path.join(target, 'kinex-badge-worker.js'), 'utf8');
     expect(wrapper).toContain(signed.crxId);
     const calls: unknown[][] = [];
     const logs: string[] = [];

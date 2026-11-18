@@ -11,11 +11,11 @@ export function createBadge(text: unknown, color: unknown): ExtensionActionBadge
 export function createBadgeWorker(target: string, workerPath: string, crxId: string): void {
   const manifestPath = resolveInsideRoot(target, 'manifest.json');
   const original = resolveInsideRoot(target, workerPath);
-  const backup = resolveInsideRoot(target, `${workerPath}.kinex-original`);
-  const wrapper = resolveInsideRoot(target, '__kinex_action_badge_worker.js');
+  const backup = resolveInsideRoot(target, `${workerPath}.kinex-original.js`);
+  const wrapper = resolveInsideRoot(target, 'kinex-badge-worker.js');
   if (!manifestPath || !original || !backup || !wrapper) throw new Error('Invalid CRX action worker');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { background: { service_worker: string } };
-  if (manifest.background.service_worker === '__kinex_action_badge_worker.js') return;
+  if (manifest.background.service_worker === 'kinex-badge-worker.js') return;
   fs.copyFileSync(original, backup, fs.constants.COPYFILE_EXCL);
   const script = `
     for (const [name, property] of [['setBadgeText', 'text'], ['setBadgeBackgroundColor', 'color']]) {
@@ -26,9 +26,9 @@ export function createBadgeWorker(target: string, workerPath: string, crxId: str
         return original(details);
       };
     }
-    importScripts(${JSON.stringify(`${workerPath}.kinex-original`)});
+    importScripts(${JSON.stringify(`${workerPath}.kinex-original.js`)});
   `;
   fs.writeFileSync(wrapper, script, { mode: 0o600, flag: 'wx' });
-  manifest.background.service_worker = '__kinex_action_badge_worker.js';
+  manifest.background.service_worker = 'kinex-badge-worker.js';
   fs.writeFileSync(manifestPath, JSON.stringify(manifest), { mode: 0o600 });
 }

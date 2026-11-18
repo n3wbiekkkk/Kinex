@@ -1,6 +1,6 @@
 <div align="center">
   <img src="build/icon.png" alt="Kinex Browser" width="112" height="112" />
-  <h1>Kinex Browser (v0.7.19)</h1>
+  <h1>Kinex Browser (v0.7.20)</h1>
   <p>A fast, memory-efficient, everyday privacy-focused macOS desktop browser built on Chromium and Electron — with zero AI bloat.</p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square" alt="License: GPL v3" /></a>
@@ -11,7 +11,7 @@
 
 ---
 
-## v0.7.19 verification
+## v0.7.20 verification
 
 Electron is pinned to **45.3.3**, with Chromium **156.0.8078.100** and embedded Node **24.22.3**. Version numbering was reset from 7.0.3 to 0.7.3; the 0.x line is pre-production and 1.0.0 is reserved for the production release. The current local preview is unsigned and not notarized. Free 0.x Releases include an ad-hoc sealed DMG and ZIP for manual installation; they have no verified Developer ID and are not notarized. Automatic update installation requires matching Developer ID signing even before 1.0.0; no auto-update manifest is published for unsigned previews. It adds profile-scoped permission grants, stricter IPC and TLS boundaries, recoverable state writes, safer downloads, and worker-based cold Shields initialization. Existing unscoped permission grants require fresh consent.
 
@@ -46,6 +46,11 @@ For older 0.7.x installations, see [update compatibility and signing prerequisit
   - **Kinex Shields (`adblock-rs` + `tldts`)**: Native Rust content-blocking engine with 7 bundled offline filter lists (`EasyList`, `EasyPrivacy`, `uBlock Origin Filters/Privacy/Quick Fixes`, `Peter Lowe's`, and `Fanboy Cookie`), Standard/Aggressive/Disabled global and per-site precedence, dynamic isolated-world cosmetic filtering, Element Picker, HTTPS list updates, and **Clean Copy URL** (`⌘⇧C` / navigation param stripping) — documented in [SHIELDS_BENCHMARKS.md](SHIELDS_BENCHMARKS.md)
 - **Migration & Import**: Backward-compatible state migration from legacy `NOOK/nook-state.json` and `nook://` URLs while preserving existing `persist:nook-*` profile cookies/sessions, plus Arc (`StorableSidebar.json`), Chrome (`Bookmarks`), and HTML bookmark import.
 - **In-App Auto-Updater**: Built on `electron-updater` / `Squirrel.Mac`, validating update feeds (`https://`, localhost, or local release directory) against `latest-mac.yml`.
+- **Encrypted Sync (`v0.7.20`)**: AES-256-GCM `.kinex-sync` export/import with scrypt key derivation, authenticated envelope, deny-by-default allowlist (Private windows, cookies, passwords and credentials never serialized), plus rotated folder/iCloud mirror backups.
+- **Performance & Site Controls (`v0.7.20`)**: `kinex://performance` reports tabs, sleeping tabs, estimated reclaimed memory and Shields blocks; a toolbar site-control popover shows connection/Shields/cookie/permission state with scoped overrides.
+- **Native Context Menu & Capture (`v0.7.20`)**: Hostile-payload-sanitized right-click menu, visible/area screenshots to PNG or clipboard, MHTML save, DevTools/Console/View Source and macOS swipe Back/Forward with a reduced-motion-aware edge indicator.
+- **Focus & Reading Tools (`v0.7.20`)**: Shift-click Link Peek in a sandboxed `WebContentsView`, Reader appearance controls and a per-Space Reading List, configurable auto-archive with a searchable vault and nested folders, QR sharing, and Zen Focus Mode with per-Space distraction rules.
+- **Preference Surface (`v0.7.20`)**: Searchable Settings with theme/sidebar-side/density/accent/vibrancy, full URL, default zoom, startup and custom search (`%s`, `@kw`), download folder, cookie/referrer/WebRTC policy, custom shortcuts with conflict detection, timed/per-Space data deletion, and a dismissible first-run welcome card.
 
 ---
 
@@ -86,6 +91,48 @@ src/
         └── kinex.css         # Frosted vibrancy shell, overlays & macOS styling
     └── components/           # Sidebar, TopControls, CommandBar, SettingsView, BoostPanel, SpaceEditor
 ```
+
+```mermaid
+flowchart TB
+  Web[Remote website WebContentsView] -->|sandboxed, context-isolated| Nav[NavigationManager]
+  Nav -->|allowlist + HTTPS-only + Zen Focus| Win[KinexWindowManager]
+  UI[Shell / Overlay renderer] -->|typed KinexIntent| Bridge[preload/shell.ts]
+  Bridge -->|kinex:dispatch| Registry[TrustedIpcRegistry]
+  Registry --> Validator[ipcValidation.ts]
+  Validator --> Win
+  Win --> Persist[(Atomic JSON state\npersistence.ts)]
+  Win --> Shields[Shields coordinator\nadblock-rs worker]
+  Win --> Tab[TabManager / ViewLayoutManager]
+  Win --> Modules[contextMenu · screenshot · savePage\nsyncManager · archiveManager · zenFocus\nlinkPeek · siteControl · performanceTelemetry]
+  Modules --> Persist
+  Win --> Snapshot[KinexStateSnapshot] --> UI
+```
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `⌘T` / `⌘L` | Command Bar / address bar (inline math and unit conversions) |
+| `⌘⇧\` | Toggle Split View; the 50/50 button resets the ratio |
+| `⌃⌘S` | Collapse or expand the Sidebar (bare `⌘S` remains native Save) |
+| `⌥⌘S` | Show or hide the Sidebar |
+| `⌥⌘I` / `⌥⌘J` / `⌥⌘U` | DevTools / Console / View Source |
+| `⌘⇧S` | Screenshot the visible page |
+| `⌥⌘R` / `⇧⌘D` | Reader Mode / Reading List |
+| `⌥⌘F` | Zen Focus for the active Space |
+| `⌘⇧A` | Archived Vault |
+| `⇧⌘⌫` | Clear browsing data |
+| `⌘Y` / `⌘J` | History / Downloads |
+
+## Limitations
+
+- **0.x preview**: ad-hoc sealed DMG/ZIP for manual installation; no Developer ID or notarization, so Gatekeeper may block first launch. Signed automatic installation requires Developer ID credentials.
+- **Native Share sheet** is not wired; QR sharing renders a scannable code with a copy-link fallback.
+- **WebAuthn/passkey** and protected playback (DRM/Widevine) need hardware/credential flows that are not verified by the automated suites.
+- Custom filter URLs and site whitelist are persisted preference surfaces; applying them to the native Shields engine is incremental.
+- Shortcuts shown with `⌘S` in older documentation are now `⌃⌘S` for Sidebar collapse; `⌘S` is reserved for native Save.
 
 ---
 
