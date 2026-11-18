@@ -1,6 +1,6 @@
 <div align="center">
   <img src="build/icon.png" alt="Kinex Browser" width="112" height="112" />
-  <h1>Kinex Browser (v0.7.22)</h1>
+  <h1>Kinex Browser (v0.7.23)</h1>
   <p>A fast, memory-efficient, everyday privacy-focused macOS desktop browser built on Chromium and Electron — with zero AI bloat.</p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square" alt="License: GPL v3" /></a>
@@ -11,7 +11,7 @@
 
 ---
 
-## v0.7.22 verification
+## v0.7.23 verification
 
 Electron is pinned to **45.3.3**, with Chromium **156.0.8078.100** and embedded Node **24.22.3**. Version numbering was reset from 7.0.3 to 0.7.3; the 0.x line is pre-production and 1.0.0 is reserved for the production release. The current local preview is unsigned and not notarized. Free 0.x Releases include an ad-hoc sealed DMG and ZIP for manual installation; they have no verified Developer ID and are not notarized. Automatic update installation requires matching Developer ID signing even before 1.0.0; no auto-update manifest is published for unsigned previews. It adds profile-scoped permission grants, stricter IPC and TLS boundaries, recoverable state writes, safer downloads, and worker-based cold Shields initialization. Existing unscoped permission grants require fresh consent.
 

@@ -2,6 +2,13 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.23] - 2026-11-18
+
+Pre-production preview. Record final CI, publication and installed-update evidence for the 26-milestone roadmap.
+
+- Main CI and the corrected Release workflow pass for the 0.7.22 source; the ad-hoc sealed DMG/ZIP are published as a manual preview with no update manifest.
+- Signed automatic installation remains unavailable because no Developer ID credentials are configured.
+
 ## [0.7.22] - 2026-11-18
 
 Pre-production preview. Fix the Electron download mirror used by packaging.
