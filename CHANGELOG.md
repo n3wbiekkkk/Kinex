@@ -2,6 +2,13 @@
 
 All notable releases of **Kinex Browser** follow a traditional, lightweight, privacy-focused macOS desktop browser roadmap with zero AI features.
 
+## [0.7.22] - 2026-11-18
+
+Pre-production preview. Fix the Electron download mirror used by packaging.
+
+- Remove the duplicated `v` from the castlabs Electron mirror URL; `npm run package:mac` now resolves `electron-v45.2.1+wvcus-darwin-arm64.zip` and builds the ad-hoc sealed DMG and ZIP.
+- Validate the packaged app locally: `tests/integration/run-dmg.mjs` verifies the DMG checksum, bundle seal, arm64 native addon, native initialization, sandboxed navigation and shutdown persistence with disposable data.
+
 ## [0.7.21] - 2026-11-18
 
 Pre-production preview. Keep CI/Release verification green against an unpatchable dev-only advisory.

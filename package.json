@@ -1,6 +1,6 @@
 {
   "name": "kinex-browser",
-  "version": "0.7.21",
+  "version": "0.7.22",
   "description": "Kinex Browser — a fast, private macOS Chromium workspace browser",
   "license": "GPL-3.0-only",
   "repository": {
@@ -38,7 +38,7 @@
   "build": {
     "afterPack": "scripts/afterPack.cjs",
     "electronDownload": {
-      "mirror": "https://github.com/castlabs/electron-releases/releases/download/v"
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
     },
     "appId": "com.kinex.browser",
     "productName": "Kinex",
